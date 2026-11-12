@@ -551,8 +551,24 @@ piece is a real rigid body in the same physics as everything else: a pipe rolls 
 end, and a rod really goes through a hollow piece's hole. A field can hold several kinds at once (2023 had cones and cubes). The pieces are named by their kind in everything a student reads ("coral
 3", not an internal body name).
 
-**What isn't a ball stays a stand-in.** Soft pieces (the 2023 cube, the 2024 note) are rigid stand-ins of the right
-size and weight: they don't squash. See [What isn't modeled](#what-isnt-modeled).
+**What isn't a ball stays a stand-in, except the NOTE near a robot.** Soft pieces (the 2023 cube, inflated tubes)
+are rigid stand-ins of the right size and weight: they don't squash. See [What isn't modeled](#what-isnt-modeled).
+The 2024 NOTE is rigid too, until it comes near a robot (below).
+
+### The soft NOTE
+
+A piece kind with `soft = true` (the `2024-note` preset sets it) is rigid on the floor and in flight. Within 0.25 m of
+a robot it turns into a soft ring of 16 segments that bends and squashes, and 0.25 s after it is that far away again
+it is rigid again. It is the same piece throughout: same name, same counts, same goals. The world holds two soft rings
+for each soft kind; a third NOTE that comes near while both are in use stays rigid, and the run's notes say so. A
+NOTE in the robot, or one just shot and still clearing it, never turns soft. Its stiffness and bounce are
+uncalibrated estimates until measured ([measuring.md](measuring.md)), and the run's notes say that too.
+
+**What it costs.** A soft NOTE at rest costs almost nothing (its ring sleeps). One the robot is pushing costs about
+0.3 s of computer time per simulated second, on top of the world's own (measured on the 2024 field: about 0.17 s per
+simulated second with no soft NOTE, 0.54 with one pushed, 0.69 with two). Two NOTEs in front of a robot still ran
+faster than real time on the computer it was measured on, but a slower one, or a robot with Phoenix 6 devices (which runs in real
+time), may fall behind. To keep a NOTE rigid, set `soft = false` on its `[piece.<name>]`.
 
 ### `[range] piece` and the piece presets
 
@@ -571,7 +587,7 @@ The piece presets are in `scrimmage/launcher/presets.toml`, beside the ball pres
 | `2017-gear` | the 2017 GEAR, an 11 in disc 2 in thick, 0.522 kg, without teeth or hole | cylinder |
 | `2019-hatch-panel` | the 2019 HATCH PANEL, 19 in across with a 6 in hole, 3/16 in thick | ring |
 | `2015-tote` | the 2015 TOTE, 26.9 by 16.9 by 12.1 in, 3.54 kg, a solid box | box |
-| `2024-note` | the 2024 NOTE, a ring 14 in across with a 10 in hole, 2 in thick, 235 g. A rigid stand-in for the foam ring | ring |
+| `2024-note` | the 2024 NOTE, a ring 14 in across with a 10 in hole, 2 in thick, 235 g. Rigid, and a soft ring near a robot ([The soft NOTE](#the-soft-note)) | ring |
 
 The coral's mass is the middle of the manual's 1.1 to 1.8 lb; the hatch panel's is from polycarbonate's density; the
 tote's inertia is a solid box's. The file says each one.

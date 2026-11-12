@@ -152,7 +152,9 @@ class SensorRuntime:
         if rng is not None:
             from ..testrange.pieces import piece_color
             balls = rng.balls
-            self._piece = balls.ball_of_geom(np.arange(m.ngeom)).tolist()
+            # the live array (contact id -> ball), not a copy: a soft NOTE's ring capsules map to its piece while it
+            # is in use (testrange/soft.py SoftPool keeps it), and its hidden stand-in (alpha 0) no ray hits
+            self._piece = balls._geom_ball
             self._colors = [piece_color(balls.kinds[k]) for k in balls.kind]
         else:
             self._piece, self._colors = [-1] * m.ngeom, []
@@ -239,7 +241,7 @@ class SensorRuntime:
             gone += x
             g = int(gid[0])
             if piece[g] >= 0:
-                return gone, piece[g]
+                return gone, int(piece[g])
             if not (robot[g] or tag[g]):    # the field: it blocks the view; only a sensor that sees anything reads it
                 return None if pieces_only else (gone, -1)
             gone += SKIP

@@ -278,7 +278,7 @@ def test_the_ring_is_built_as_its_kind():
         g = m.geom(f"n.g{j}")
         assert g.type[0] == mujoco.mjtGeom.mjGEOM_CAPSULE and g.size[0] == pytest.approx(r)
         assert g.size[1] == pytest.approx(big_r * math.sin(math.pi / 16))
-        assert list(g.solref) == pytest.approx([-p.contact_k, -p.contact_b]) and g.condim[0] == 6
+        assert list(g.solref) == pytest.approx([-p.contact_k, -p.contact_b]) and g.condim[0] == 3
         assert list(g.solimp) == pytest.approx(soft.SOFT_SOLIMP)
         assert list(g.friction) == pytest.approx([NOTE.friction, 0.005, 0.0001])
     d = mujoco.MjData(m)
@@ -365,17 +365,28 @@ WING_NOTE = (2.8956, 4.1056)        # F6: blue_wing_note's NOTE, 1.3 m ahead of 
 VOLTS = 12.5                        # the example's nominal battery: a PWM's speed is its share of it
 
 
-def wing_world(tmp_path: Path, notes=(WING_NOTE,), preload: int = 0) -> World:
-    """The 2024 range in tmp_path with `notes` its only floor NOTEs, and the speaker example's robot at
-    blue_wing_note, facing them."""
+def wing_cfg(tmp_path: Path, notes=(WING_NOTE,), preload: int = 0, timestep: float | None = None,
+             sensors: list | None = None) -> dict:
+    """The speaker example's robot at blue_wing_note on the 2024 range written to tmp_path with `notes` its only floor
+    NOTEs, facing them; optionally at another [model] timestep, with [[sensor]]s."""
     text = RANGE_2024.read_text(encoding="utf-8")
     text = re.sub(r'\[\[floor_balls\]\]\nkind = "note"\nat = \[\[.*\n', "", text)
     assert "[[floor_balls]]" not in text
     text += '\n[[floor_balls]]\nkind = "note"\nat = [' + ", ".join(f"[{x}, {y}]" for x, y in notes) + "]\n"
+    tmp_path.mkdir(parents=True, exist_ok=True)
     (tmp_path / "range.toml").write_text(text, encoding="utf-8")
     cfg = tomllib.loads(ROBOT.read_text(encoding="utf-8"))
     cfg["range"] = {"file": "range.toml", "start": "blue_wing_note", "preload": preload, "floor_balls": True}
-    return World(cfg, tmp_path)
+    if timestep is not None:
+        cfg["model"]["timestep"] = timestep
+    if sensors:
+        cfg["sensor"] = sensors
+    return cfg
+
+
+def wing_world(tmp_path: Path, notes=(WING_NOTE,), preload: int = 0, **kw) -> World:
+    """wing_cfg's world."""
+    return World(wing_cfg(tmp_path, notes, preload, **kw), tmp_path)
 
 
 def drive(hal: HalState, volts: float) -> None:
@@ -398,14 +409,16 @@ def _state(w: World, slot: int) -> dict:
 
 
 def watch_swaps(w: World, slot: int) -> list[dict]:
-    """Each step's row from here on: its time, the slot's distance to the robot, its state just before the pool's
-    update and just after, and in_use after (the pool's update, wrapped)."""
+    """Each step's row from here on: its time, the slot's distance to the robot and that less its closing speed times
+    the timestep (the predicted distance a swap in reads), its state just before the pool's update and just after, and
+    in_use after (the pool's update, wrapped)."""
     pool, rows = w.test_range.soft, []
     inner = pool.update
 
     def update():
-        row = {"t": float(w.data.time), "dist": float(pool.distances(np.array([slot]))[0]),
-               "before": _state(w, slot)}
+        dist, closing = pool.distances(np.array([slot]), closing=True)
+        row = {"t": float(w.data.time), "dist": float(dist[0]),
+               "pred": float(dist[0] - max(0.0, float(closing[0])) * w.model.opt.timestep), "before": _state(w, slot)}
         inner()
         row["after"], row["in_use"] = _state(w, slot), dict(pool.in_use())
         rows.append(row)
@@ -444,14 +457,16 @@ def swap_run(w: World, press_s: float = 0.6, stop_s: float = 0.0, after_s: float
 
 
 def test_a_note_near_the_robot_turns_soft_and_back(tmp_path):
-    """D8, R12, R13: at the first step where the NOTE's center is within SOFT_REACH of a robot geom's box it turns
-    soft, its ring keeping its momentum (within 1e-6 kg m/s; the spike's swap: 3e-9) and its center (1e-6 m). Backing
+    """D8, R12, R13: at the first step where the NOTE's center is predicted within SOFT_REACH of a robot geom's box
+    after the next step (its distance less its closing speed times the timestep) it turns soft, its ring keeping its
+    momentum (within 1e-6 kg m/s; the spike's swap: 3e-9) and its center (1e-6 m). Backing
     away at 4 V, it is rigid again SOFT_LINGER after its center is past SOFT_REACH from every robot geom: in play, on
     BALL_BITS, its momentum kept."""
     w = wing_world(tmp_path)
     slot, rows, first, back = swap_run(w)
-    near = next(k for k, r in enumerate(rows) if r["dist"] <= soft.SOFT_REACH)
+    near = next(k for k, r in enumerate(rows) if r["pred"] <= soft.SOFT_REACH)
     assert near == first and rows[first]["in_use"] == {slot: "soft.0"}
+    assert rows[first]["dist"] - rows[first]["pred"] < 0.001        # at 2 V the prediction moves it by a step
     assert rows[first]["dist"] > soft.SOFT_REACH - 0.01         # it turned soft on its way in, not deep inside
     before, (c, p) = rows[first]["before"], rows[first]["after"]["ring"]
     assert np.abs(p - before["p"]).max() < 1e-6 and np.abs(c - before["com"]).max() < 1e-6
@@ -469,32 +484,36 @@ def test_a_note_near_the_robot_turns_soft_and_back(tmp_path):
     assert w.test_range.soft.swaps == 1
 
 
+def _subtree(m, d, body: int):
+    """MuJoCo's own (center of mass, linear momentum, angular momentum about it) of `body`'s subtree."""
+    mujoco.mj_forward(m, d)
+    mujoco.mj_subtreeVel(m, d)
+    return (d.subtree_com[body].copy(), m.body_subtreemass[body] * d.subtree_linvel[body],
+            d.subtree_angmom[body].copy())
+
+
 def test_a_swap_keeps_the_angular_momentum(tmp_path):
-    """Review M9: the ring's inertia is a few percent below the rigid NOTE's, so the swap keeps the angular momentum
-    (the spin rate moves by that much), both ways, within 1e-9 of it; and the pose and momentum within 1e-9."""
+    """Task 5 review M9: the ring's inertia is a few percent below the rigid NOTE's, so the swap keeps the angular
+    momentum (the spin rate moves by that much). MuJoCo's own subtree center, momentum and angular momentum are the
+    same, within 1e-9, for the rigid NOTE, its ring after the swap in, and the rigid NOTE after the swap back."""
     w = wing_world(tmp_path)
     pool, balls, m, d = w.test_range.soft, w.test_range.balls, w.model, w.data
     slot = int(np.flatnonzero(balls.field)[0])
     ring = soft.ring_view(m, "soft.0")
-    rigid = pool._inertia[slot]
-    ratio = np.linalg.eigvalsh(ring.rest_inertia) / np.linalg.eigvalsh(rigid)
+    ratio = np.linalg.eigvalsh(ring.rest_inertia) / np.linalg.eigvalsh(pool._inertia[slot])
     assert ((ratio > 0.94) & (ratio < 0.97)).all(), ratio      # source: Task 5 review M9, 4 to 4.5 % below
     quat = np.array([0.9, 0.2, -0.3, 0.1]) / np.linalg.norm([0.9, 0.2, -0.3, 0.1])
-    spin = np.array([2.0, -1.0, 9.0])
-    balls.place(slot, (3.0, 4.0, 1.0), (1.0, 0.5, -0.2), spin, BALL_BITS, quat=quat)
-    r = np.zeros(9)
-    mujoco.mju_quat2Mat(r, quat)
-    r = r.reshape(3, 3)
-    momentum = r @ rigid @ r.T @ spin
+    balls.place(slot, (3.0, 4.0, 1.0), (1.0, 0.5, -0.2), (2.0, -1.0, 9.0), BALL_BITS, quat=quat)
+    stand_in, s0 = int(balls.bodies[slot]), int(ring.bodies[0])
+    rigid = _subtree(m, d, stand_in)
     pool._swap_in(slot, 0)
-    c, q, v, ang = ring.momentum(d)
-    assert np.abs(ang - momentum).max() < 1e-9 and np.abs(c - [3.0, 4.0, 1.0]).max() < 1e-9
-    assert np.abs(v - [1.0, 0.5, -0.2]).max() < 1e-9
-    assert min(np.abs(q - quat).max(), np.abs(q + quat).max()) < 1e-9
+    soft_ = _subtree(m, d, s0)
     pool._swap_back(0)
-    w_body = balls._qvel[slot, 3:]
-    assert np.abs(r @ rigid @ w_body - momentum).max() < 1e-9 and np.abs(r @ w_body - spin).max() < 1e-9
-    assert np.abs(balls._qvel[slot, :3] - [1.0, 0.5, -0.2]).max() < 1e-9
+    again = _subtree(m, d, stand_in)
+    for got in (soft_, again):
+        for a, b in zip(rigid, got):
+            assert np.abs(a - b).max() < 1e-9, (rigid, got)
+    assert np.abs(rigid[2]).max() > 0.01            # a real spin
 
 
 def test_the_soft_note_is_the_same_piece(tmp_path):
@@ -651,7 +670,9 @@ def test_a_full_pool_leaves_the_third_rigid_and_notes_it_once(tmp_path):
         if near.all() and len(pool.in_use()) == 2:
             full_seen = True
     assert full_seen and pool.swaps >= 2
-    full = "a third NOTE came near the robot while 2 were soft; it stayed rigid (the soft pool holds 2)"
+    n = soft.POOL_SIZE
+    full = (f"a NOTE came near the robot while the soft pool's {n} NOTE was in use; it stayed rigid" if n == 1 else
+            f"a NOTE came near the robot while all {n} soft NOTEs were in use; it stayed rigid")
     notes = rt.soft_notes()
     assert notes.count(full) == 1, notes
     assert sum("UNCALIBRATED" in n for n in notes) == 1
@@ -684,3 +705,219 @@ def test_one_note_is_drawn(tmp_path):
     assert np.allclose(poses[row[s0], :3], w.data.xpos[s0], atol=1e-6) and poses[row[s0], 2] > 0.0
     free = soft.ring_view(w.model, "soft.1").bodies
     assert np.allclose(poses[[row[b] for b in free], 2], PARK_Z, atol=0.03)
+
+
+# ------------------------------------------------------------------------------------------------ the review's fixes
+
+def _soft_now(w: World, extra: int = 50) -> int:
+    """Drive at 2 V until the NOTE turns soft, then `extra` steps more; its slot."""
+    hal = HalState()
+    drive(hal, 2.0)
+    while not w.test_range.soft.in_use():
+        w.step(hal)
+    for _ in range(extra):
+        w.step(hal)
+    return next(iter(w.test_range.soft.in_use()))
+
+
+def _scene_geoms(m, d) -> set[int]:
+    scn = mujoco.MjvScene(m, 20000)
+    mujoco.mjv_updateScene(m, d, mujoco.MjvOption(), None, mujoco.MjvCamera(), mujoco.mjtCatBit.mjCAT_ALL, scn)
+    return {int(scn.geoms[i].objid) for i in range(scn.ngeom) if scn.geoms[i].objtype == mujoco.mjtObj.mjOBJ_GEOM}
+
+
+def test_a_picture_draws_one_note(tmp_path):
+    """Review finding 1: MuJoCo's own scene (screenshots, contact sheets, scenario pictures) has the ring while the
+    NOTE is soft and not its rigid stand-in, and the stand-in again (at its own alpha) once it is rigid."""
+    w = wing_world(tmp_path)
+    m, d, rt = w.model, w.data, w.test_range
+    slot = int(np.flatnonzero(rt.balls.field)[0])
+    stand_in = set(rt.balls._slot_geoms[slot].tolist())
+    alpha = m.geom_rgba[list(stand_in), 3].copy()
+    assert stand_in <= _scene_geoms(m, d)
+    _soft_now(w)
+    seen = _scene_geoms(m, d)
+    assert not stand_in & seen and set(soft.ring_view(m, "soft.0").geoms.tolist()) <= seen
+    w.reset()
+    assert stand_in <= _scene_geoms(m, d) and np.array_equal(m.geom_rgba[list(stand_in), 3], alpha)
+
+
+def test_a_sensor_reads_a_soft_note(tmp_path):
+    """Review finding 2: a pieces-only distance sensor aimed along the robot's axis at the soft NOTE reads it: its
+    ray stops on one of the ring's capsules (the stand-in is hidden from rays), read as the NOTE, at the ring's near
+    edge."""
+    probe = wing_world(tmp_path / "probe")
+    chassis = probe.model.body("drive.chassis").id
+    z = 0.0254 - float(probe.data.xpos[chassis][2])     # the NOTE's tube's height, in the chassis frame
+    w = wing_world(tmp_path / "w", sensors=[{"name": "front", "kind": "distance", "body": "drive.chassis",
+                                            "at": [0.0, 0.0, z], "toward": [1.0, 0.0, 0.0], "max_range": 2.0,
+                                            "analog": 0}])
+    slot = _soft_now(w, extra=20)
+    reading = w.sensors.reading("front")
+    assert reading.distance < 2.0
+    ring = soft.ring_view(w.model, w.test_range.soft.in_use()[slot])
+    assert int(w.sensors._gid[0]) in set(ring.geoms.tolist())
+    c, _, _, _ = soft.read_rigid(w.model, w.data, ring.name, spin=False)
+    rot = w.data.xmat[chassis].reshape(3, 3)
+    start = w.data.xpos[chassis] + rot @ np.array([0.0, 0.0, z])
+    outer = 14.0 / 2 * 0.0254
+    assert abs(start[0] + reading.distance - (c[0] - outer)) < 0.01
+
+
+def test_a_fast_note_turns_soft_before_it_reaches_the_robot(tmp_path, monkeypatch):
+    """Review finding 4, the owner's request: a NOTE turns soft when it is predicted within SOFT_REACH after the next
+    step, so at a coarse timestep its ring is never created inside the robot. A range refuses a timestep above
+    build.MAX_TIMESTEP (0.001 s) today, so this patches the limit to 0.005 s (a NOTE fired at 20 m/s then moves 0.1 m
+    a step, more than the 0.07 m between SOFT_REACH and touching the bumper). Ten starts 0.01 m apart cover a step's
+    phases; at each, no stand-in geom touches the robot before the swap, the ring touches it at most 1 mm deep in the
+    step after it, and at least one swap came from the prediction (its center still past SOFT_REACH)."""
+    from scrimmage.testrange import build
+    monkeypatch.setattr(build, "MAX_TIMESTEP", 0.005)
+    predicted = 0
+    for k, d0 in enumerate(np.arange(0.60, 0.50, -0.01)):
+        w = wing_world(tmp_path / str(k), timestep=0.005)
+        rt, m, d = w.test_range, w.model, w.data
+        pool, balls = rt.soft, rt.balls
+        slot = int(np.flatnonzero(balls.field)[0])
+        x0, y = w.robot_pose()[0], WING_NOTE[1]
+        z = balls.rest_z_of(slot) + 0.005
+        for x in np.linspace(x0 + 2.0, x0, 4001):
+            balls.put(slot, (float(x), y, z), BALL_BITS, quat=balls.rest_quat(slot))
+            mujoco.mj_forward(m, d)
+            if pool.distances(np.array([slot]))[0] <= d0:
+                break
+        balls.place(slot, balls.position(slot).copy(), (-20.0, 0.0, 0.0), (0.0, 0.0, 0.0), BALL_BITS,
+                    quat=balls.rest_quat(slot))
+        stand_in, robot = set(balls._slot_geoms[slot].tolist()), set(pool._robot_geoms.tolist())
+        hal = HalState()
+        for _ in range(40):
+            w.step(hal)
+            pairs = contact_ids(m, d).tolist()
+            assert not any((a in stand_in and b in robot) or (b in stand_in and a in robot) for a, b in pairs), d0
+            if pool.in_use():
+                break
+        assert pool.in_use(), d0
+        if pool.distances(np.array([slot]))[0] > soft.SOFT_REACH:
+            predicted += 1
+        w.step(hal)
+        ring = set(soft.ring_view(m, "soft.0").geoms.tolist())
+        for i, (a, b) in enumerate(contact_ids(m, d).tolist()):
+            if (a in ring and b in robot) or (b in ring and a in robot):
+                assert d.contact.dist[i] >= -0.001, (d0, float(d.contact.dist[i]))
+    assert predicted >= 1
+
+
+def test_a_fed_note_turns_soft_at_a_waiting_robot(tmp_path):
+    """Review finding 7: a NOTE the blue SOURCE feeds to a robot waiting 0.9 m out from it, facing it, turns soft
+    within 1 s, and the ledger's counts don't change while it is soft."""
+    w = wing_world(tmp_path)
+    rt = w.test_range
+    w.set_robot_pose(15.5023 - 0.5 * 0.9, 0.79 + 0.866 * 0.9, -60.0)
+    mujoco.mj_forward(w.model, w.data)
+    rt.feeder.start("source_blue")
+    hal, counts = HalState(), None
+    while w.time < 1.0 and not rt.soft.in_use():
+        w.step(hal)
+    assert rt.soft.in_use(), "the fed NOTE never turned soft"
+    slot = next(iter(rt.soft.in_use()))
+    assert slot in [f.ball for f in rt.feeder.fed]
+    counts = rt.counts()
+    for _ in range(200):
+        w.step(hal)
+        if slot in rt.soft.in_use():
+            assert rt.counts() == counts
+
+
+def test_a_swap_back_waits_until_the_note_is_clear_of_a_wall(tmp_path):
+    """Review finding 9: a ring squashed 8 mm into the blue alliance wall stays soft past SOFT_LINGER, since its rigid
+    NOTE would be inside the wall; once it is clear, it swaps back, its rigid shape at most OVERLAP_TOL into
+    anything."""
+    w = wing_world(tmp_path)
+    rt, m, d = w.test_range, w.model, w.data
+    pool, balls = rt.soft, rt.balls
+    slot = int(np.flatnonzero(balls.field)[0])
+    balls.put(slot, (0.5, 2.5, balls.rest_z_of(slot)), BALL_BITS, quat=balls.rest_quat(slot))
+    mujoco.mj_forward(m, d)
+    pool._swap_in(slot, 0)
+    _, q, _, _ = soft.read_rigid(m, d, "soft.0")
+    outer = 14.0 / 2 * 0.0254
+    z = balls.rest_z_of(slot)
+    soft.write_rigid(m, d, "soft.0", (outer - 0.008, 2.5, z), q, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    pool.shadow()
+    pool._far[slot] = -1.0                  # out of reach long since
+    pool.update()
+    assert pool.in_use() == {slot: "soft.0"}
+    wall = m.geom("wall_blue").id
+    assert pool.overlap(slot, 0, balls.position(slot), np.eye(3)) == pytest.approx(0.008, abs=0.002)
+    soft.write_rigid(m, d, "soft.0", (outer + 0.01, 2.5, z), q, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    pool.shadow()
+    pool.update()
+    assert pool.in_use() == {}
+    mujoco.mj_forward(m, d)
+    fromto = np.zeros(6)
+    for g in balls._slot_geoms[slot].tolist():
+        assert mujoco.mj_geomDistance(m, d, g, wall, 0.05, fromto) >= -soft.OVERLAP_TOL
+
+
+def test_a_scenario_report_notes_the_soft_note(tmp_path):
+    """Review finding 8: a scenario on the wing range with a NOTE already within reach of the robot: report.json's
+    notes have the soft NOTE's UNCALIBRATED note once."""
+    import asyncio
+    import json
+
+    from scrimmage.scenario import load_scenario_text
+    from scrimmage.scenario_runner import run_scenario
+    from test_range_checks import write_config, write_scenario
+
+    probe = wing_world(tmp_path / "probe")
+    pool, balls = probe.test_range.soft, probe.test_range.balls
+    slot = int(np.flatnonzero(balls.field)[0])
+    x0, y = probe.robot_pose()[0], WING_NOTE[1]
+    for x in np.linspace(x0 + 1.0, x0, 1001):
+        balls.put(slot, (float(x), y, balls.rest_z_of(slot)), BALL_BITS, quat=balls.rest_quat(slot))
+        mujoco.mj_forward(probe.model, probe.data)
+        if pool.distances(np.array([slot]))[0] <= 0.22:
+            break
+    cfg = write_config(tmp_path, wing_cfg(tmp_path, notes=((round(float(x), 4), y),)))
+    scn = write_scenario(tmp_path, cfg, '''
+[[step]]
+name = "wait"
+mode = "teleop"
+duration = 0.3
+''')
+    report = asyncio.run(run_scenario(load_scenario_text(scn.read_text(), scn), tmp_path / "out"))
+    assert report.error is None, report.summary()
+    notes = json.loads((tmp_path / "out" / "report.json").read_text())["notes"]
+    assert sum("UNCALIBRATED" in n and "soft NOTE" in n for n in notes) == 1, notes
+
+
+@pytest.mark.skipif(bool(os.environ.get("CI")), reason="timing is only meaningful on a quiet machine")
+def test_what_a_soft_note_costs(tmp_path):
+    """Review finding 3: wall seconds per simulated second on the wing world with two NOTEs, idle and pushed at 2 V,
+    with 0, 1 and 2 soft (the least of 3 runs of 1 s). Printed, not a gate (F13): the numbers in spec D8's cost and
+    docs/test-range.md. Skipped on CI."""
+    x, y = WING_NOTE
+    out = {}
+    for volts, label in ((0.0, "idle"), (2.0, "pushed")):
+        for n in (0, 1, 2):
+            w = wing_world(tmp_path / f"{label}{n}", notes=((x, y - 0.2), (x, y + 0.2)))
+            pool, balls = w.test_range.soft, w.test_range.balls
+            for k, s in enumerate(np.flatnonzero(balls.field).tolist()):
+                want, yy = (0.21, (y - 0.2, y + 0.2)[k]) if k < n else (0.9, y + 2.0)
+                for xx in np.linspace(w.robot_pose()[0] + 1.2, w.robot_pose()[0], 1201):
+                    balls.put(s, (float(xx), yy, balls.rest_z_of(s)), BALL_BITS, quat=balls.rest_quat(s))
+                    mujoco.mj_forward(w.model, w.data)
+                    if pool.distances(np.array([s]))[0] <= want:
+                        break
+            hal = HalState()
+            for _ in range(300):
+                w.step(hal)
+            drive(hal, volts)
+            best = math.inf
+            for _ in range(3):
+                t0 = time.perf_counter()
+                for _ in range(1000):
+                    w.step(hal)
+                best = min(best, time.perf_counter() - t0)
+            out[f"{label} {n} soft"] = best
+    print({k: round(v, 3) for k, v in out.items()})

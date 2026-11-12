@@ -167,7 +167,8 @@ Each one gives what was decided, why, and its cost if wrong.
 - **D8. In the world: rigid at rest and in flight, soft near the robot.** A piece kind with `soft = true` (the
   `2024-note` preset sets it) is rigid as it is today until it comes near the robot.
   - **Turning soft:** a NOTE is swapped for a soft one when its center is within `SOFT_REACH` (choice: 0.25 m) of a
-    colliding robot geom.
+    colliding robot geom, or is predicted to be within it after the next step (its distance less its closing speed
+    times the timestep; Task 6 review, the owner's request: it guards a timestep above today's 1 ms limit).
   - **The soft NOTE:** a ring of 16 capsule segments joined by ball joints. This is the soft-note spike's candidate (b).
   - **Its numbers come from a rule, not a fit at build time** (builder check). The spike fitted the ring once, at its
     "soft" and "firm" foams. The world scales from that fit:
@@ -190,14 +191,18 @@ Each one gives what was decided, why, and its cost if wrong.
     and the view and replays skip bodies parked there. A viewer sees one NOTE that bends, never two.
   - The rigid stand-in shapes stay as they are, so balls, discs and NOTEs far from a robot give today's numbers.
   - *Why:* the spike's flex can't go in the world (10 NOTEs: 8.5 s per simulated second, and even one parked flex
-    slows the scene 8×). The capsule ring stays on `implicitfast` at 1 ms, costs about 0.06 s per simulated second
-    for each soft NOTE, and every soft candidate pulled the NOTE in at both axle heights, where the rigid stand-ins
-    flipped.
+    slows the scene 8×). The capsule ring stays on `implicitfast` at 1 ms, and every soft candidate pulled the NOTE
+    in at both axle heights, where the rigid stand-ins flipped.
   - *Cost:*
     - The ring's squash is a MuJoCo soft contact, scaled by mass. It is good for "is it picked up, and where does it
       go", not for forces or exit speeds.
     - The swap is new machinery in `testrange/balls.py`, which assumes every slot is a free joint (M–L).
     - The 0.25 m reach and the 0.25 s are choices.
+    - Measured (Task 6 review fixes, the 2024 wing world, wall seconds per simulated second, best of 3 on the
+      development machine): idle with 0, 1 and 2 soft NOTEs 0.167, 0.205 and 0.155 (a resting ring sleeps); with the
+      robot pushing them at 2 V, 0.172, 0.539 and 0.692, against 0.133 for the two pushed rigid. So a pushed soft NOTE
+      adds about 0.3 s per simulated second (the spike's 0.06 was one ring alone, at rest): two in front of a robot
+      still run faster than real time here, but a slower computer, or a Phoenix 6 robot in real time, may not.
 
 - **D9. On the bench: a flex NOTE, opt-in, marked experimental.** A bench piece with `flex = true` is a tetrahedral
   flex torus on MuJoCo's `discrete` integrator with Newton, at 0.5 ms. Its mesh is the spike's 16×6.

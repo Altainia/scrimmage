@@ -185,6 +185,8 @@ def _world_geoms(world, d, root: int, ms, meshes: list[dict], remap: dict[int, i
     geom_mover = {mv.id: i for i, mv in enumerate(ms) if mv.kind == "geom"}
     layout = world.parts.layout if world.parts is not None else None
     probes = {c.probe for c in layout.chains.values()} if layout is not None else set()   # a chain's: never drawn
+    pool = getattr(getattr(world, "test_range", None), "soft", None)
+    hidden = pool.hidden if pool is not None else {}    # a soft NOTE's stand-in: drawn with its own alpha (movers park it)
     out = []
     for g in range(m.ngeom):
         if int(m.body_rootid[m.geom_bodyid[g]]) == root or g in probes:
@@ -212,6 +214,8 @@ def _world_geoms(world, d, root: int, ms, meshes: list[dict], remap: dict[int, i
         geom = {"name": mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or "", "type": kind, "size": size,
                 "pos": [float(v) for v in d.geom_xpos[g]], "quat": _quat(d.geom_xmat[g]),
                 "rgba": [float(v) for v in m.geom_rgba[g]], "mover": mover, "lpos": lpos, "lquat": lquat}
+        if g in hidden:
+            geom["rgba"][3] = hidden[g]
         if idx is not None:
             geom["mesh"] = idx
         out.append(geom)

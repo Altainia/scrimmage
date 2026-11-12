@@ -169,13 +169,17 @@ What the spec leaves open, decided here so each task can cite it. Each gives the
 - **R12, which NOTEs may turn soft.** Only a slot that is in play (`field`), of a `soft` kind, and no longer on
   LAUNCHED_BITS (`Balls._full_bits_at[i]` is infinite). A NOTE held in the robot, or one just launched and still
   clearing its robot, stays rigid. The distance is from its center to each colliding robot geom's oriented box
-  (`geom_aabb` in the geom's frame). A slot that leaves play (picked up, scored, out) releases its ring at once.
+  (`geom_aabb` in the geom's frame); it turns soft within SOFT_REACH, or predicted within it after the next step (the
+  distance less its closing speed times the timestep: the Task 6 review's owner request). A slot that leaves play
+  (picked up, scored, out) releases its ring at once.
   *Cost:* none. This keeps every 2024 shot as it is.
 - **R13, the swap back lands on the carpet.** The stand-in takes the ring's CoM, its Kabsch rotation, its momentum
   and its spin from angular momentum. If its rigid shape at that pose would reach below the carpet, it is raised to
   rest on it, and the vertical velocity is clipped to ≥ 0. *Why:* a ring squashed on the carpet has its CoM up to
-  ~14 mm low (spike drop squash), and a rigid ring placed there would be thrown up. *Cost:* up to 14 mm of lift at
-  the swap.
+  ~14 mm low (spike drop squash), and a rigid ring placed there would be thrown up. A stand-in that would then
+  overlap another colliding geom (a wall, an element, a piece) by more than 1 mm stays soft until it is clear
+  (`mj_geomDistance`; Task 6 review). *Cost:* up to 14 mm of lift at the swap, and a NOTE pinned against a wall stays
+  soft (and costs its ring) while it is pinned.
 - **R14, soft key limits.** `soft = true` is for a `shape = "ring"` kind only. On a soft kind, `stiffness` must lie in
   `SOFT_STIFFNESS_RANGE = (1000.0, 20000.0)  # choice: half to 10x the preset, both ends tested stable at 1 ms`.
   `restitution` must lie in (0, 1). It is refused on a ball or disc kind, whose restitution is its preset's.

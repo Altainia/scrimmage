@@ -150,7 +150,10 @@ def add_ring(spec: mujoco.MjSpec, name: str, kind: PieceKind, pos, bits: dict) -
     c0 = frame @ np.array([radius_c * math.cos(th), radius_c * math.sin(th), 0.0])
     rel_pos = [d.half + d.half * math.cos(dth), d.half * math.sin(dth), 0.0]
     rel_quat = list(_quat_of(_rz(dth)))
-    contact = {"condim": 6, "friction": [kind.friction, *BALL_FRICTION[1:]], "solref": [-p.contact_k, -p.contact_b],
+    # condim 3 (choice): sliding friction only; a capsule segment's own rolling and twisting friction do nothing for
+    # the ring (it bends at its joints), and condim 6 cost a pushed ring twice the solver rows. The squeeze, drop and
+    # damping fits are the same at either (tests/test_range_soft.py)
+    contact = {"condim": 3, "friction": [kind.friction, *BALL_FRICTION[1:]], "solref": [-p.contact_k, -p.contact_b],
                "solimp": list(SOFT_SOLIMP), "solmix": RIGID_SOLMIX}
     rgba = [*piece_color(kind), 1.0]
     parent = spec.worldbody
@@ -393,6 +396,9 @@ class ParkedRings:
 
 # ------------------------------------------------------------------------------------------------ the swap (R11-R13)
 
+OVERLAP_TOL = 0.001  # choice: m a swap back may leave the rigid NOTE inside a field geom (R13's carpet test's 1 mm)
+
+
 class SoftPool:
     """The swap between a soft kind's rigid NOTEs (Balls' slots) and the pool's rings (spec D8, rulings R11-R13).
 
@@ -401,17 +407,26 @@ class SoftPool:
       rigid. That is a stated deviation from D8's "or when the shooter launches it": a launched NOTE is never soft, so
       it has nothing to turn back from.
     - Turning soft: at the first step its center is within SOFT_REACH of a colliding robot geom's oriented box
-      (geom_aabb in the geom's frame, where MuJoCo last placed it), while a ring of its kind is free. The ring takes
-      the stand-in's pose and momentum; its spin is set from the stand-in's angular momentum (the ring's inertia is a
-      few percent below the rigid NOTE's, so the angular momentum is kept and the spin rate moves by that much).
-    - While soft (R11) the slot stays `field` with PARKED_BITS: after every step, before Balls.after_step, it takes its
-      ring's center, rotation and velocity (shadow()), so goals, the ledger, the ball log, the ball path's intake and
-      every contact reader (the ring's capsules map to the slot in Balls.ball_of_geom) see one piece. It feels no
-      flight force and no rolling resistance. The live view draws it parked (drawn_parked()).
+      (geom_aabb in the geom's frame, where MuJoCo last placed it), or is predicted to be within it after the next
+      step (its distance less its closing speed toward that box times the timestep), while a ring of its kind is free.
+      The prediction guards a coarser timestep: a range refuses one above 0.001 s today (build.MAX_TIMESTEP), where a
+      NOTE first touches the bumper at a center distance of about 0.18 m, so only one closing faster than about 73 m/s
+      could pass SOFT_REACH and that in one step. At 5 ms the robot's geom poses lag by a step, at most 5 mm at 1 m/s,
+      well inside that 73 mm window, so no other term is needed.
+      The ring takes the stand-in's pose and momentum; its spin is set from the stand-in's angular momentum (the
+      ring's inertia is a few percent below the rigid NOTE's, so the angular momentum is kept and the spin rate moves
+      by that much).
+    - While soft (R11) the slot stays `field` with PARKED_BITS and its geoms invisible (alpha 0, so pictures and
+      sensor rays see the ring alone): after every step, before Balls.after_step, it takes its ring's center, rotation
+      and velocity (shadow()), so goals, the ledger, the ball log, the ball path's intake and every contact reader
+      (the ring's capsules map to the slot in Balls.ball_of_geom) see one piece. It feels no flight force and no
+      rolling resistance. The live view draws it parked (drawn_parked()).
     - Turning rigid again (R13): once its center has been more than SOFT_REACH from every robot geom for SOFT_LINGER,
       the stand-in takes the ring's center, rotation, momentum and its spin from the ring's angular momentum; if its
       rigid shape would reach below the carpet there, it is raised to rest on it and its vertical velocity clipped to
-      0 or more. A slot that leaves play (picked up, scored, out) releases its ring at once.
+      0 or more. If it would then overlap any other colliding geom (a wall, a field element, another piece) by more
+      than OVERLAP_TOL (mj_geomDistance), it stays soft until it is clear. A slot that leaves play (picked up, scored,
+      out) releases its ring at once.
     - A full pool: a NOTE that comes near while every ring of its kind is in use stays rigid, noted once per reset.
     """
 
@@ -422,11 +437,13 @@ class SoftPool:
         self.kinds = balls.kinds
         self.soft_slot = np.isin(balls.kind, list(dict.fromkeys(self.ring_kind)))      # slots of a soft kind
         geom_body = model.geom_bodyid
-        g = np.flatnonzero((model.body_rootid[geom_body] == robot_root)
-                           & ((model.geom_contype != 0) | (model.geom_conaffinity != 0)))
+        robot = model.body_rootid[geom_body] == robot_root
+        g = np.flatnonzero(robot & ((model.geom_contype != 0) | (model.geom_conaffinity != 0)))
+        self._robot_root = int(robot_root)
         self._robot_geoms = g
         self._aabb_c, self._aabb_h = model.geom_aabb[g, :3].copy(), model.geom_aabb[g, 3:].copy()
         self._rbound = model.geom_rbound[g].copy()
+        self._others = np.flatnonzero(~robot)          # what a swap back may overlap (filtered by its bits then)
         self._dt = float(model.opt.timestep)
         # each slot's rigid inertia about its center of mass, in its body frame (body_iquat turns the diagonal)
         self._ipos = model.body_ipos[balls.bodies].copy()
@@ -438,15 +455,18 @@ class SoftPool:
             self._inertia[i] = r @ np.diag(model.body_inertia[b]) @ r.T
         self._names = list(balls._geom_names)       # the contact names before any swap
         self._slot_of = [-1] * len(self.parked.rings)    # ring -> its slot, -1 free
+        self.hidden: dict[int, float] = {}          # a soft slot's geom -> its own alpha, while it is hidden
+        self._last = [None] * len(self.parked.rings)    # each ring in use: its last shadow (center, quat)
+        self._res, self._fromto = np.zeros(6), np.zeros(6)
         self.reset()
 
     def reset(self) -> None:
-        """Every ring parked and free, every slot rigid, the notes cleared (World.reset, via RangeRuntime.reset)."""
+        """Every ring parked and free, every slot rigid and drawn, the notes cleared (World.reset, via
+        RangeRuntime.reset)."""
         for k, s in enumerate(self._slot_of):
             if s >= 0:
-                self._unmap(k)
+                self._release(k)
             self.parked.park(k)
-        self._slot_of = [-1] * len(self.parked.rings)
         self._far: dict[int, float | None] = {}     # slot in use -> when its center went out of reach, None: in it
         self.balls.soft[:] = False
         self.swaps = 0
@@ -467,8 +487,9 @@ class SoftPool:
         """The full pool's note (once per reset) and, for each kind that turned soft, its uncalibrated numbers."""
         out = []
         if self._full_noted:
-            out.append(i18n.t("a third NOTE came near the robot while {count} were soft; it stayed rigid (the soft "
-                              "pool holds {count})", lang=lang, count=POOL_SIZE))
+            out.append(i18n.tn("a NOTE came near the robot while the soft pool's {count} NOTE was in use; it stayed "
+                               "rigid", "a NOTE came near the robot while all {count} soft NOTEs were in use; it "
+                               "stayed rigid", POOL_SIZE, lang=lang))
         for name in self._swapped_kinds:
             kind = self.kinds[name]
             out.append(i18n.t("soft NOTE: its stiffness ({stiffness} N/m) and restitution ({restitution}) are "
@@ -480,41 +501,53 @@ class SoftPool:
 
     def shadow(self) -> None:
         """Each soft slot takes its ring's center, rotation and velocity (read_rigid, no spin: the stand-in touches
-        nothing, so its spin is left at zero)."""
+        nothing, so its spin is left at zero). A ring asleep hasn't moved: its stand-in is put back where it was, at
+        rest, without reading the ring again."""
         b, d = self.balls, self.data
+        asleep = d.tree_asleep
         for k, s in enumerate(self._slot_of):
             if s < 0:
                 continue
-            c, quat, vc, _ = self.parked.rings[k].read(d, spin=False)
-            b._qpos[s, :3] = c - _mat(quat) @ self._ipos[s]
+            ring = self.parked.rings[k]
+            if asleep[ring.tree] >= 0 and self._last[k] is not None:
+                pos, quat = self._last[k]
+                b._qpos[s, :3], b._qpos[s, 3:] = pos, quat
+                b._qvel[s] = 0.0
+                continue
+            c, quat, vc, _ = ring.read(d, spin=False)
+            pos = c - _mat(quat) @ self._ipos[s]
+            b._qpos[s, :3] = pos
             b._qpos[s, 3:] = quat
             b._qvel[s, :3] = vc
             b._qvel[s, 3:] = 0.0
+            self._last[k] = (pos, quat)
 
     def update(self) -> None:
         """After the step's ledger work: release the rings of slots out of play, swap back the rings out of reach for
-        SOFT_LINGER, swap in the eligible slots within SOFT_REACH while a ring of their kind is free."""
+        SOFT_LINGER (and clear of the field), swap in the eligible slots within SOFT_REACH, or predicted within it
+        after the next step, while a ring of their kind is free."""
         b = self.balls
         for k, s in enumerate(self._slot_of):
             if s >= 0 and not b.field[s]:
                 self._release(k)
         used = [s for s in self._slot_of if s >= 0]
         eligible = np.flatnonzero(b.field & self.soft_slot & ~b.soft & np.isinf(b._full_bits_at))
-        if not used and not len(eligible):
+        if used:
+            now = float(self.data.time)
+            for s, dd in zip(used, self.distances(np.array(used, dtype=int)).tolist()):
+                if dd <= SOFT_REACH:
+                    self._far[s] = None
+                    continue
+                since = self._far[s]
+                if since is None:
+                    self._far[s] = since = now
+                if now - since >= SOFT_LINGER - 0.5 * self._dt:
+                    self._swap_back(self._slot_of.index(s))
+        if not len(eligible):
             return
-        slots = np.concatenate([np.array(used, dtype=int), eligible])
-        dist = self.distances(slots)
-        now = float(self.data.time)
-        for s, dd in zip(used, dist[:len(used)].tolist()):
-            if dd <= SOFT_REACH:
-                self._far[s] = None
-                continue
-            since = self._far[s]
-            if since is None:
-                self._far[s] = since = now
-            if now - since >= SOFT_LINGER - 0.5 * self._dt:
-                self._swap_back(self._slot_of.index(s))
-        near = [(dd, int(s)) for s, dd in zip(eligible.tolist(), dist[len(used):].tolist()) if dd <= SOFT_REACH]
+        dist, closing = self.distances(eligible, closing=True)
+        pred = dist - np.maximum(closing, 0.0) * self._dt
+        near = [(p, int(s)) for s, p in zip(eligible.tolist(), pred.tolist()) if p <= SOFT_REACH]
         for _, s in sorted(near):
             kind = str(b.kind[s])
             free = [k for k, f in enumerate(self.parked.free) if f and self.ring_kind[k] == kind]
@@ -523,26 +556,54 @@ class SoftPool:
             else:
                 self._full_noted = True
 
-    def distances(self, slots: np.ndarray) -> np.ndarray:
+    def distances(self, slots: np.ndarray, closing: bool = False):
         """(k,): each slot's center's distance to the nearest colliding robot geom's oriented box (geom_aabb in the
         geom's frame, as MuJoCo last placed it); inf for one beyond the robot's bounding box by more than SOFT_REACH
-        (not worked out)."""
-        d, g = self.data, self._robot_geoms
+        (not worked out). With `closing`, also (k,) each one's closing speed toward that box's nearest point (the
+        robot's point moving with its geom, from MuJoCo's velocities at the step's start; 0 where the distance is
+        inf), and the bounding-box filter is widened by what the NOTE and the robot can move in a step."""
+        d, m, g = self.data, self.model, self._robot_geoms
         out = np.full(len(slots), np.inf)
+        speed = np.zeros(len(slots))
         if not len(slots) or not len(g):
-            return out
+            return (out, speed) if closing else out
         c = self.balls._qpos[slots, :3]
         xpos = d.geom_xpos[g]
         lo, hi = (xpos - self._rbound[:, None]).min(0), (xpos + self._rbound[:, None]).max(0)
         gap = np.maximum(np.maximum(lo - c, c - hi), 0.0)
-        near = np.flatnonzero(np.sqrt((gap * gap).sum(1)) <= SOFT_REACH)
+        reach = np.full(len(slots), SOFT_REACH)
+        if closing:
+            res = self._res
+            mujoco.mj_objectVelocity(m, d, mujoco.mjtObj.mjOBJ_BODY, self._robot_root, res, 0)
+            v_robot = float(np.linalg.norm(res[3:])) + float(np.linalg.norm(res[:3])) * 0.5 * float(
+                np.linalg.norm(hi - lo))
+            v_note = np.sqrt((self.balls._qvel[slots, :3] ** 2).sum(1))
+            reach = reach + (v_note + v_robot) * self._dt
+        near = np.flatnonzero(np.sqrt((gap * gap).sum(1)) <= reach)
         if not len(near):
-            return out
+            return (out, speed) if closing else out
+        mats = d.geom_xmat[g].reshape(-1, 3, 3)
         rel = c[near][:, None, :] - xpos[None]                                   # (k, G, 3)
-        local = np.einsum("kgi,gij->kgj", rel, d.geom_xmat[g].reshape(-1, 3, 3)) - self._aabb_c
+        local = np.einsum("kgi,gij->kgj", rel, mats) - self._aabb_c
         o = np.maximum(np.abs(local) - self._aabb_h, 0.0)
-        out[near] = np.sqrt((o * o).sum(2)).min(1)
-        return out
+        each = np.sqrt((o * o).sum(2))
+        out[near] = each.min(1)
+        if not closing:
+            return out
+        res = self._res
+        for row, k in enumerate(near.tolist()):
+            gi = int(each[row].argmin())
+            o_vec = np.sign(local[row, gi]) * o[row, gi]                # center less the box's nearest point, local
+            length = float(np.linalg.norm(o_vec))
+            if length == 0.0:                       # inside the box: distance 0, it swaps anyway
+                continue
+            rot, geom = mats[gi], int(g[gi])
+            n = rot @ o_vec / length
+            p = c[k] - rot @ o_vec                  # the box's nearest point, in the world
+            mujoco.mj_objectVelocity(m, d, mujoco.mjtObj.mjOBJ_GEOM, geom, res, 0)
+            v_p = res[3:] + np.cross(res[:3], p - xpos[gi])
+            speed[k] = -float((self.balls._qvel[slots[k], :3] - v_p) @ n)
+        return out, speed
 
     # ---- the swaps --------------------------------------------------------------------------------------------------
 
@@ -561,8 +622,8 @@ class SoftPool:
             b._geom_names[g] = self._names[g]
 
     def _swap_in(self, s: int, k: int) -> None:
-        """Slot s's NOTE into ring k: its pose and momentum, its angular momentum kept."""
-        b, d, ring = self.balls, self.data, self.parked.rings[k]
+        """Slot s's NOTE into ring k: its pose and momentum, its angular momentum kept; its own geoms hidden."""
+        b, d, ring, m = self.balls, self.data, self.parked.rings[k], self.model
         quat = b._qpos[s, 3:].copy()
         r = _mat(quat)
         arm = r @ self._ipos[s]
@@ -574,9 +635,13 @@ class SoftPool:
         self.parked.free[k] = False
         self.parked.bits(k, BALL_BITS)
         b._bits(s, PARKED_BITS)
+        geoms = b._slot_geoms[s]
+        self.hidden.update(zip(geoms.tolist(), m.geom_rgba[geoms, 3].tolist()))
+        m.geom_rgba[geoms, 3] = 0.0             # invisible: not drawn, and mj_ray passes it by
         b._xfrc[s] = 0.0
         b.soft[s] = True
         self._slot_of[k] = s
+        self._last[k] = None
         self._far[s] = None
         self._map(k, s)
         self.swaps += 1
@@ -585,7 +650,8 @@ class SoftPool:
             self._swapped_kinds.append(kind)
 
     def _swap_back(self, k: int) -> None:
-        """Ring k's NOTE rigid again (R13): its center, rotation, momentum and angular momentum, set on the carpet."""
+        """Ring k's NOTE rigid again (R13): its center, rotation, momentum and angular momentum, set on the carpet;
+        not while it would overlap another geom (it stays soft and is tried again next step)."""
         b, d, ring = self.balls, self.data, self.parked.rings[k]
         s = self._slot_of[k]
         c, quat, vc, momentum = ring.momentum(d)
@@ -598,6 +664,8 @@ class SoftPool:
             c = c + np.array([0.0, 0.0, -low])
             vc[2] = max(float(vc[2]), 0.0)
         arm = r @ self._ipos[s]
+        if not self._clear(s, k, c - arm, r):
+            return
         b._qpos[s, :3] = c - arm
         b._qpos[s, 3:] = quat
         b._qvel[s, :3] = vc - np.cross(w, arm)
@@ -605,14 +673,48 @@ class SoftPool:
         b._bits(s, BALL_BITS)
         self._release(k)
 
+    def overlap(self, s: int, k: int, pos, rot: np.ndarray) -> float:
+        """The deepest overlap (m, 0 for none) of slot s's rigid geoms, its body at `pos` turned by `rot`, with any
+        other colliding geom near it (not the robot's, not ring k's): mj_geomDistance on their poses now."""
+        m, d, b = self.model, self.data, self.balls
+        geoms = b._slot_geoms[s]
+        others = self._others
+        others = others[((m.geom_contype[others] != 0) | (m.geom_conaffinity[others] != 0))
+                        & (m.geom_bodyid[others] != b.bodies[s])]
+        others = others[~np.isin(others, self.parked.rings[k].geoms)]
+        reach = float(b.radius[s])
+        far = np.linalg.norm(d.geom_xpos[others] - np.asarray(pos), axis=1) - m.geom_rbound[others] > reach
+        others = others[~far | (m.geom_rbound[others] == 0.0)]      # rbound 0: a plane, unbounded
+        if not len(others):
+            return 0.0
+        saved = d.geom_xpos[geoms].copy(), d.geom_xmat[geoms].copy()
+        q = np.zeros(9)
+        for g in geoms.tolist():                # the stand-in's geoms at the trial pose
+            mujoco.mju_quat2Mat(q, m.geom_quat[g])
+            d.geom_xpos[g] = np.asarray(pos) + rot @ m.geom_pos[g]
+            d.geom_xmat[g] = (rot @ q.reshape(3, 3)).ravel()
+        deepest = 0.0
+        for g in geoms.tolist():
+            for o in others.tolist():
+                deepest = min(deepest, mujoco.mj_geomDistance(m, d, g, o, OVERLAP_TOL, self._fromto))
+        d.geom_xpos[geoms], d.geom_xmat[geoms] = saved
+        return -deepest
+
+    def _clear(self, s: int, k: int, pos, rot: np.ndarray) -> bool:
+        return self.overlap(s, k, pos, rot) <= OVERLAP_TOL
+
     def _release(self, k: int) -> None:
-        """Ring k parked and free; its slot rigid (whatever took it out of play has parked it)."""
+        """Ring k parked and free; its slot rigid and drawn again (whatever took it out of play has parked it)."""
         s = self._slot_of[k]
+        m = self.model
+        geoms = self.balls._slot_geoms[s]
+        m.geom_rgba[geoms, 3] = [self.hidden.pop(g) for g in geoms.tolist()]
         self._unmap(k)
         self.parked.park(k)
         self.balls.soft[s] = False
         self._far.pop(s, None)
         self._slot_of[k] = -1
+        self._last[k] = None
 
 
 def _mat(quat) -> np.ndarray:
