@@ -32,7 +32,7 @@ SPEEDS = (2, 4, 6, 8)   # source: K6-R11: hits up to 8 m/s, a launched NOTE's wo
 TACO_GAPS = (0.12, 0.10, 0.08, 0.06)  # source: K6-R11: plates closing to 120 mm down to 60 mm
 LIFTS = (0.3, 1.0)      # source: K6-R11: the taco's lift on each far segment (N)
 PULLS = (0, 5, 10, 20)  # source: K6-R11: a roller's drag on the NOTE (N)
-SQUASH_MAX = 0.020      # choice: K6-R11; measured 18.3 mm at 200 N dragged with K6-R1
+SQUASH_MAX = 0.020      # choice: K6-R11; 200 N dragged at 1.0 r: 18.3 mm at 2000 N/m, 20.3 mm at 1000 N/m
 DEPTH_MAX = 0.024       # choice: 3 mm short of the 1/8 in flip at r + T/2; measured 23.1 mm at 1000 N/m, 8 m/s
 ENERGY_SLACK = 1.001    # choice: K6-P4; a hit never adds energy, within the integrator's rounding
 SELF_MAX = 0.020        # choice: K6-R11; measured 17.3 mm with K6-R1
@@ -41,17 +41,20 @@ SQUEEZE_GAPS = (1.5, 1.0, 0.6, 0.4)  # source: K6-R1's table: 25 %, 50 %, 70 % a
 SQUEEZE_STIFFNESSES = (1000.0, 2000.0, 6000.0, 20000.0)  # source: K6-R1's table, the range and the spike's 6000
 SQUEEZE_DEPTH = 0.25 * IN  # source: soft_scenes.SQUEEZE_GAP: each side of the 2 in NOTE squeezed 0.25 in at 1.5 in
 CALIBRATION_TOL = 0.02  # choice: K6-R11
-
 # today's failing cases and the K6 task that fixes each (the value is the xfail's reason). Task 5 (K6-R2's pairs) owns
 # every priority-1 case: the scene calls soft.pair_rings, which Task 5 adds. Task 3 (K6-R1's ramp) owns the rest, and
-# the 8 m/s energy gain at 20000 N/m at either priority. Each one passes with the K6 spike's patch at 1.0 r, except
-# the energy gain and 200 N dragged at 1000 N/m (20.3 mm there: Task 3 takes the spec's 0.9 r fallback if its ramp
-# still leaves 20 mm).
+# the 8 m/s energy gain at 20000 N/m (its priority-1 copies stay Task 5's: they need both). Each one passes with the
+# K6 spike's patch at 1.0 r, except the energy gain, 200 N dragged at 1000 N/m (20.3 mm there: Task 3 takes the
+# spec's 0.9 r fallback if its ramp still leaves 20 mm) and the priority-1 slab at 20 N, 2000 N/m.
 TASK3, TASK5 = "K6 Task 3", "K6 Task 5"
 TASK3_PRESS = ("K6 Task 3: 20.3 mm at the spike's 1.0 r patch; the spec's 0.9 r fallback if Task 3's ramp still "
                "leaves 20 mm")
 TASK3_GAIN = ("K6 Task 3: a 6.8 % energy gain on the first step after the launch, from the carpet contact; the same "
               "with no wall, gone at 7 m/s or at a 0.5 ms step")
+TASK5_GAIN = ("K6 Task 5: needs both Task 3's fix for the launch's energy gain (see the priority-0 copy) and Task 5's "
+              "soft.pair_rings (AttributeError until then); Task 5 removes this entry")
+TASK5_SLAB = ("K6 Task 5: 1 segment still under at the end with the spike's patch; if still red after pair_rings, "
+              "Task 5 strengthens the fix, don't loosen under_end")
 FIXED_BY: dict[str, str] = {
     **{f"{t * 1000:g}mm-{v}mps-prio1-{s:g}": TASK5 for t in WALLS for v in SPEEDS for s in STIFFNESSES},
     **{f"prio1-{pull}N-{s:g}": TASK5 for pull in PULLS for s in STIFFNESSES},
@@ -66,8 +69,10 @@ FIXED_BY: dict[str, str] = {
     # taco and slab
     **dict.fromkeys(["60mm-1N-1000", "60mm-1N-2000", "prio0-10N-1000"], TASK3),
     **dict.fromkeys(["3.175mm-200N-dragged-1000", "6mm-200N-dragged-1000"], TASK3_PRESS),
-    # the launch's energy gain at 20000 N/m, against any wall and at either priority (overrides Task 5's entries)
-    **{f"{t * 1000:g}mm-8mps-prio{p}-20000": TASK3_GAIN for t in WALLS for p in (0, 1)},
+    # the launch's energy gain at 20000 N/m, against any wall: Task 3's at priority 0, both tasks' at priority 1
+    **{f"{t * 1000:g}mm-8mps-prio0-20000": TASK3_GAIN for t in WALLS},
+    **{f"{t * 1000:g}mm-8mps-prio1-20000": TASK5_GAIN for t in WALLS},
+    "prio1-20N-2000": TASK5_SLAB,
 }
 
 

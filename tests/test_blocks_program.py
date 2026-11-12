@@ -259,6 +259,9 @@ def test_the_preamble_is_the_top_comments():
     assert P.preamble(text) == "# what this tests\n#\n# and why\n"
     assert P.preamble('[test]\nrobot = "r.toml"\n') == ""
     assert P.dumps(P.loads(text, PATH), P.preamble(text)).startswith("# what this tests\n#\n# and why\n[test]\n")
+    assert P.preamble(text.replace("\n", "\r\n")) == "# what this tests\n#\n# and why\n"     # CRLF
+    assert P.preamble("# only\n# comments\n\n") == "# only\n# comments\n"
+    assert P.preamble("# a \u2028 b\n[test]\n") == "# a \u2028 b\n"       # TOML allows it in a comment: not a break
 
 
 @pytest.mark.parametrize("bad, words", [

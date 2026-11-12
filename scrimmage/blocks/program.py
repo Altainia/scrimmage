@@ -777,7 +777,7 @@ def preamble(text: str) -> str:
     kept, trailing ones dropped), each ending in a newline: what dumps puts back at the top, so a save from the Test
     tab keeps a student's description of the test. Comments further down aren't kept."""
     lines = []
-    for line in text.splitlines():
+    for line in text.replace("\r\n", "\n").split("\n"):
         s = line.strip()
         if s and not s.startswith("#"):
             break

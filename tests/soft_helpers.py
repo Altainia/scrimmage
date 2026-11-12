@@ -94,7 +94,8 @@ def finite_now(d: mujoco.MjData) -> bool:
 
 def energy(m: mujoco.MjModel, d: mujoco.MjData, ring: str = "n") -> float:
     """The ring's energy (J): each segment's kinetic energy (its center's translation and its spin, from the ring's
-    own kinematics, Ring._segments) plus its weight times its center's height."""
+    own kinematics, Ring._segments) plus its weight times its center's height. It leaves out the joint springs'
+    potential energy: it is within 0.2 to 2 % of MuJoCo's own total (mjENBL_ENERGY), which counts them."""
     r = soft.ring_view(m, ring)
     com, rot, v, w = r._segments(d.qpos[r.q], d.qvel[r.v])
     wl = np.einsum("nji,nj->ni", rot @ r._iframe, w)       # spin in each segment's principal frame
@@ -195,7 +196,7 @@ def slam(kind: PieceKind, v: float, thickness: float, priority: int = 0, pairs: 
     """The ring settled flat on the carpet, then sent sliding at `v` (m/s) into a fixed wall `thickness` thick (its
     near face at WALL_X), for SLAM_STEPS. With `pairs` the wall is on its own body, `wallb` (excluding the world body
     would drop the carpet too), and the ring meets it through soft.pair_rings. Returns `deepest` (m, the deepest
-    contact on the wall), `through` (a segment's center past the wall's far face at the end), `vmax` (m/s, the
+    contact on the wall), `through` (a segment's center past the wall's far face at any time), `vmax` (m/s, the
     fastest segment), `finite` and `energy_gain` (the ring's highest energy over its start)."""
     spec = _spec(gravity=True)
     _carpet(spec)
@@ -220,7 +221,7 @@ def slam(kind: PieceKind, v: float, thickness: float, priority: int = 0, pairs: 
     mujoco.mj_forward(m, d)
     wall = m.geom("wall").id
     e0 = top = energy(m, d)
-    deepest, vmax, finite = 0.0, 0.0, True
+    deepest, vmax, farthest, finite = 0.0, 0.0, -math.inf, True
     for _ in range(SLAM_STEPS):
         mujoco.mj_step(m, d)
         if not finite_now(d):
@@ -229,7 +230,8 @@ def slam(kind: PieceKind, v: float, thickness: float, priority: int = 0, pairs: 
         top = max(top, energy(m, d))
         deepest = max(deepest, _deepest_on(m, d, wall))
         vmax = max(vmax, float(ring.speeds(d).max()))
-    through = finite and bool(d.xpos[ring.bodies, 0].max() > WALL_X + thickness)
+        farthest = max(farthest, float(d.xpos[ring.bodies, 0].max()))
+    through = finite and farthest > WALL_X + thickness
     return {"deepest": deepest, "through": through, "vmax": vmax, "finite": finite,
             "energy_gain": top / e0 if finite else math.inf}
 
