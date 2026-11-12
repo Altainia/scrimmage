@@ -161,7 +161,11 @@ def test_pinch_car_leaves_near_surface_speed(pinch):
     assert [p.status for p in pinch.pieces] == ["out", "out"]
     for p in pinch.pieces:
         assert p.outlet == "shot"
-        assert 0.80 * surface <= p.speed <= 0.95 * surface
+        # about 0.81 of it: the shafts droop about 11% while they grip the car, and the wheels grip it 5 mm into
+        # their 30 mm radius (at 25 mm a wheel moves 0.83 of its surface speed, and with the droop 0.74). The floor was 0.80 when MuJoCo 4.0.0's cylinders
+        # pushed the car out at 0.86 (their edge contacts' normals were horizontal); with the right normals it is
+        # 0.81, and the wheel prism's side count moves it 0.5% (32 sides 0.80, 128 sides 0.81)
+        assert 0.75 * surface <= p.speed <= 0.95 * surface
         assert abs(p.elevation_deg) < 10 and abs(p.yaw_deg) < 2  # (gravity bends it down a few degrees by the outlet)
         assert p.tilt_deg < 10  # upright: its own z axis still within 10 degrees of up
         assert p.t_out > p.t_in

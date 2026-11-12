@@ -22,7 +22,7 @@ from ..parts.assemble import TREAD_DAMPING, TREAD_IMPEDANCE, TREAD_STIFFNESS, tr
 from ..parts.model import quat_from_rpy
 from . import cad as cadmod
 from . import flex_note
-from .cad import CadWheel
+from .cad import CadWheel, prism_wheels, wheel_prism
 from ..testrange.build import kind_geoms
 from ..testrange.pieces import ring_basis
 from .problems import Problem
@@ -245,8 +245,12 @@ def _add_shafts(spec: mujoco.MjSpec, bench: Bench, shapes: _Shapes,
         body.add_joint(name=f"shaft:{name}", type=mujoco.mjtJoint.mjJNT_HINGE, axis=[0, 0, 1])
         for w in wheels:
             mu = bench.materials[w.tread].rigid_friction
-            shapes.add(body, f"wheel:{w.name}", w.name, mujoco.mjtGeom.mjGEOM_CYLINDER, (w.diameter / 2, w.width / 2),
-                       R.T @ (np.array(w.center) - origin), (1, 0, 0, 0), mu, k_shape=TREAD_STIFFNESS)
+            gtype, extra = mujoco.mjtGeom.mjGEOM_CYLINDER, {}
+            if prism_wheels(bench.piece):
+                spec.add_mesh(name=f"wheel:{w.name}", uservert=wheel_prism(w.diameter / 2, w.width / 2))
+                gtype, extra = mujoco.mjtGeom.mjGEOM_MESH, {"meshname": f"wheel:{w.name}"}
+            shapes.add(body, f"wheel:{w.name}", w.name, gtype, (w.diameter / 2, w.width / 2),
+                       R.T @ (np.array(w.center) - origin), (1, 0, 0, 0), mu, k_shape=TREAD_STIFFNESS, **extra)
     # MuJoCo regularizes a joint equality q1 = c q2 unscaled by c (see parts/assemble.py's couplings), so each is
     # written with |c| >= 1
     for name, shaft in bench.shafts.items():
@@ -407,8 +411,8 @@ def build_bench(bench: Bench) -> Built:
             # the centroid so the body's origin is the centroid, its axes the file's, and piece.inertia (about the
             # piece's own axes) acts about the centroid. The body origin is then the point the runner spawns and tracks.
             for i in range(n_pool):
-                spec.geom(f"piece:{i}:geom").pos = list(-m.mesh_pos[0])
-            gpos[pgs[0]] -= m.mesh_pos[0]
+                spec.geom(f"piece:{i}:geom").pos = list(-m.mesh_pos[m.mesh("piece_mesh").id])
+            gpos[pgs[0]] -= m.mesh_pos[m.mesh("piece_mesh").id]
         boxes = [_aabb(m, g, gpos[g], _mat(m.geom_quat[g])) for g in pgs]  # in the piece's frame, spawned upright
         reach = np.maximum(-np.min([b[0] for b in boxes], axis=0), np.max([b[1] for b in boxes], axis=0))
         if piece.shape == "sphere":

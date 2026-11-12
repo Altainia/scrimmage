@@ -25,7 +25,7 @@ the protocol lives below WPILib.
 ## Quick start
 
 ```bash
-# needs Python 3.11 or newer (and MuJoCo 4, which pip installs)
+# needs Python 3.11 or newer (and MuJoCo 4.0.1 or a newer 4.x, which pip installs)
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[robotpy,nt]"          # mujoco, websockets, plus RobotPy for the example
 pip install ./lockstep                  # Linux: lets scrimmage drive the robot's clock
