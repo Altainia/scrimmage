@@ -18,6 +18,7 @@ from scrimmage import units
 from scrimmage.bench import flex_note as fn
 from scrimmage.bench import report
 from scrimmage.bench.build import PIECE_BITS, TIMESTEP, build_bench
+from scrimmage.bench import run as run_mod
 from scrimmage.bench.run import FlexPieces, run_bench
 from scrimmage.bench.spec import BenchError, load_bench, parse_bench
 from scrimmage.cad import fit as cad_fit
@@ -197,6 +198,9 @@ REPO = Path(__file__).resolve().parent.parent
 EXAMPLE = REPO / "examples" / "bench" / "note_pinch_flex.toml"
 GOLDEN = Path(__file__).resolve().parent / "data" / "bench_flex_golden.json"
 RANGE_DIR = Path(__file__).resolve().parent / "data" / "range_2024"
+GOLDEN_SPEED = 0.02       # choice: R15, platforms differ in the last digits
+GOLDEN_ANGLE_DEG = 0.5    # choice: an exit angle near level, so absolute (2 % of a few degrees is under 0.1)
+GOLDEN_SPIN = 0.5         # choice: rad/s, absolute: the spin is a few rad/s of contact noise about zero
 
 
 def _raw(**overrides) -> dict:
@@ -274,13 +278,15 @@ def _shot(result):
 
 
 def test_the_flex_shot_golden():
-    """note_pinch_flex.toml's shot against bench_flex_golden.json (recorded once, R15): speed and angle within 2 %,
-    spin within 0.5 rad/s. A change in MuJoCo's `discrete` integrator shows here."""
+    """note_pinch_flex.toml's shot against bench_flex_golden.json (recorded once, R15): speed within 2 %, the exit
+    angle within GOLDEN_ANGLE_DEG, spin within GOLDEN_SPIN. A change in MuJoCo's `discrete` integrator shows here.
+    Measured when recorded: a 1e-7 m/s change in the feed moves nothing; 1e-5 m/s moves the speed 0.3 %, the angle
+    0.04 degrees and the spin 0.3 rad/s, so platforms' last digits sit well inside these."""
     want = json.loads(GOLDEN.read_text(encoding="utf-8"))
     p = _shot(run_bench(load_bench(EXAMPLE)))
-    assert p.speed == pytest.approx(want["speed_m_s"], rel=0.02)
-    assert p.elevation_deg == pytest.approx(want["elevation_deg"], rel=0.02)
-    np.testing.assert_allclose(p.spin, want["spin_rad_s"], atol=0.5)
+    assert p.speed == pytest.approx(want["speed_m_s"], rel=GOLDEN_SPEED)
+    assert p.elevation_deg == pytest.approx(want["elevation_deg"], abs=GOLDEN_ANGLE_DEG)
+    np.testing.assert_allclose(p.spin, want["spin_rad_s"], atol=GOLDEN_SPIN)
 
 
 def test_the_report_marks_flex_experimental(tmp_path):
@@ -299,14 +305,66 @@ def test_the_report_marks_flex_experimental(tmp_path):
     out = report.write_results(result, tmp_path / "out")
     summary = (out / "summary.txt").read_text(encoding="utf-8")
     assert "Pieces: experimental (MuJoCo flex)" in summary and "flown as the rigid piece" in summary
-    # the hand-off: the exit pose is the flex's center and Kabsch rotation (turned: its tail sagged in the pinch),
+    # the hand-off: the exit pose is the flex's center and Kabsch rotation (a few degrees off level as it leaves),
     # and the flight is the rigid NOTE's from that state, to 1e-9
     q = np.array(p.poses[-1][1][3:7])
-    assert np.allclose(p.poses[-1][1][:3], p.path[-1][1:]) and abs(q[0]) < 0.999
-    assert math.degrees(2 * math.acos(min(1.0, abs(q[0])))) == pytest.approx(p.tilt_deg, abs=0.5)
+    assert np.allclose(p.poses[-1][1][:3], p.path[-1][1:]) and abs(q[0]) < 0.9999
+    rot = np.zeros(9)
+    mujoco.mju_quat2Mat(rot, q / np.linalg.norm(q))
+    assert math.degrees(math.acos(rot[8])) == pytest.approx(p.tilt_deg, abs=1e-6)
     rigid = replace(result, bench=replace(result.bench, piece=replace(result.bench.piece, flex=False)))
     (p1, flown), = lands
     (p2, want), = report.landings(rigid)
     assert p1 is p2 and flown.goal == want.goal in ("scored", "missed")
     for a, b in ((flown.floor, want.floor), ((flown.apex, flown.flight_time), (want.apex, want.flight_time))):
         np.testing.assert_allclose(a, b, rtol=0, atol=1e-9)
+
+
+TWO = """
+[bench]
+name = "two notes"
+author = "Jordan"
+idea = "drop one soft NOTE onto another"
+[piece]
+preset = "2024-note"
+flex = true
+[[plate]]
+name = "floor"
+center = [0.0, 0.0, -0.01]
+size = [1.0, 1.0, 0.02]
+[[inlet]]
+name = "below"
+center = [0.0, 0.0, 0.0265]
+size = [0.001, 0.001, 0.001]
+count = 1
+[[inlet]]
+name = "above"
+center = [0.25, 0.0, 0.39]
+size = [0.001, 0.001, 0.001]
+count = 1
+[run]
+duration = 1.0
+jam_time = 0.35
+"""
+
+
+def test_two_flex_notes_touching(monkeypatch):
+    """One flex NOTE dropped flat onto another's rim (0.25 m off its center, so it slides off: a flat stack makes
+    hundreds of contacts a step and takes about 20 s): no NaN and no MuJoCo warning, both come to rest (jammed;
+    `jam_time` outlasts the 0.25 s fall, so the lower one is still there when the upper lands), neither gains energy, and their contact reads the other flex's velocity (rigid_contacts' flex side)."""
+    seen = []
+    real = run_mod._Run._flex_velocity
+
+    def spy(self, c, side, f):
+        v = real(self, c, side, f)
+        seen.append((f, v.copy()))
+        return v
+
+    monkeypatch.setattr(run_mod._Run, "_flex_velocity", spy)
+    r = run_mod._Run(parse_bench(tomllib.loads(TWO), Path(".")), 60.0)
+    res = r.run()
+    assert [p.status for p in res.pieces] == ["jammed", "jammed"]
+    assert sum(w.number for w in r.d.warning) == 0
+    assert all(e.ok for e in res.energy), res.energy
+    assert {f for f, _ in seen} == {0, 1}
+    assert all(np.isfinite(v).all() for _, v in seen) and max(np.linalg.norm(v) for _, v in seen) > 0.5

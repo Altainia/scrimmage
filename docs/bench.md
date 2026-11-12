@@ -421,7 +421,7 @@ size = [0.2, 0.8, 0.8]
   0.5 ms timestep unless `[run] timestep` says otherwise; the rest of the bench uses `implicitfast`. MuJoCo itself
   describes `discrete` as new, under active development and subject to change, so a MuJoCo update may move these
   numbers (a test pins one shot, so a change is caught).
-- On the soft-note spike's pinch (1.5 in gap, 3000 and 5000 rpm), the flex leaves within 4 to 9% of the launcher
+- On the soft-note spike's pinch (1.5 in gap, 3000 and 5000 rpm), the flex leaves within 4% of the launcher
   model's pinch (`launcher/pinch.py`) fed the same squeeze.
 
 Discs (the 2013 Frisbee and an Ultra-Star preset, with their own flight) come in a later step, once the disc launcher
@@ -972,7 +972,7 @@ faster.
   model's pinch has 19 N) and it rocks about 25 mm, so the wheels slow far more (46% against the model's 4% on the
   dry run's 1.25 in pinch) and it leaves slower (7.1 m/s against the model's 9.6). Compare rigid-NOTE pinches with
   each other, not with the launcher model, or use `flex = true` ([Flex NOTE](#flex-note-experimental)), which agrees
-  with the model within 4 to 9% on a quarter squeeze. (A test keeps the rigid case as a known failure.)
+  with the model within 4% on a quarter squeeze. (A test keeps the rigid case as a known failure.)
 - **The flex NOTE is experimental**: fitted to estimates, on an integrator MuJoCo still calls new.
 
 **What is not modeled.** Parts are rigid (no bending, no breaking); the bench reports loads only. Squishy pieces are
