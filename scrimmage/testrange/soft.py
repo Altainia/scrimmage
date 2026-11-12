@@ -40,7 +40,8 @@ from dataclasses import dataclass
 import mujoco
 import numpy as np
 
-from .build import BALL_FRICTION, RIGID_SOLMIX
+from .. import i18n
+from .build import BALL_BITS, BALL_FRICTION, PARKED_BITS, RIGID_SOLMIX
 from .pieces import SOFT_SEGMENTS, PieceKind, piece_color, ring_diameters
 
 RING_SEGMENTS = SOFT_SEGMENTS  # source: soft-note spike, candidate (b)
@@ -205,6 +206,7 @@ class Ring:
     fixed transform from the one before, and its rest shape."""
 
     def __init__(self, model: mujoco.MjModel, ring: str):
+        self.name = ring
         b0 = model.body(f"{ring}.s0").id
         self.bodies = b0 + np.arange(RING_SEGMENTS)
         jnt = model.body_jntadr[self.bodies]
@@ -231,6 +233,10 @@ class Ring:
         self.rest = com - c                                     # each segment's center about the ring's
         self.p0 = self.qpos0[:3] - c                            # s0's origin about it, and its quaternion
         self.q0 = self.qpos0[3:7].copy()
+        # its inertia about its center at rest, in the NOTE's own frame (built unturned: the world's)
+        _, rot0, _, _ = self._segments(self.qpos0, None)
+        self.rest_inertia = self._angular(rot0, self.rest, None, None)[1]
+        self.geoms = model.body_geomadr[self.bodies].copy()     # one capsule per segment
 
     def _segments(self, qpos: np.ndarray, qvel: np.ndarray | None):
         """From the ring's own qpos (and qvel) rows: each segment's center of mass (n, 3), rotation (n, 3, 3), and
@@ -266,8 +272,9 @@ class Ring:
         va = qvel[:3] + np.cumsum(step, axis=0)
         return com, rot, va + _cross(w, com - anchor), w
 
-    def read(self, data: mujoco.MjData, spin: bool = True):
-        """read_rigid, for this ring; the spin only when `spin` (None otherwise)."""
+    def _state(self, data: mujoco.MjData, spin: bool):
+        """The ring's center of mass, Kabsch rotation (w x y z) and center's velocity; with `spin` also its angular
+        momentum about the center and its inertia there (world frame), else None for both."""
         com, rot, v, w = self._segments(data.qpos[self.q], data.qvel[self.v])
         c = self.m @ com / self.mass
         vc = self.m @ v / self.mass
@@ -276,13 +283,31 @@ class Ring:
         s = np.diag([1.0, 1.0, float(np.sign(np.linalg.det(vt.T @ u.T)))])
         quat = _quat_of(vt.T @ s @ u.T)
         if not spin:
-            return c, quat, vc, None
+            return c, quat, vc, None, None
+        ang, total = self._angular(rot, r, v - vc, w)
+        return c, quat, vc, ang, total
+
+    def _angular(self, rot: np.ndarray, r: np.ndarray, v_rel: np.ndarray | None, w: np.ndarray | None):
+        """The angular momentum about the center (None without velocities) and the summed inertia there, both in the
+        world frame, of segments turned by `rot` with centers `r` about the ring's."""
         frame = rot @ self._iframe
         inertia = (frame * self._idiag[:, None, :]) @ frame.transpose(0, 2, 1)     # each segment's, world frame
-        ang = self.m @ _cross(r, v - vc) + _apply(inertia, w).sum(0)
         mr = self.m[:, None] * r
         total = inertia.sum(0) + float((mr * r).sum()) * np.eye(3) - r.T @ mr       # parallel axes, summed
-        return c, quat, vc, np.linalg.solve(total, ang)
+        if v_rel is None:
+            return None, total
+        return self.m @ _cross(r, v_rel) + _apply(inertia, w).sum(0), total
+
+    def read(self, data: mujoco.MjData, spin: bool = True):
+        """read_rigid, for this ring; the spin only when `spin` (None otherwise)."""
+        c, quat, vc, ang, total = self._state(data, spin)
+        return c, quat, vc, (None if ang is None else np.linalg.solve(total, ang))
+
+    def momentum(self, data: mujoco.MjData):
+        """(center of mass, Kabsch rotation, the center's velocity, the angular momentum about the center): what a
+        swap back keeps (SoftPool)."""
+        c, quat, vc, ang, _ = self._state(data, True)
+        return c, quat, vc, ang
 
     def write(self, data: mujoco.MjData, pos, quat, vel, ang_vel) -> None:
         """write_rigid, for this ring."""
@@ -333,18 +358,264 @@ def read_rigid(model: mujoco.MjModel, data: mujoco.MjData, ring: str, spin: bool
 
 
 class ParkedRings:
-    """The pool's rings held where they were built (PARK_Z, under the field): a parked ring touches nothing, so it
-    falls; after each step each awake one is put back at rest, as a parked ball slot is (Balls.after_step). One asleep
-    was put back the step it fell asleep and hasn't moved since."""
+    """The pool's free rings held where they were built (PARK_Z, under the field): a parked ring touches nothing, so it
+    falls; after each step each awake free one is put back at rest, as a parked ball slot is (Balls.after_step). One
+    asleep was put back the step it fell asleep and hasn't moved since. A ring in use (`free` False, SoftPool) is left
+    alone."""
 
     def __init__(self, model: mujoco.MjModel, data: mujoco.MjData, rings: list[str]):
-        self.data = data
+        self.model, self.data = model, data
         self.rings = [ring_view(model, r) for r in rings]
         self.trees = np.array([r.tree for r in self.rings], dtype=int)
+        self.free = np.ones(len(self.rings), dtype=bool)
 
     def hold(self) -> None:
         d = self.data
-        for k in np.flatnonzero(d.tree_asleep[self.trees] < 0):
+        for k in np.flatnonzero(self.free & (d.tree_asleep[self.trees] < 0)):
             ring = self.rings[k]
             d.qpos[ring.q] = ring.qpos0
             d.qvel[ring.v] = 0.0
+
+    def bits(self, k: int, bits: dict) -> None:
+        """Ring k's collision bits: its capsules' and its bodies' (MuJoCo's broadphase filters bodies by them)."""
+        m, ring = self.model, self.rings[k]
+        m.geom_contype[ring.geoms] = m.body_contype[ring.bodies] = bits["contype"]
+        m.geom_conaffinity[ring.geoms] = m.body_conaffinity[ring.bodies] = bits["conaffinity"]
+
+    def park(self, k: int) -> None:
+        """Ring k back where it was built, at rest, touching nothing, and held there again."""
+        ring = self.rings[k]
+        self.data.qpos[ring.q] = ring.qpos0
+        self.data.qvel[ring.v] = 0.0
+        self.bits(k, PARKED_BITS)
+        self.free[k] = True
+
+
+# ------------------------------------------------------------------------------------------------ the swap (R11-R13)
+
+class SoftPool:
+    """The swap between a soft kind's rigid NOTEs (Balls' slots) and the pool's rings (spec D8, rulings R11-R13).
+
+    - Which may turn soft (R12): a slot in play (`field`), of a soft kind, and no longer on LAUNCHED_BITS
+      (Balls._full_bits_at infinite): a NOTE held in the robot, or one just launched and still clearing it, stays
+      rigid. That is a stated deviation from D8's "or when the shooter launches it": a launched NOTE is never soft, so
+      it has nothing to turn back from.
+    - Turning soft: at the first step its center is within SOFT_REACH of a colliding robot geom's oriented box
+      (geom_aabb in the geom's frame, where MuJoCo last placed it), while a ring of its kind is free. The ring takes
+      the stand-in's pose and momentum; its spin is set from the stand-in's angular momentum (the ring's inertia is a
+      few percent below the rigid NOTE's, so the angular momentum is kept and the spin rate moves by that much).
+    - While soft (R11) the slot stays `field` with PARKED_BITS: after every step, before Balls.after_step, it takes its
+      ring's center, rotation and velocity (shadow()), so goals, the ledger, the ball log, the ball path's intake and
+      every contact reader (the ring's capsules map to the slot in Balls.ball_of_geom) see one piece. It feels no
+      flight force and no rolling resistance. The live view draws it parked (drawn_parked()).
+    - Turning rigid again (R13): once its center has been more than SOFT_REACH from every robot geom for SOFT_LINGER,
+      the stand-in takes the ring's center, rotation, momentum and its spin from the ring's angular momentum; if its
+      rigid shape would reach below the carpet there, it is raised to rest on it and its vertical velocity clipped to
+      0 or more. A slot that leaves play (picked up, scored, out) releases its ring at once.
+    - A full pool: a NOTE that comes near while every ring of its kind is in use stays rigid, noted once per reset.
+    """
+
+    def __init__(self, model: mujoco.MjModel, data: mujoco.MjData, balls, layout, robot_root: int):
+        self.model, self.data, self.balls = model, data, balls
+        self.parked = ParkedRings(model, data, layout.soft)
+        self.ring_kind = list(layout.soft_kinds)
+        self.kinds = balls.kinds
+        self.soft_slot = np.isin(balls.kind, list(dict.fromkeys(self.ring_kind)))      # slots of a soft kind
+        geom_body = model.geom_bodyid
+        g = np.flatnonzero((model.body_rootid[geom_body] == robot_root)
+                           & ((model.geom_contype != 0) | (model.geom_conaffinity != 0)))
+        self._robot_geoms = g
+        self._aabb_c, self._aabb_h = model.geom_aabb[g, :3].copy(), model.geom_aabb[g, 3:].copy()
+        self._rbound = model.geom_rbound[g].copy()
+        self._dt = float(model.opt.timestep)
+        # each slot's rigid inertia about its center of mass, in its body frame (body_iquat turns the diagonal)
+        self._ipos = model.body_ipos[balls.bodies].copy()
+        rot = np.zeros(9)
+        self._inertia = np.zeros((balls.n, 3, 3))
+        for i, b in enumerate(balls.bodies.tolist()):
+            mujoco.mju_quat2Mat(rot, model.body_iquat[b])
+            r = rot.reshape(3, 3)
+            self._inertia[i] = r @ np.diag(model.body_inertia[b]) @ r.T
+        self._names = list(balls._geom_names)       # the contact names before any swap
+        self._slot_of = [-1] * len(self.parked.rings)    # ring -> its slot, -1 free
+        self.reset()
+
+    def reset(self) -> None:
+        """Every ring parked and free, every slot rigid, the notes cleared (World.reset, via RangeRuntime.reset)."""
+        for k, s in enumerate(self._slot_of):
+            if s >= 0:
+                self._unmap(k)
+            self.parked.park(k)
+        self._slot_of = [-1] * len(self.parked.rings)
+        self._far: dict[int, float | None] = {}     # slot in use -> when its center went out of reach, None: in it
+        self.balls.soft[:] = False
+        self.swaps = 0
+        self._full_noted = False
+        self._swapped_kinds: list[str] = []
+
+    # ---- reports ----------------------------------------------------------------------------------------------------
+
+    def in_use(self) -> dict[int, str]:
+        """Each soft slot and its ring's name."""
+        return {s: self.parked.rings[k].name for k, s in enumerate(self._slot_of) if s >= 0}
+
+    def drawn_parked(self) -> set[int]:
+        """The bodies the live view and replays draw at PARK_Z: each soft slot's stand-in, while its ring is in use."""
+        return {int(self.balls.bodies[s]) for s in self._slot_of if s >= 0}
+
+    def notes(self, lang: str | None = None) -> list[str]:
+        """The full pool's note (once per reset) and, for each kind that turned soft, its uncalibrated numbers."""
+        out = []
+        if self._full_noted:
+            out.append(i18n.t("a third NOTE came near the robot while {count} were soft; it stayed rigid (the soft "
+                              "pool holds {count})", lang=lang, count=POOL_SIZE))
+        for name in self._swapped_kinds:
+            kind = self.kinds[name]
+            out.append(i18n.t("soft NOTE: its stiffness ({stiffness} N/m) and restitution ({restitution}) are "
+                              "UNCALIBRATED estimates; measure them (docs/measuring.md)", lang=lang,
+                              stiffness=f"{kind.stiffness:g}", restitution=f"{kind.restitution:g}"))
+        return out
+
+    # ---- every step -------------------------------------------------------------------------------------------------
+
+    def shadow(self) -> None:
+        """Each soft slot takes its ring's center, rotation and velocity (read_rigid, no spin: the stand-in touches
+        nothing, so its spin is left at zero)."""
+        b, d = self.balls, self.data
+        for k, s in enumerate(self._slot_of):
+            if s < 0:
+                continue
+            c, quat, vc, _ = self.parked.rings[k].read(d, spin=False)
+            b._qpos[s, :3] = c - _mat(quat) @ self._ipos[s]
+            b._qpos[s, 3:] = quat
+            b._qvel[s, :3] = vc
+            b._qvel[s, 3:] = 0.0
+
+    def update(self) -> None:
+        """After the step's ledger work: release the rings of slots out of play, swap back the rings out of reach for
+        SOFT_LINGER, swap in the eligible slots within SOFT_REACH while a ring of their kind is free."""
+        b = self.balls
+        for k, s in enumerate(self._slot_of):
+            if s >= 0 and not b.field[s]:
+                self._release(k)
+        used = [s for s in self._slot_of if s >= 0]
+        eligible = np.flatnonzero(b.field & self.soft_slot & ~b.soft & np.isinf(b._full_bits_at))
+        if not used and not len(eligible):
+            return
+        slots = np.concatenate([np.array(used, dtype=int), eligible])
+        dist = self.distances(slots)
+        now = float(self.data.time)
+        for s, dd in zip(used, dist[:len(used)].tolist()):
+            if dd <= SOFT_REACH:
+                self._far[s] = None
+                continue
+            since = self._far[s]
+            if since is None:
+                self._far[s] = since = now
+            if now - since >= SOFT_LINGER - 0.5 * self._dt:
+                self._swap_back(self._slot_of.index(s))
+        near = [(dd, int(s)) for s, dd in zip(eligible.tolist(), dist[len(used):].tolist()) if dd <= SOFT_REACH]
+        for _, s in sorted(near):
+            kind = str(b.kind[s])
+            free = [k for k, f in enumerate(self.parked.free) if f and self.ring_kind[k] == kind]
+            if free:
+                self._swap_in(s, free[0])
+            else:
+                self._full_noted = True
+
+    def distances(self, slots: np.ndarray) -> np.ndarray:
+        """(k,): each slot's center's distance to the nearest colliding robot geom's oriented box (geom_aabb in the
+        geom's frame, as MuJoCo last placed it); inf for one beyond the robot's bounding box by more than SOFT_REACH
+        (not worked out)."""
+        d, g = self.data, self._robot_geoms
+        out = np.full(len(slots), np.inf)
+        if not len(slots) or not len(g):
+            return out
+        c = self.balls._qpos[slots, :3]
+        xpos = d.geom_xpos[g]
+        lo, hi = (xpos - self._rbound[:, None]).min(0), (xpos + self._rbound[:, None]).max(0)
+        gap = np.maximum(np.maximum(lo - c, c - hi), 0.0)
+        near = np.flatnonzero(np.sqrt((gap * gap).sum(1)) <= SOFT_REACH)
+        if not len(near):
+            return out
+        rel = c[near][:, None, :] - xpos[None]                                   # (k, G, 3)
+        local = np.einsum("kgi,gij->kgj", rel, d.geom_xmat[g].reshape(-1, 3, 3)) - self._aabb_c
+        o = np.maximum(np.abs(local) - self._aabb_h, 0.0)
+        out[near] = np.sqrt((o * o).sum(2)).min(1)
+        return out
+
+    # ---- the swaps --------------------------------------------------------------------------------------------------
+
+    def _map(self, k: int, s: int) -> None:
+        """Ring k's capsules stand for slot s in every contact reader (Balls.ball_of_geom, its first-hit names)."""
+        b, ring = self.balls, self.parked.rings[k]
+        b._geom_ball[ring.geoms] = s
+        name = self._names[int(b.geoms[s])]
+        for g in ring.geoms.tolist():
+            b._geom_names[g] = name
+
+    def _unmap(self, k: int) -> None:
+        b, ring = self.balls, self.parked.rings[k]
+        b._geom_ball[ring.geoms] = -1
+        for g in ring.geoms.tolist():
+            b._geom_names[g] = self._names[g]
+
+    def _swap_in(self, s: int, k: int) -> None:
+        """Slot s's NOTE into ring k: its pose and momentum, its angular momentum kept."""
+        b, d, ring = self.balls, self.data, self.parked.rings[k]
+        quat = b._qpos[s, 3:].copy()
+        r = _mat(quat)
+        arm = r @ self._ipos[s]
+        w = r @ b._qvel[s, 3:]                                  # the free joint's spin is in the body's frame
+        c, vc = b._qpos[s, :3] + arm, b._qvel[s, :3] + np.cross(w, arm)
+        momentum = r @ self._inertia[s] @ r.T @ w
+        spin = np.linalg.solve(r @ ring.rest_inertia @ r.T, momentum)
+        ring.write(d, c, quat, vc, spin)
+        self.parked.free[k] = False
+        self.parked.bits(k, BALL_BITS)
+        b._bits(s, PARKED_BITS)
+        b._xfrc[s] = 0.0
+        b.soft[s] = True
+        self._slot_of[k] = s
+        self._far[s] = None
+        self._map(k, s)
+        self.swaps += 1
+        kind = str(b.kind[s])
+        if kind not in self._swapped_kinds:
+            self._swapped_kinds.append(kind)
+
+    def _swap_back(self, k: int) -> None:
+        """Ring k's NOTE rigid again (R13): its center, rotation, momentum and angular momentum, set on the carpet."""
+        b, d, ring = self.balls, self.data, self.parked.rings[k]
+        s = self._slot_of[k]
+        c, quat, vc, momentum = ring.momentum(d)
+        r = _mat(quat)
+        w = np.linalg.solve(r @ self._inertia[s] @ r.T, momentum)
+        kind = self.kinds[str(b.kind[s])]
+        low = float(c[2]) - kind.lowest(quat)                   # its rigid shape's lowest point
+        vc = vc.copy()
+        if low < 0.0:
+            c = c + np.array([0.0, 0.0, -low])
+            vc[2] = max(float(vc[2]), 0.0)
+        arm = r @ self._ipos[s]
+        b._qpos[s, :3] = c - arm
+        b._qpos[s, 3:] = quat
+        b._qvel[s, :3] = vc - np.cross(w, arm)
+        b._qvel[s, 3:] = r.T @ w
+        b._bits(s, BALL_BITS)
+        self._release(k)
+
+    def _release(self, k: int) -> None:
+        """Ring k parked and free; its slot rigid (whatever took it out of play has parked it)."""
+        s = self._slot_of[k]
+        self._unmap(k)
+        self.parked.park(k)
+        self.balls.soft[s] = False
+        self._far.pop(s, None)
+        self._slot_of[k] = -1
+
+
+def _mat(quat) -> np.ndarray:
+    r = np.zeros(9)
+    mujoco.mju_quat2Mat(r, np.asarray(quat, dtype=float))
+    return r.reshape(3, 3)

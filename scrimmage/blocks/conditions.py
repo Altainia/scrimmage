@@ -128,7 +128,9 @@ class Watch:
             self._hook_geoms[name] = set(self._body_geoms(name))
         self._balls = [m.body(n).id for n in layout.ball_names] if layout is not None else []
         self._ball_names = list(layout.ball_names) if layout is not None else []
+        self._slot_of_name = {n: i for i, n in enumerate(self._ball_names)}
         tr = world.test_range
+        self._tr = tr
         self.kinds = dict(tr.range.kinds) if tr is not None else None     # the field's piece kinds, for the words
         self.piece_names: dict[str, str] = {}               # a piece's body name -> what a student reads ("coral 1")
         if tr is not None and not one_round_kind(tr.range.kinds):
@@ -400,7 +402,14 @@ class Watch:
             field = self._bar(a["field"])
             if field is None:
                 return False
-            mine, other = self._robot_side(a["robot"]), self._field_side(field)
+            mine = self._robot_side(a["robot"])
+            slot = self._slot_of_name.get(field)
+            if slot is not None and self._tr is not None:
+                # a game piece, read at the time: a soft NOTE's ring stands for it (Balls.ball_of_geom maps its
+                # capsules to the piece while it is in use), so its geoms aren't cached by name
+                of = self._tr.balls.ball_of_geom
+                return any(g in mine and int(of(o)) == slot for g, o in self._pairs)
+            other = self._field_side(field)
             return any(g in mine and o in other for g, o in self._pairs)
         if k == "piece_in":
             b, lo, hi = self._box(a["body"])

@@ -70,7 +70,7 @@ def run_notes(world, program: Program) -> list[str]:
     or seated with no grip anywhere gets default_grip_note, so its grip isn't read as measured either. A field piece
     whose friction is measured gets piece_notes' line. A robot with cylinders gets pneumatic_note. A test that
     measures an element's clearance, on a robot with stock parts whose collide is off, gets clearance.uncounted_note:
-    those parts aren't measured."""
+    those parts aren't measured. A range with a soft NOTE adds its soft pool's notes (RangeRuntime.soft_notes)."""
     from ..parts.grip import grip_notes
     notes = grip_notes(world)
     if not notes and any(_conds(program.blocks, k) for k in GRIP_CONDITIONS):
@@ -84,6 +84,9 @@ def run_notes(world, program: Program) -> list[str]:
     rng = getattr(world, "parts", None) and world.parts.range
     if rng is not None:         # the range's warnings (a goal behind the walls), in the setting being worded
         notes += [str(w) if units.is_machine() else shown(w) for w in rng.warnings]
+    tr = getattr(world, "test_range", None)
+    if hasattr(tr, "soft_notes"):       # a soft NOTE's: a full pool, its uncalibrated numbers
+        notes += tr.soft_notes()
     return notes
 
 

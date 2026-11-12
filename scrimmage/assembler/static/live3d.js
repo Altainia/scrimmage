@@ -14,7 +14,8 @@
 // lit while it sees a tag; showCameraTags(name, ids) draws a line from the camera to each listed tag's face
 // (view.apriltags). sensorShapes() gives each one's ends in the world and whether it is lit, and a camera's `tags`.
 //
-// A mover below PARK_Z_HIDE (a parked ball sits at z = -20) is hidden. outline(i) draws mover i (a piece the Test
+// A mover below PARK_Z_HIDE (a parked ball, a parked soft ring, or a soft NOTE's rigid stand-in while its ring is in
+// use: all at z = -20) is hidden. outline(i) draws mover i (a piece the Test
 // tab's replay points at) with a colored rim, a larger back-faced copy of its geoms; outline(-1) takes it off.
 // setScore(range) draws the test range's counts
 // ({goals, fired, held}, or null for none) as an overlay in the top-left corner.
@@ -25,7 +26,8 @@
 // Where WebGL is software (SwiftShader, llvmpipe: no GPU acceleration) the view draws at half resolution without
 // antialiasing and at most every SOFTWARE_MS, so drawing doesn't starve the page.
 // For tests: window.__scrimmage.live3d = {groups, lastSeq, camera, root, follow, software, tagLabels, background (#rrggbb:
-// --watch-bg in the page's theme)} of the newest live view not yet
+// --watch-bg in the page's theme), hiddenMovers() (how many movers the last frame hid: parked under PARK_Z_HIDE)} of the
+// newest live view not yet
 // disposed (the Drive tab's, or the Scenario run panel's Watch view while it is shown). tagLabels is how many AprilTag
 // ID labels (sprites, one per view.apriltags entry, 3 cm out from the tag's face) the view draws.
 
@@ -75,7 +77,8 @@ function hook() {
   Object.defineProperty(window.__scrimmage, "live3d", {
     configurable: true, enumerable: true,
     get: () => ({ groups: v.groups.length, lastSeq: v.lastSeq, camera: v.mode, root: v.rootMover, follow: v.followTarget.toArray(),
-                  software: v.software, tagLabels: v.tagLabels.length, background: `#${v.scene.background.getHexString()}` }),
+                  software: v.software, tagLabels: v.tagLabels.length, background: `#${v.scene.background.getHexString()}`,
+                  hiddenMovers: () => v.groups.filter((g) => !g.visible).length }),
   });
 }
 

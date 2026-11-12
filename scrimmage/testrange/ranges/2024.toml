@@ -4,8 +4,9 @@
 # with their CHAINS, the SOURCES feeding NOTES, the 11 staged NOTES and the blue starting zone and WING.
 # Coordinates: WPILib field frame (blue alliance wall x = 0, scoring-table guardrail y = 0, z up), meters.
 #
-# The NOTE is a rigid stand-in for the foam ring (the 2024-note preset): it doesn't squash. A pinch shooter
-# (`[shooter] kind = "piece"`) shoots it; the goals count it only when all of it fits through the opening.
+# The NOTE is the 2024-note preset: rigid on the floor and in flight, and a soft ring of 16 segments that squashes
+# within 0.25 m of a robot (`soft = true`; its stiffness and bounce are uncalibrated estimates). A pinch shooter
+# (`[shooter] kind = "piece"`) shoots it rigid; the goals count it only when all of it fits through the opening.
 # The SPEAKER's hood is an [[obstacle]], not a plate of the goal, so a NOTE's corners can't clip it on the way in.
 # The field is the 2024 one (16.541 x 8.211 m, WPI), so y is WPILib's and robot code, tags and paths agree.
 # The 16 AprilTags are WPILib's 2024 layout (`apriltags` below): drawn on the walls and STAGES, and seen by a camera sensor.
@@ -22,7 +23,7 @@ field = { length = 16.541, width = 8.211 }   # source: WPI, the 2024 field's len
 rolling_resistance = 0.07   # estimate: scrimmage's default; NOTEs do not roll anyway (they lie flat)
 
 [piece.note]
-preset = "2024-note"        # source: M 5.7: 14 in OD, 10 in ID, 2 in thick, 8.3 oz; a rigid stand-in (the preset cites its own numbers)
+preset = "2024-note"        # source: M 5.7: 14 in OD, 10 in ID, 2 in thick, 8.3 oz; soft near a robot (the preset cites its own numbers)
 color = "orange"
 
 # NOTE staging (M 6.3.4; coordinates LMD sheet 6 / 6328): 3 per WING on spike marks, 5 on the CENTER LINE.

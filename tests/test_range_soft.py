@@ -1,10 +1,12 @@
-"""The world's soft NOTE (spec D8, first half; testrange/soft.py): a ring of 16 capsules on ball joints, its numbers
-scaled from a kind's `stiffness` and `restitution` (R10), and a range's parked pool of rings under the floor."""
+"""The world's soft NOTE (spec D8; testrange/soft.py): a ring of 16 capsules on ball joints, its numbers scaled from a
+kind's `stiffness` and `restitution` (R10), a range's parked pool of rings under the floor, and the swap between a
+rigid NOTE and its ring near the robot (R11-R13), drawn as one NOTE."""
 
 from __future__ import annotations
 
 import math
 import os
+import re
 import sys
 import time
 import tomllib
@@ -19,9 +21,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import soft_helpers  # noqa: E402
 from range_fixtures import shooter_cfg  # noqa: E402
+from scrimmage.blocks.conditions import Watch  # noqa: E402
+from scrimmage.blocks.program import Cond, Program, load  # noqa: E402
+from scrimmage.blocks.run import TestRun, world_for  # noqa: E402
+from scrimmage.blocks.run_notes import run_notes  # noqa: E402
+from scrimmage.flexcontact import contact_ids  # noqa: E402
+from scrimmage.movers import mover_poses, movers  # noqa: E402
 from scrimmage.protocol import HalState  # noqa: E402
 from scrimmage.testrange import pieces, soft  # noqa: E402
-from scrimmage.testrange.build import PARK_Z, PARKED_BITS  # noqa: E402
+from scrimmage.testrange.build import BALL_BITS, LAUNCHED_BITS, PARK_Z, PARKED_BITS  # noqa: E402
 from scrimmage.testrange.pieces import (SOFT_MIN_HOLE, SOFT_RESTITUTION_RANGE, SOFT_STIFFNESS_RANGE,  # noqa: E402
                                         kind_preset, parse_kind)
 from scrimmage.testrange.spec import RangeError  # noqa: E402
@@ -347,3 +355,332 @@ def test_rings_arent_movable_objects_or_contact_names():
     assert not [n for n in w.movable_objects() if n.startswith("soft.")]
     names = w.contact_names()
     assert not [n for n in names if n.startswith("soft.")] and "ball.0" in names
+
+
+
+# ------------------------------------------------------------------------------------------------ the swap (D8, R11-R13)
+
+RANGE_2024 = ROOT / "scrimmage" / "testrange" / "ranges" / "2024.toml"
+WING_NOTE = (2.8956, 4.1056)        # F6: blue_wing_note's NOTE, 1.3 m ahead of the start
+VOLTS = 12.5                        # the example's nominal battery: a PWM's speed is its share of it
+
+
+def wing_world(tmp_path: Path, notes=(WING_NOTE,), preload: int = 0) -> World:
+    """The 2024 range in tmp_path with `notes` its only floor NOTEs, and the speaker example's robot at
+    blue_wing_note, facing them."""
+    text = RANGE_2024.read_text(encoding="utf-8")
+    text = re.sub(r'\[\[floor_balls\]\]\nkind = "note"\nat = \[\[.*\n', "", text)
+    assert "[[floor_balls]]" not in text
+    text += '\n[[floor_balls]]\nkind = "note"\nat = [' + ", ".join(f"[{x}, {y}]" for x, y in notes) + "]\n"
+    (tmp_path / "range.toml").write_text(text, encoding="utf-8")
+    cfg = tomllib.loads(ROBOT.read_text(encoding="utf-8"))
+    cfg["range"] = {"file": "range.toml", "start": "blue_wing_note", "preload": preload, "floor_balls": True}
+    return World(cfg, tmp_path)
+
+
+def drive(hal: HalState, volts: float) -> None:
+    """Both sides of the differential at `volts`, forward (its right side is mirrored)."""
+    for port, sign in (("0", 1.0), ("1", -1.0)):
+        hal.devices[("PWM", port)] = {"<init": True, "<speed": sign * volts / VOLTS}
+
+
+def _state(w: World, slot: int) -> dict:
+    """The slot's stand-in (center, momentum, its rigid shape's clearance) and its ring's read (center, momentum),
+    None without one."""
+    pool, balls = w.test_range.soft, w.test_range.balls
+    ring = pool.in_use().get(slot)
+    out = {"com": balls._qpos[slot, :3].copy(), "p": NOTE.mass * balls._qvel[slot, :3].copy(),
+           "clearance": balls.clearance(slot), "ring": None}
+    if ring is not None:
+        c, _, v, _ = soft.read_rigid(w.model, w.data, ring, spin=False)
+        out["ring"] = (c, soft.ring_view(w.model, ring).mass * v)
+    return out
+
+
+def watch_swaps(w: World, slot: int) -> list[dict]:
+    """Each step's row from here on: its time, the slot's distance to the robot, its state just before the pool's
+    update and just after, and in_use after (the pool's update, wrapped)."""
+    pool, rows = w.test_range.soft, []
+    inner = pool.update
+
+    def update():
+        row = {"t": float(w.data.time), "dist": float(pool.distances(np.array([slot]))[0]),
+               "before": _state(w, slot)}
+        inner()
+        row["after"], row["in_use"] = _state(w, slot), dict(pool.in_use())
+        rows.append(row)
+    pool.update = update
+    return rows
+
+
+def swap_run(w: World, press_s: float = 0.6, stop_s: float = 0.0, after_s: float = 0.5, on_step=None):
+    """Drive at 2 V until the NOTE turns soft and on for `press_s`, stop for `stop_s`, then back away at 4 V until it is
+    rigid again and `after_s` more. (slot, the rows (watch_swaps), the swap in's row, the swap back's row)."""
+    hal = HalState()
+    slot = int(np.flatnonzero(w.test_range.balls.field)[0])
+    rows = watch_swaps(w, slot)
+    drive(hal, 2.0)
+    t_in = t_back = None
+    while w.time < 8.0:
+        w.step(hal)
+        if on_step is not None:
+            on_step(w)
+        in_use = rows[-1]["in_use"]
+        if t_in is None and in_use:
+            t_in = w.time
+        if t_in is not None and t_back is None:
+            if w.time >= t_in + press_s + stop_s:
+                drive(hal, -4.0)
+            elif w.time >= t_in + press_s:
+                drive(hal, 0.0)
+            if not in_use:
+                t_back = w.time
+        if t_back is not None and w.time >= t_back + after_s - 1e-9:
+            break
+    assert t_in is not None and t_back is not None, "the NOTE never turned soft and back"
+    first = next(k for k, r in enumerate(rows) if r["in_use"])
+    back = next(k for k in range(first, len(rows)) if not rows[k]["in_use"])
+    return slot, rows, first, back
+
+
+def test_a_note_near_the_robot_turns_soft_and_back(tmp_path):
+    """D8, R12, R13: at the first step where the NOTE's center is within SOFT_REACH of a robot geom's box it turns
+    soft, its ring keeping its momentum (within 1e-6 kg m/s; the spike's swap: 3e-9) and its center (1e-6 m). Backing
+    away at 4 V, it is rigid again SOFT_LINGER after its center is past SOFT_REACH from every robot geom: in play, on
+    BALL_BITS, its momentum kept."""
+    w = wing_world(tmp_path)
+    slot, rows, first, back = swap_run(w)
+    near = next(k for k, r in enumerate(rows) if r["dist"] <= soft.SOFT_REACH)
+    assert near == first and rows[first]["in_use"] == {slot: "soft.0"}
+    assert rows[first]["dist"] > soft.SOFT_REACH - 0.01         # it turned soft on its way in, not deep inside
+    before, (c, p) = rows[first]["before"], rows[first]["after"]["ring"]
+    assert np.abs(p - before["p"]).max() < 1e-6 and np.abs(c - before["com"]).max() < 1e-6
+    # rigid again SOFT_LINGER after the last step within reach
+    last_near = max(k for k in range(back) if rows[k]["dist"] <= soft.SOFT_REACH)
+    assert rows[back]["t"] - rows[last_near]["t"] == pytest.approx(soft.SOFT_LINGER + 0.001, abs=1e-9)
+    assert all(rows[k]["in_use"] for k in range(first, back))
+    (c, p), after = rows[back]["before"]["ring"], rows[back]["after"]
+    assert np.abs(after["p"] - p).max() < 1e-6
+    balls, m = w.test_range.balls, w.model
+    assert balls.state[slot] == "field" and not balls.soft[slot] and w.test_range.soft.in_use() == {}
+    g, b = balls.geoms[slot], balls.bodies[slot]
+    assert (m.geom_contype[g], m.geom_conaffinity[g]) == (BALL_BITS["contype"], BALL_BITS["conaffinity"])
+    assert (m.body_contype[b], m.body_conaffinity[b]) == (BALL_BITS["contype"], BALL_BITS["conaffinity"])
+    assert w.test_range.soft.swaps == 1
+
+
+def test_a_swap_keeps_the_angular_momentum(tmp_path):
+    """Review M9: the ring's inertia is a few percent below the rigid NOTE's, so the swap keeps the angular momentum
+    (the spin rate moves by that much), both ways, within 1e-9 of it; and the pose and momentum within 1e-9."""
+    w = wing_world(tmp_path)
+    pool, balls, m, d = w.test_range.soft, w.test_range.balls, w.model, w.data
+    slot = int(np.flatnonzero(balls.field)[0])
+    ring = soft.ring_view(m, "soft.0")
+    rigid = pool._inertia[slot]
+    ratio = np.linalg.eigvalsh(ring.rest_inertia) / np.linalg.eigvalsh(rigid)
+    assert ((ratio > 0.94) & (ratio < 0.97)).all(), ratio      # source: Task 5 review M9, 4 to 4.5 % below
+    quat = np.array([0.9, 0.2, -0.3, 0.1]) / np.linalg.norm([0.9, 0.2, -0.3, 0.1])
+    spin = np.array([2.0, -1.0, 9.0])
+    balls.place(slot, (3.0, 4.0, 1.0), (1.0, 0.5, -0.2), spin, BALL_BITS, quat=quat)
+    r = np.zeros(9)
+    mujoco.mju_quat2Mat(r, quat)
+    r = r.reshape(3, 3)
+    momentum = r @ rigid @ r.T @ spin
+    pool._swap_in(slot, 0)
+    c, q, v, ang = ring.momentum(d)
+    assert np.abs(ang - momentum).max() < 1e-9 and np.abs(c - [3.0, 4.0, 1.0]).max() < 1e-9
+    assert np.abs(v - [1.0, 0.5, -0.2]).max() < 1e-9
+    assert min(np.abs(q - quat).max(), np.abs(q + quat).max()) < 1e-9
+    pool._swap_back(0)
+    w_body = balls._qvel[slot, 3:]
+    assert np.abs(r @ rigid @ w_body - momentum).max() < 1e-9 and np.abs(r @ w_body - spin).max() < 1e-9
+    assert np.abs(balls._qvel[slot, :3] - [1.0, 0.5, -0.2]).max() < 1e-9
+
+
+def test_the_soft_note_is_the_same_piece(tmp_path):
+    """R11: while soft, the NOTE keeps its name and the counts; each of its ring's capsules is its piece in
+    ball_of_geom; its ball log's last position follows the ring's center; and a Test-tab touch on it by the chassis
+    holds while only the ring touches the robot."""
+    w = wing_world(tmp_path)
+    rt = w.test_range
+    balls = rt.balls
+    slot = int(np.flatnonzero(balls.field)[0])
+    name, counts = balls.piece_name(slot), rt.counts()
+    watch = Watch(w, Program(path=tmp_path / "t.test.toml", robot=ROBOT))
+    touch = Cond("touch", {"robot": "drive", "field": f"ball.{slot}"})
+    stand_in = set(balls._slot_geoms[slot].tolist())
+    seen = {"soft": 0, "touch": 0}
+
+    def on_step(w):
+        watch.update()
+        ring = rt.soft.in_use().get(slot)
+        if ring is None:
+            return
+        seen["soft"] += 1
+        assert balls.piece_name(slot) == name and rt.counts() == counts
+        assert (balls.ball_of_geom(soft.ring_view(w.model, ring).geoms) == slot).all()
+        c, _, _, _ = soft.read_rigid(w.model, w.data, ring, spin=False)
+        assert np.abs(np.array(rt.ball_log()[slot]["last_pos"]) - c).max() < 1e-9
+        ids = contact_ids(w.model, w.data)
+        assert not stand_in & set(ids.ravel().tolist())         # the stand-in touches nothing
+        if watch.holds(touch):
+            seen["touch"] += 1
+    swap_run(w, on_step=on_step)
+    assert seen["soft"] > 500 and seen["touch"] > 100, seen
+
+
+def test_a_held_or_launched_note_stays_rigid(tmp_path):
+    """R12, a stated deviation from spec D8, which says a soft NOTE "is swapped back when it has been more than
+    SOFT_REACH from the robot for 0.25 s (choice), or when the shooter launches it". Here a NOTE in the robot (the ball
+    path's) or one just launched and still clearing its robot (on LAUNCHED_BITS) never turns soft, so the shooter
+    never has a soft NOTE to launch. Its cost: no NOTE squashes in the world while the robot holds or shoots it (the
+    pinch shooter's exit is launcher/pinch.py's, from `stiffness`, as before), and a weak shot that falls back onto
+    its robot after LAUNCH_CLEAR_S may turn soft then. The example's subwoofer shot is unchanged and swaps nothing."""
+    program = load(EXAMPLE / "subwoofer.test.toml")
+    world = world_for(program)
+    r = TestRun(world, program).run()
+    assert r.status == "finished", r.outcome
+    assert [c["passed"] for c in r.checks] == [True]
+    log = world.test_range.ball_log()[0]
+    assert log["goal"] == "speaker_blue" and log["first_hit"] is None
+    assert log["hood_deg"] == pytest.approx(58.0, abs=0.2)
+    assert log["shooter_rps"] == pytest.approx(21.7, rel=0.03)
+    assert world.test_range.soft.swaps == 0
+    # a NOTE on LAUNCHED_BITS 0.1 m from the robot stays rigid
+    w = wing_world(tmp_path)
+    pool, balls = w.test_range.soft, w.test_range.balls
+    slot = int(np.flatnonzero(balls.field)[0])
+    x0 = w.robot_pose()[0]
+    xs = np.linspace(x0 + 1.0, x0, 201)      # from 1 m ahead, in
+    for x in xs:
+        balls.put(slot, (float(x), WING_NOTE[1], balls.rest_z_of(slot)), BALL_BITS)
+        if pool.distances(np.array([slot]))[0] <= 0.1:
+            break
+    assert 0.09 <= pool.distances(np.array([slot]))[0] <= 0.1
+    pos = balls.position(slot).copy()
+    balls.place(slot, pos, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), LAUNCHED_BITS, full_bits_after=10.0)
+    hal = HalState()
+    for _ in range(200):
+        w.step(hal)
+        assert np.isfinite(balls._full_bits_at[slot]) and pool.distances(np.array([slot]))[0] < soft.SOFT_REACH
+    assert pool.swaps == 0 and pool.in_use() == {}
+
+
+def test_the_swap_back_on_the_carpet_doesnt_hop(tmp_path):
+    """R13: the robot presses the NOTE along the carpet with its bumper, stops, then backs away. At the swap back the
+    stand-in's lowest point is within 1 mm of the carpet or above it; 50 ms later it moves up or down at under
+    0.05 m/s, and over 0.5 s it moves under 2 cm."""
+    w = wing_world(tmp_path)
+    slot, rows, first, back = swap_run(w, press_s=0.6, stop_s=0.3, after_s=0.55)
+    at = rows[back]["after"]
+    assert at["clearance"] >= -0.001, at
+    later = rows[back + 50]["before"]
+    assert abs(later["p"][2] / NOTE.mass) < 0.05, later
+    assert np.linalg.norm(rows[back + 500]["before"]["com"] - at["com"]) < 0.02
+    # this robot's bumper squashes the ring by under a millimeter; a ring squashed as the spike's drop squashes it
+    # (its center 14 mm low) is set on the carpet the same way
+    w = wing_world(tmp_path)
+    pool, balls, d = w.test_range.soft, w.test_range.balls, w.data
+    slot = int(np.flatnonzero(balls.field)[0])
+    pool._swap_in(slot, 0)
+    c, q, v, spin = soft.read_rigid(w.model, d, "soft.0")
+    soft.write_rigid(w.model, d, "soft.0", c - [0.0, 0.0, 0.014], q, v + [0.0, 0.0, -0.3], spin)
+    pool._swap_back(0)
+    assert balls.clearance(slot) == pytest.approx(0.0, abs=1e-12) and balls._qvel[slot, 2] == 0.0
+    start, hal = balls.position(slot).copy(), HalState()
+    for k in range(500):
+        w.step(hal)
+        if k == 49:
+            assert abs(balls.velocity(slot)[2]) < 0.05
+    assert np.linalg.norm(balls.position(slot) - start) < 0.02
+
+
+def test_a_reset_mid_swap_parks_every_ring(tmp_path):
+    """World.reset() with a ring in use parks every ring (at its built place under the floor, PARKED_BITS), and
+    in_use() is empty; two 2 s runs from the reset give the same balls within 1e-12."""
+    w = wing_world(tmp_path)
+    rt, m, d = w.test_range, w.model, w.data
+    hal = HalState()
+    drive(hal, 2.0)
+    while not rt.soft.in_use():
+        w.step(hal)
+    for _ in range(200):
+        w.step(hal)
+    assert rt.soft.in_use()
+    w.reset()
+
+    def parked():
+        assert rt.soft.in_use() == {} and not rt.balls.soft.any()
+        for name in rt.layout.soft:
+            ring = soft.ring_view(m, name)
+            assert np.array_equal(d.qpos[ring.q], ring.qpos0) and not d.qvel[ring.v].any()
+            assert np.allclose(d.xpos[ring.bodies][:, 2], PARK_Z, atol=0.03)
+            assert not m.geom_contype[ring.geoms].any() and not m.geom_conaffinity[ring.geoms].any()
+            assert not m.body_contype[ring.bodies].any() and not m.body_conaffinity[ring.bodies].any()
+            assert (rt.balls.ball_of_geom(ring.geoms) == -1).all()
+    parked()
+    runs = []
+    for _ in range(2):
+        drive(hal, 2.0)
+        for _ in range(2000):
+            w.step(hal)
+        assert rt.soft.swaps == 1
+        runs.append((rt.balls._qpos.copy(), d.qpos.copy()))
+        w.reset()
+        parked()
+    assert np.abs(runs[0][0] - runs[1][0]).max() <= 1e-12
+    assert np.abs(runs[0][1] - runs[1][1]).max() <= 1e-12
+
+
+def test_a_full_pool_leaves_the_third_rigid_and_notes_it_once(tmp_path):
+    """Three NOTEs 0.4 m apart across the robot's path: two turn soft and the third stays rigid; the full pool's note
+    is in soft_notes() and the Test tab's run notes once, and gone after a reset."""
+    x, y = WING_NOTE
+    w = wing_world(tmp_path, notes=((x, y - 0.4), (x, y), (x, y + 0.4)))
+    rt = w.test_range
+    pool, balls = rt.soft, rt.balls
+    slots = np.flatnonzero(balls.field)
+    assert len(slots) == 3
+    hal = HalState()
+    drive(hal, 2.0)
+    full_seen = False
+    for _ in range(1800):
+        w.step(hal)
+        near = pool.distances(slots) <= soft.SOFT_REACH
+        assert len(pool.in_use()) <= 2
+        if near.all() and len(pool.in_use()) == 2:
+            full_seen = True
+    assert full_seen and pool.swaps >= 2
+    full = "a third NOTE came near the robot while 2 were soft; it stayed rigid (the soft pool holds 2)"
+    notes = rt.soft_notes()
+    assert notes.count(full) == 1, notes
+    assert sum("UNCALIBRATED" in n for n in notes) == 1
+    program = Program(path=tmp_path / "t.test.toml", robot=ROBOT)
+    assert run_notes(w, program).count(full) == 1
+    w.reset()
+    assert rt.soft_notes() == [] and run_notes(w, program).count(full) == 0
+
+
+def test_one_note_is_drawn(tmp_path):
+    """R11: while soft, the live view's poses put the stand-in at PARK_Z, the ring's s0 where the ring is, and the
+    free ring at PARK_Z."""
+    w = wing_world(tmp_path)
+    rt = w.test_range
+    hal = HalState()
+    drive(hal, 2.0)
+    while not rt.soft.in_use():
+        w.step(hal)
+    for _ in range(100):
+        w.step(hal)
+    slot = next(iter(rt.soft.in_use()))
+    ms = movers(w)
+    poses = mover_poses(w, ms)
+    row = {mv.id: i for i, mv in enumerate(ms) if mv.kind == "body"}
+    stand_in = int(rt.balls.bodies[slot])
+    assert rt.soft.drawn_parked() == {stand_in}
+    assert poses[row[stand_in], 2] == np.float32(PARK_Z)
+    assert np.allclose(poses[row[stand_in], :2], w.data.xpos[stand_in, :2])
+    s0 = soft.ring_view(w.model, "soft.0").bodies[0]
+    assert np.allclose(poses[row[s0], :3], w.data.xpos[s0], atol=1e-6) and poses[row[s0], 2] > 0.0
+    free = soft.ring_view(w.model, "soft.1").bodies
+    assert np.allclose(poses[[row[b] for b in free], 2], PARK_Z, atol=0.03)

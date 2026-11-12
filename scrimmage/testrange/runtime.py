@@ -62,11 +62,6 @@ class RangeRuntime:
         m.tree_sleep_policy[:] = int(mujoco.mjtSleepPolicy.mjSLEEP_NEVER)
         ball_trees = m.body_treeid[[m.body(name).id for name in self.layout.ball_names]]
         m.tree_sleep_policy[ball_trees] = int(mujoco.mjtSleepPolicy.mjSLEEP_ALLOWED)
-        self.parked_rings = None        # the soft pool's rings, held under the floor (testrange/soft.py)
-        if self.layout.soft:
-            from .soft import ParkedRings
-            self.parked_rings = ParkedRings(m, world.data, self.layout.soft)
-            m.tree_sleep_policy[self.parked_rings.trees] = int(mujoco.mjtSleepPolicy.mjSLEEP_ALLOWED)
         config = parse_shooter(cfg, built, cfg_dir) if "shooter" in cfg else None
         if config is not None:
             air = config.air if config.kind == "piece" else config.setup.air
@@ -75,6 +70,14 @@ class RangeRuntime:
         else:
             air = _build_section("air", {"preset": "default"})
         self.balls = Balls(m, world.data, self.layout, self.range, air)
+        # the soft pool (testrange/soft.py): a soft kind's NOTE swapped for a ring near the robot; None without one
+        self.soft = None
+        self.parked_rings = None        # its rings, held under the floor while free
+        if self.layout.soft:
+            from .soft import SoftPool
+            self.soft = SoftPool(m, world.data, self.balls, self.layout, int(m.body_rootid[world.robot_body]))
+            self.parked_rings = self.soft.parked
+            m.tree_sleep_policy[self.parked_rings.trees] = int(mujoco.mjtSleepPolicy.mjSLEEP_ALLOWED)
         self.disc = config is not None and config.kind == "disc"
         self.piece = config is not None and config.kind == "piece"     # a pinch shooter's rigid piece
         if config is None:
@@ -130,6 +133,8 @@ class RangeRuntime:
         self._overrides.update(new)
         s = self.settings()
         balls = self.balls
+        if self.soft is not None:       # every ring parked, every NOTE rigid, before the balls go back
+            self.soft.reset()
         balls.clear()
         if s["floor_balls"]:
             lift = self.range.floor_heights if len(self.range.floor_heights) == len(self.range.floor_balls) \
@@ -256,13 +261,21 @@ class RangeRuntime:
         self._log_exit(i, shot, motion)
 
     def after_physics(self) -> None:
+        """After mj_step: a soft NOTE's slot takes its ring's state first (so scoring and leaving the field read it),
+        then the ledger's work, the free rings held, the intake, and last the soft swaps (so a NOTE the intake took
+        releases its ring in the same step)."""
         if self.shooter is not None:
             self.shooter.mirror()
+        soft = self.soft
+        if soft is not None:
+            soft.shadow()
         self.events = self.balls.after_step(self._prev)
-        if self.parked_rings is not None:
-            self.parked_rings.hold()
+        if soft is not None:
+            soft.parked.hold()
         if self.ball_path is not None:
             self.ball_path.collect()
+        if soft is not None:
+            soft.update()
 
     def sensor_updates(self, hal: HalState) -> list[Update]:
         return self.ball_path.beam_updates() if self.ball_path is not None else []
@@ -279,6 +292,11 @@ class RangeRuntime:
         goals = dict(self.balls.goal_counts)
         return {"score": sum(goals.values()), "goals": goals, "fired": self.balls.fired, "held": ledger["robot"],
                 "on_field": ledger["field"], "ledger": ledger}
+
+    def soft_notes(self, lang: str | None = None) -> list[str]:
+        """The soft pool's notes (SoftPool.notes): a full pool, and each soft kind's uncalibrated numbers once one of
+        its NOTEs has turned soft. Empty without a pool."""
+        return self.soft.notes(lang) if self.soft is not None else []
 
     def ball_log(self) -> list[dict]:
         """Every ball's log (None for unset values), the in-play balls' last position and rest brought up to date."""

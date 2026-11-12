@@ -252,3 +252,49 @@ def test_the_live_view_labels_each_apriltag(live_page):
         assert live_page.evaluate("__scrimmage.live3d.tagLabels") == 0
     finally:
         live_page.evaluate("() => { if (window.__tagView) __tagView.dispose(); document.getElementById('tag-host')?.remove(); }")
+
+
+def test_a_soft_note_is_drawn_as_one(live_page, tmp_path):
+    """R11, F8: the live view of the 2024 world just after its NOTE turned soft hides the parked movers: every parked
+    ball slot, the NOTE's rigid stand-in (drawn parked while its ring is in use) and the free ring's 16 segments,
+    counted here from the ledger and the pool, not from the poses."""
+    import numpy as np
+    from playwright.sync_api import expect
+
+    from scrimmage.assembler.view import model_view
+    from scrimmage.movers import mover_poses, movers
+    from scrimmage.protocol import HalState
+    from scrimmage.testrange import soft
+    from test_range_soft import drive, wing_world
+
+    w = wing_world(tmp_path)
+    rt, hal = w.test_range, HalState()
+    drive(hal, 2.0)
+    while not rt.soft.in_use():
+        w.step(hal)
+    w.step(hal)
+    view = model_view(w, include_world=True)
+    poses = mover_poses(w, movers(w))
+    in_use = rt.soft.in_use()
+    parked_slots = int(np.count_nonzero(~rt.balls.field))
+    free_rings = len(rt.layout.soft) - len(in_use)
+    expected = parked_slots + len(in_use) + free_rings * soft.RING_SEGMENTS
+    assert expected == (len(rt.balls.field) - 1) + 1 + 16
+    live_page.evaluate("""([view, poses]) => import('./live3d.js').then(({ LiveView }) => {
+      const host = document.createElement('div');
+      host.id = 'soft-host';
+      host.style.cssText = 'width:400px;height:300px';
+      document.body.append(host);
+      const lv = new LiveView(host);
+      window.__softView = lv;
+      lv.setModel(view);
+      lv.applyFrame({ seq: 1, poses: new Float32Array(poses), n: view.movers.length });
+      const out = document.createElement('div');
+      out.id = 'soft-hidden';
+      out.textContent = String(__scrimmage.live3d.hiddenMovers());
+      document.body.append(out);
+    })""", [view, poses.ravel().tolist()])
+    try:
+        expect(live_page.locator("#soft-hidden")).to_have_text(str(expected))
+    finally:
+        live_page.evaluate("() => { if (window.__softView) __softView.dispose(); document.getElementById('soft-host')?.remove(); }")
