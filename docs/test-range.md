@@ -564,11 +564,74 @@ for each soft kind; a third NOTE that comes near while both are in use stays rig
 NOTE in the robot, or one just shot and still clearing it, never turns soft. Its stiffness and bounce are
 uncalibrated estimates until measured ([measuring.md](measuring.md)), and the run's notes say that too.
 
+**How hard it squashes.** The squash is a soft contact. At a light squeeze it is a spring of the NOTE's `stiffness`.
+Past about half its thickness it starts to stiffen, and past about 60 % it stiffens sharply, as a real foam densifies,
+so no load a mechanism makes squashes it flat. Between two 2 in rollers, at the preset's 2000 N/m:
+
+| Gap (in) | Squeeze | Force (N) |
+|---|---|---|
+| 1.5 | 25 % | 12.7 (the calibration point: `stiffness` × 6.35 mm) |
+| 1.0 | 50 % | 31.5 |
+| 0.6 | 70 % | 133.5 |
+| 0.4 | 80 % | 494.3 |
+
+Where it stiffens is an estimate until someone measures a real NOTE at a deep squeeze
+([measuring.md](measuring.md#note-squeeze)). In the
+[note-intake example](../examples/blocks/note-intake/README.md)'s grids, run while this stiffening was being built, a
+nip near 0.3 in (an 85 % squeeze) stopped the NOTE on a fixed front roller. The example's front roller is on a sprung
+arm, which a tight nip lifts, and it passes those cases.
+
+**What it can't do.** These are checked by the tests, at 1000, 2000 and 20000 N/m (the softest NOTE, the preset and
+the stiffest):
+
+- go through a part, even a 1/8 in or 6 mm plate. Pressed onto one by a 2 in roller at up to 200 N, held or dragged
+  at 3.4 m/s, it squashes less than 21 mm (its tube's radius is 25 mm), and no part of it ends up below the plate's top.
+  Slid flat into a wall at up to 8 m/s, it sinks less than 24 mm and never comes out the far side;
+- pass through itself. Folded flat between two plates, its two halves overlap less than 20 mm;
+- be run over by a slab 2 mm over the carpet, even while something pulls it under at 20 N. At most 2 of its 16
+  segments are ever under the slab, and only for a moment.
+
+**A part with `priority` still meets the squash.** A geom's [`priority`](parts.md#geoms) sets its friction against
+the NOTE, as it does against anything. Its contact would also replace the NOTE's own softer one, so the world gives
+each colliding geom of a robot body that has a priority geom its own contact with each of the soft rings' segments (a
+contact *pair*), which keeps the NOTE's squash and MuJoCo's own friction rule. That is 32 pairs per such geom (2
+rings of 16 segments): the note-intake example's two such bodies have 8 colliding geoms, so 256 pairs. They cost about 0.006 ms of computer time a
+step, about 1 % of that example's step, with both rings parked under the floor (measured 2026-11-13). The field's
+CHAINS are the exception: they keep their own stiff contact.
+
+**If it blows up anyway, the run says so.** After each step, the world checks each soft ring. If any segment moves
+faster than 25 m/s, or its numbers stop making sense (not finite), the ring is put back in its rest shape where it
+was, and the run gets a note:
+
+```
+soft NOTE note 3 blew up at 2.13 s (a segment at 140 m/s); it was reset to its rest shape, so results near then
+aren't trustworthy
+```
+
+That is a last resort, never a fix: what the NOTE did around then is not what a real one would have done. One note
+covers each NOTE, with how many times it happened and the first time's when and why (`blew up 3 times (first at
+2.13 s, ...)`), since a reset NOTE may be reset again a few times in a row. The note shows wherever the run's notes
+do: the command line, the Test tab, a scenario's report and the MCP tools' results. The count is `soft_resets`: in a
+kept run's `result.json`, in MCP `test_run`'s result and in each row of MCP `test_sweep`'s and `test_spread`'s. A
+sweep's or spread's `table.csv` gets a `soft_resets` column only when a row had a reset, and the Test tab marks that
+row. A scenario's report has the note but no count. It is 0 in a normal run. A run or row with
+resets isn't trustworthy: change what made the NOTE blow up (usually a nip or a gap far too tight for it) and run it
+again. If MuJoCo itself finds the
+simulation unstable, it restarts it, and the run notes that too ("MuJoCo found the simulation unstable at 2.13 s and
+restarted it").
+
 **What it costs.** A soft NOTE at rest costs almost nothing (its ring sleeps). One the robot is pushing costs about
-0.3 s of computer time per simulated second, on top of the world's own (measured on the 2024 field: about 0.17 s per
-simulated second with no soft NOTE, 0.54 with one pushed, 0.69 with two). Two NOTEs in front of a robot still ran
-faster than real time on the computer it was measured on, but a slower one, or a robot with Phoenix 6 devices (which runs in real
-time), may fall behind. To keep a NOTE rigid, set `soft = false` on its `[piece.<name>]`.
+0.4 s of computer time per simulated second, on top of the world's own (measured on the 2024 field on 2026-11-13:
+about 0.36 s per simulated second with no soft NOTE, 0.77 with one pushed, 1.13 with two). So two NOTEs pushed in
+front of a robot ran a little slower than real time on the computer it was measured on, and a robot with Phoenix 6
+devices (which runs in real time) may fall behind. These are about twice the numbers measured on an earlier day, but
+the code from before this section's contact pairs and guard, rerun the same day, gave the same numbers within 2 %: the
+rise isn't from the pairs or the guard. To keep a NOTE rigid, set `soft = false` on its
+`[piece.<name>]`.
+
+**A limit.** A soft NOTE at the top of its stiffness range (`stiffness` about 10 times the preset's) that slides
+along the carpet faster than about 7 m/s can hop a little and come back with a few percent more energy than it had
+(about 7 % at 8 m/s). This comes from how the physics engine handles friction on a fast slide. A rigid piece sliding that fast hops too.
 
 ### `[range] piece` and the piece presets
 
@@ -660,15 +723,15 @@ estimates until someone measures them, and a soft kind needs both:
     rule, not a fit when the world is built. Its damping scale is a table over stiffness, fitted once so that 0.3
     comes back as 0.3 at 1000, 2000, 6000 and 20000 N/m. Dropped from 1 m, the ring lands within 10 % of the asked
     restitution from 0.27 to 0.45 at every stiffness. Outside that, `range check` warns that the simulated bounce may
-    be off by more. The weakest stretch is between table rows, near 11000 N/m. The error in percent:
+    be off by more. The weakest stretch is between table rows, near 12000 N/m (−9.6 % at 0.45). The error in percent:
 
     | stiffness, N/m | 0.25 | 0.27 | 0.3 | 0.35 | 0.45 | 0.5 | 0.55 |
     |---|---|---|---|---|---|---|---|
-    | 1000 | +5.3 | +2.8 | 0.0 | −3.5 | −7.1 | −7.6 | −7.8 |
-    | 2000 | +5.6 | +2.9 | 0.0 | −3.6 | −7.3 | −8.4 | −10.0 |
-    | 6000 | +6.7 | +3.6 | 0.0 | −3.3 | −7.8 | −8.5 | −9.9 |
+    | 1000 | +3.3 | +1.8 | 0.0 | −2.0 | −3.6 | −3.6 | −3.3 |
+    | 2000 | +5.2 | +2.8 | 0.0 | −3.1 | −6.0 | −6.6 | −7.7 |
+    | 6000 | +6.8 | +3.7 | 0.0 | −3.3 | −7.5 | −8.5 | −10.3 |
     | 12000 | | +1.8 | | −5.4 | −9.6 | | |
-    | 20000 | +12.6 | +7.2 | 0.0 | −2.7 | −7.8 | −10.5 | −9.9 |
+    | 20000 | +12.6 | +7.2 | 0.0 | −2.7 | −7.8 | −10.5 | −10.0 |
 
   A ball or a disc is refused all three keys: its stiffness and bounce are its preset's.
 

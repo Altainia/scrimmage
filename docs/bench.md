@@ -72,6 +72,7 @@ The examples in `examples/bench/` are each written as a student's idea:
 | `bounce_bar.toml` | Priya | shoot flat between two wheels, a springy bar bounces the ball up |
 | `curved_ramp.toml` | Diego | a roller pushes balls up a curved ramp, over the top into a hopper |
 | `hood_shapes/*.toml` | Sam, Aisha, Leo | three hood shapes on one launcher, for `bench compare` and `bench gallery` |
+| `note_intake_flex.toml` | Ava | the note-intake example's over-under nip, with the flex NOTE fed in on a moving carpet (`surface_speed`) |
 
 ## A first bench file
 
@@ -405,6 +406,11 @@ size = [0.2, 0.8, 0.8]
 ```
 
 `examples/bench/note_pinch_flex.toml` is a whole shooter: the NOTE squeezed a quarter between two 4 in wheels.
+`examples/bench/note_intake_flex.toml` is a floor intake: the nip of
+[the note-intake example](../examples/blocks/note-intake/README.md), fed by a carpet plate moving at 1 m/s (the
+robot's approach speed). On a flat moving plate the flex NOTE comes up to the plate's speed from rest in under
+0.4 s (about 0.3 s at 1 m/s). Its front roller is fixed: the example's is on a sprung arm, which a bench wheel can't
+be, so the bench shows the nip at its 1.4 in gap, not how the arm opens.
 
 - **It is opt-in.** Without `flex = true` nothing changes: the NOTE is the rigid stand-in, as fast as before. The
   test range's own soft NOTE (near a robot) doesn't change the bench.
@@ -525,7 +531,9 @@ Pieces start feeding once every speed-controlled shaft is within 2% of its targe
 
 ### `[[plate]]`
 
-A flat box, fixed.
+A flat box, fixed. With `surface_speed` its surface moves while the box stays put, as a conveyor belt does, so a
+piece lying on it is carried along: a moving carpet, which stands in for a robot driving a piece along. The bench's
+checks and summary say so for each moving plate.
 
 | Key | Meaning | Default |
 |---|---|---|
@@ -533,6 +541,10 @@ A flat box, fixed.
 | `size` | `[x, y, z]` full lengths, m | required |
 | `rot_deg` | turns about x, then y, then z, degrees (right-hand; `[0, -20, 0]` lifts the +x end) | `[0, 0, 0]` |
 | `material` | see [Materials](#materials) | `polycarbonate` |
+| `surface_speed` | how fast its surface moves, m/s, along the plate's own x (turned with `rot_deg`, so a ramp carries along its slope, and a plate turned onto its edge carries a piece up or down); negative runs back. A piece on it comes up to this speed through friction. Works with `flex = true` too | `0` |
+
+An `[[inlet]]`'s `velocity` sets how a piece starts; a moving plate keeps it moving. Every face of the box moves
+(MuJoCo's surface velocity covers the whole box), so a piece touching its side or underside is pushed along x too.
 
 ### `[[bar]]`
 

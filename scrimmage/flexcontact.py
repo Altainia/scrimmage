@@ -10,8 +10,13 @@ A model without a flex pays nothing: contact_ids() is MuJoCo's own array, not a 
 
 from __future__ import annotations
 
+import re
+
 import mujoco
 import numpy as np
+
+PAIR_SUFFIX = "#soft-pair-"     # an unnamed geom paired with a soft ring is named "<body>#soft-pair-<k>" (K6-P11)
+_PAIRED = re.compile(re.escape(PAIR_SUFFIX) + r"\d+$")
 
 
 def n_ids(model: mujoco.MjModel) -> int:
@@ -46,9 +51,17 @@ def id_body(model: mujoco.MjModel) -> np.ndarray:
 
 def id_name(model: mujoco.MjModel, i: int) -> str:
     """Contact id `i`'s name: a geom's, or a flex's (a chain's flex is `element.<name>`), or its body's for an
-    unnamed geom; "geom <i>" or "flex <f>" with none."""
+    unnamed geom; "geom <i>" or "flex <f>" with none. A geom named only for a soft pair (`<body>#soft-pair-<k>`,
+    soft.pair_rings, K6-P11) has the suffix stripped, so it reads as its body's name, as it did unnamed."""
     if i >= model.ngeom:
         f = i - model.ngeom
         return mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_FLEX, f) or f"flex {f}"
-    return (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, i)
-            or mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[i])) or f"geom {i}")
+    return geom_name(model, i) or mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[i])) \
+        or f"geom {i}"
+
+
+def geom_name(model: mujoco.MjModel, g: int) -> str:
+    """Geom `g`'s own name, "" for an unnamed geom. A name given only for a soft pair (`<body>#soft-pair-<k>`,
+    K6-P11) isn't its own, so such a geom reads as unnamed, as it did before the pair."""
+    name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, g) or ""
+    return "" if _PAIRED.search(name) else name

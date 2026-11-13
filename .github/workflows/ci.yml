@@ -43,6 +43,29 @@ jobs:
           SCRIMMAGE_REQUIRE_BROWSER: "1"   # fail, not skip, the browser tests when Chromium is missing
         run: pytest -v -rs
 
+  # The note-intake example's robustness grids (K6-R10): the intake spike's three grids (one setting at a time, the 16
+  # corners, 40 random draws) on examples/blocks/note-intake's own files, about 8 minutes. It gates on the results,
+  # never on time: the target (every one-setting case but the 0 V control passes, at least 14 of the 16 corners) and no
+  # soft NOTE reset. Not on the exact counts: a case near the margin can flip on another Python or CPU. The log prints
+  # each grid's counts, failing cases and fastest segment, so drift shows there.
+  intake-grid:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install OSMesa
+        run: sudo apt-get update && sudo apt-get install -y libosmesa6
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: The intake grids
+        env:
+          MUJOCO_GL: osmesa
+          SCRIMMAGE_INTAKE_GRID: "1"
+        run: pytest -v -s tests/test_examples_note_intake.py::test_the_intake_grids
+
   # The Part tab's CAD code (STEP/STL reading, mass, the import file, the server) and the Test tab's blocks (test
   # files, runs, kept runs, sweeps, its server) have to work on the students' Windows laptops too; the browser tests
   # need Linux's Chromium setup, so they are skipped here. tests/test_mcp_blocks.py is left off because this job

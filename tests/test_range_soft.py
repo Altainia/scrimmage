@@ -85,9 +85,10 @@ def test_the_rule_scales_from_the_fit():
     for p, s in ((base, 2000.0), (triple, 6000.0)):
         assert p.contact_b == pytest.approx(soft.damping_scale(s) * 2 * soft.damping_ratio_for(0.3)
                                             * math.sqrt(p.contact_k))
-    # the spike's own fitted damping (64.5 soft, 113 firm): within 2 % at the soft foam; the firm one's table row is
-    # this ring's own fit (its joint damping is R10's, not the spike's), 7 % above the spike's
-    assert base.contact_b == pytest.approx(64.45, rel=0.02) and triple.contact_b == pytest.approx(113.0, rel=0.10)
+    # the soft foam's damping, within 2 %: source: K6-R6's refit raised the 2000 N/m damping scale by 2.2 % (0.8536 ->
+    # 0.8722), so 66.10; K5's value was 64.45, the spike's own fit. The firm one (the spike's 113) is this ring's own
+    # fit (its joint damping is R10's, not the spike's), within 10 % of the spike's
+    assert base.contact_b == pytest.approx(66.10, rel=0.02) and triple.contact_b == pytest.approx(113.0, rel=0.10)
     # the contact stiffness is per unit mass in MuJoCo, so it is scaled by FIT_MASS / mass; the joints aren't
     heavy = soft.ring_params(replace(_at(2000.0), mass=2 * NOTE.mass))
     assert soft.FIT_MASS == 0.235 and heavy.contact_k == pytest.approx(11211.4 / 2)
@@ -160,13 +161,15 @@ def test_a_presets_soft_says_how_to_stay_rigid():
 
 
 SOFT_CORNERS = [(s, e) for s in SOFT_STIFFNESS_RANGE for e in SOFT_RESTITUTION_RANGE] + [
-    (math.sqrt(SOFT_STIFFNESS_RANGE[0] * SOFT_STIFFNESS_RANGE[1]), sum(SOFT_RESTITUTION_RANGE) / 2)]
+    (math.sqrt(SOFT_STIFFNESS_RANGE[0] * SOFT_STIFFNESS_RANGE[1]), sum(SOFT_RESTITUTION_RANGE) / 2),
+    (12000.0, 0.45)]  # choice: Task 4's grid: the weakest stretch between rows, -9.0 to -9.6 % from 10000 to 14000
 
 
 @pytest.mark.parametrize(("stiffness", "e"), SOFT_CORNERS)
 def test_the_rule_bounces_within_10_percent_across_the_range(stiffness, e):
-    """At each corner of SOFT_STIFFNESS_RANGE x SOFT_RESTITUTION_RANGE and at its middle (log stiffness), the 1 m
-    drop's e is within 10 % of the asked one (fix round 2: the damping scale follows the stiffness)."""
+    """At each corner of SOFT_STIFFNESS_RANGE x SOFT_RESTITUTION_RANGE, at its middle (log stiffness) and at 0.45
+    and 12000 N/m (the weakest stretch between table rows), the 1 m drop's e is within 10 % of the asked one (fix round
+    2: the damping scale follows the stiffness)."""
     assert soft_helpers.drop(_at(stiffness, e))["e"] == pytest.approx(e, rel=0.10)
 
 
@@ -189,11 +192,15 @@ def test_the_shipped_damping_scales_are_the_fit():
 
 @pytest.mark.parametrize("stiffness", SOFT_STIFFNESS_RANGE)
 def test_the_ring_is_stable_at_both_ends_of_its_range(stiffness):
-    """R14 (Review Focus 4): at each end of SOFT_STIFFNESS_RANGE the drop stays finite, its deepest contact is under
-    40 mm, and it is still within 1 s of its first touch."""
+    """R14 (Review Focus 4), tightened by K6-R11: at each end of SOFT_STIFFNESS_RANGE the drop stays finite, its
+    deepest contact is under 21 mm (K6-R1's ramp; under the 25 mm tube), its energy never rises above its start
+    (K6-P4), and it is still within 1 s of its first touch."""
     r = soft_helpers.drop(_at(stiffness))
     assert r["finite"]
-    assert r["deepest"] < 0.040, r
+    # choice: measured 19.3 mm at 1000 N/m (18.8 after K6-R6's refit); was 40 mm, more than the tube
+    assert r["deepest"] < 0.021, r
+    # choice: K6-P4: a drop never adds energy; 0.1 % is the integrator's rounding
+    assert r["energy_gain"] <= 1.001, r
     assert r["settle_s"] < 1.0, r
 
 
@@ -265,25 +272,69 @@ def test_the_rings_kinematics_are_mujocos():
     assert np.abs(inertia @ spin - d.subtree_angmom[s0]).max() < 1e-12
 
 
+def test_the_ramp_rule():
+    """K6-R1: the impedance ramps from SOFT_DMIN to dmax over the tube's radius, dmax capped so the stiffest contact's
+    frequency is W_RING, and the solref scaled so that a shallow contact is K5's (-contact_k, -contact_b)."""
+    for stiffness, want in ((1000.0, 0.95), (2000.0, 0.95), (6000.0, 0.763), (20000.0, 0.418)):  # source: K6-R1's table
+        solref, solimp = soft.ring_contact(_at(stiffness))
+        p = soft.ring_params(_at(stiffness))
+        assert solimp[0] == soft.SOFT_DMIN
+        assert solimp[1] == pytest.approx(want, abs=1e-3)
+        assert solimp[2] == pytest.approx(0.0254)    # the 2024 NOTE's tube radius, 1 in
+        assert solimp[3:] == [soft.RAMP_MID, soft.RAMP_POWER]
+        assert solref[0] * (soft.SOFT_DMIN / solimp[1]) ** 2 == pytest.approx(-p.contact_k, rel=1e-12)
+        assert solref[1] * (soft.SOFT_DMIN / solimp[1]) == pytest.approx(-p.contact_b, rel=1e-12)
+    solref, _ = soft.ring_contact(_at(2000.0))
+    p = soft.ring_params(_at(2000.0))
+    # f = 0.95 / 0.2 = 4.75, f^2 = 22.5625
+    assert solref == pytest.approx([-11211.4 * 22.5625, -p.contact_b * 4.75], rel=1e-6)
+    # a light, stiff legal kind is already past W_RING: its dmax is clamped to SOFT_DMIN, K5's flat contact
+    light = replace(NOTE, stiffness=20000.0, mass=0.05)  # choice: the review's 50 g ring at the top of the range
+    p = soft.ring_params(light)
+    assert soft.SOFT_DMIN * soft.W_RING / math.sqrt(p.contact_k) < soft.SOFT_DMIN
+    solref, solimp = soft.ring_contact(light)
+    assert solimp[1] == soft.SOFT_DMIN and solimp[1] >= solimp[0]
+    assert solref == pytest.approx([-p.contact_k, -p.contact_b], rel=1e-12)
+
+
 def test_the_ring_is_built_as_its_kind():
     """16 bodies, a free joint and 15 ball joints, capsules of the tube's radius, the closing connect and its
-    exclude; the contact is the rule's."""
+    exclude; the contact is the rule's (ring_contact: K6-R1's ramp, re-recorded per K6-R9)."""
     spec = mujoco.MjSpec()
     soft.add_ring(spec, "n", NOTE, (0.0, 0.0, 0.0), PARKED_BITS)
     m = spec.compile()
     assert m.nbody == 1 + 16 and m.njnt == 16 and m.nv == 6 + 15 * 3 and m.neq == 1 and m.nexclude == 1
-    p = soft.ring_params(NOTE)
+    solref, solimp = soft.ring_contact(NOTE)
     r, big_r = (14.0 - 10.0) / 4 * 0.0254, (14.0 + 10.0) / 4 * 0.0254
     for j in range(16):
         g = m.geom(f"n.g{j}")
         assert g.type[0] == mujoco.mjtGeom.mjGEOM_CAPSULE and g.size[0] == pytest.approx(r)
         assert g.size[1] == pytest.approx(big_r * math.sin(math.pi / 16))
-        assert list(g.solref) == pytest.approx([-p.contact_k, -p.contact_b]) and g.condim[0] == 3
-        assert list(g.solimp) == pytest.approx(soft.SOFT_SOLIMP)
+        assert list(g.solref) == pytest.approx(solref) and g.condim[0] == 3
+        assert list(g.solimp) == pytest.approx(solimp)
         assert list(g.friction) == pytest.approx([NOTE.friction, 0.005, 0.0001])
     d = mujoco.MjData(m)
     mujoco.mj_forward(m, d)
     assert np.abs(d.efc_pos[:d.ne]).max() < 1e-12      # the loop closes at rest
+
+
+def test_segment_speeds_are_the_rings_own():
+    """Ring.speeds is each segment's center speed from the ring's own kinematics: a ring moving as one rigid body at
+    v and spinning at w has |v + w x (com_j - c)| at segment j (K6-R8)."""
+    spec = mujoco.MjSpec()
+    soft.add_ring(spec, "n", NOTE, (0.0, 0.0, 0.0), PARKED_BITS)
+    m = spec.compile()
+    d = mujoco.MjData(m)
+    ring = soft.ring_view(m, "n")
+    c0, q = [0.3, -0.2, 0.5], [math.cos(0.3), 0.0, math.sin(0.3), 0.0]
+    soft.write_rigid(m, d, "n", c0, q, vel=[1.0, 0, 0], ang_vel=[0, 0, 10.0])
+    mujoco.mj_forward(m, d)
+    com, _, _, _ = ring._segments(d.qpos[ring.q], None)
+    c = ring.m @ com / ring.mass
+    want = np.linalg.norm(np.array([1.0, 0, 0]) + np.cross([0, 0, 10.0], com - c), axis=1)
+    got = ring.speeds(d)
+    assert got.shape == (16,)
+    assert np.abs(got - want).max() < 1e-9
 
 
 # ------------------------------------------------------------------------------------------------ the pool
@@ -456,6 +507,7 @@ def swap_run(w: World, press_s: float = 0.6, stop_s: float = 0.0, after_s: float
         if t_back is not None and w.time >= t_back + after_s - 1e-9:
             break
     assert t_in is not None and t_back is not None, "the NOTE never turned soft and back"
+    assert w.test_range.soft.resets == 0        # the guard never fired (K6-R7)
     first = next(k for k, r in enumerate(rows) if r["in_use"])
     back = next(k for k in range(first, len(rows)) if not rows[k]["in_use"])
     return slot, rows, first, back
@@ -594,6 +646,7 @@ def test_a_held_or_launched_note_stays_rigid(tmp_path):
     world = world_for(program)
     r = TestRun(world, program).run()
     assert r.status == "finished", r.outcome
+    assert r.soft_resets == 0
     assert [c["passed"] for c in r.checks] == [True]
     log = world.test_range.ball_log()[0]
     assert log["goal"] == "speaker_blue" and log["first_hit"] is None
@@ -617,7 +670,7 @@ def test_a_held_or_launched_note_stays_rigid(tmp_path):
     for _ in range(200):
         w.step(hal)
         assert np.isfinite(balls._full_bits_at[slot]) and pool.distances(np.array([slot]))[0] < soft.SOFT_REACH
-    assert pool.swaps == 0 and pool.in_use() == {}
+    assert pool.swaps == 0 and pool.in_use() == {} and pool.resets == 0
 
 
 def test_the_swap_back_on_the_carpet_doesnt_hop(tmp_path):
@@ -678,7 +731,7 @@ def test_a_reset_mid_swap_parks_every_ring(tmp_path):
         drive(hal, 2.0)
         for _ in range(2000):
             w.step(hal)
-        assert rt.soft.swaps == 1
+        assert rt.soft.swaps == 1 and rt.soft.resets == 0
         runs.append((rt.balls._qpos.copy(), d.qpos.copy()))
         w.reset()
         parked()
@@ -704,7 +757,7 @@ def test_a_full_pool_leaves_the_third_rigid_and_notes_it_once(tmp_path):
         assert len(pool.in_use()) <= 2
         if near.all() and len(pool.in_use()) == 2:
             full_seen = True
-    assert full_seen and pool.swaps >= 2
+    assert full_seen and pool.swaps >= 2 and pool.resets == 0
     n = soft.POOL_SIZE
     full = (f"a NOTE came near the robot while the soft pool's {n} NOTE was in use; it stayed rigid" if n == 1 else
             f"a NOTE came near the robot while all {n} soft NOTEs were in use; it stayed rigid")
@@ -835,6 +888,7 @@ def test_a_fast_note_turns_soft_before_it_reaches_the_robot(tmp_path, monkeypatc
         if pool.distances(np.array([slot]))[0] > soft.SOFT_REACH:
             predicted += 1
         w.step(hal)
+        assert pool.resets == 0, d0
         ring = set(soft.ring_view(m, "soft.0").geoms.tolist())
         for i, (a, b) in enumerate(contact_ids(m, d).tolist()):
             if (a in ring and b in robot) or (b in ring and a in robot):
@@ -861,6 +915,7 @@ def test_a_fed_note_turns_soft_at_a_waiting_robot(tmp_path):
         w.step(hal)
         if slot in rt.soft.in_use():
             assert rt.counts() == counts
+    assert rt.soft.resets == 0
 
 
 def test_a_swap_back_waits_until_the_note_is_clear_of_a_wall(tmp_path):
@@ -924,14 +979,17 @@ duration = 0.3
     assert report.error is None, report.summary()
     notes = json.loads((tmp_path / "out" / "report.json").read_text())["notes"]
     assert sum("UNCALIBRATED" in n and "soft NOTE" in n for n in notes) == 1, notes
+    assert not [n for n in notes if "blew up" in n or "unstable" in n], notes     # the guard never fired (K6-R7)
 
 
 @pytest.mark.skipif(os.environ.get("SCRIMMAGE_TIMING") != "1", reason="timed locally only: set SCRIMMAGE_TIMING=1")
 def test_what_a_soft_note_costs(tmp_path):
     """Review finding 3: wall seconds per simulated second on the wing world with two NOTEs, idle and pushed at 2 V,
-    with 0, 1 and 2 soft (the least of 3 runs of 1 s). Printed, not a gate (F13): the numbers in spec D8's cost and
-    docs/test-range.md. Opt-in, as test_bench_reference.py's test_turnaround is (final review Minor 7): run it with
-    SCRIMMAGE_TIMING=1 and -s to record the numbers."""
+    with 0, 1 and 2 soft (the least of 3 runs of 1 s), then what K6-R2's pairs cost (_what_pairs_cost). Printed, not
+    a gate (F13): the numbers in spec D8's cost and docs/test-range.md (rerun for K6 on 2026-11-13: 0.36, 0.77 and
+    1.13 s per simulated second pushed with 0, 1 and 2 soft, the same within 2 % as the K5 code on the same computer
+    that day; the pairs 0.006 ms a step). Opt-in, as test_bench_reference.py's test_turnaround is (final review
+    Minor 7): run it with SCRIMMAGE_TIMING=1 and -s to record the numbers."""
     x, y = WING_NOTE
     out = {}
     for volts, label in ((0.0, "idle"), (2.0, "pushed")):
@@ -957,3 +1015,42 @@ def test_what_a_soft_note_costs(tmp_path):
                 best = min(best, time.perf_counter() - t0)
             out[f"{label} {n} soft"] = best
     print({k: round(v, 3) for k, v in out.items()})
+    print(_what_pairs_cost())
+
+
+PAIR_RUN_S = 2.0  # choice: the example's drive: the NOTE is soft in the rollers for the second half of it
+INTAKE_TEST = Path(__file__).resolve().parent.parent / "examples" / "blocks" / "note-intake" / "intake.test.toml"
+
+
+def _what_pairs_cost() -> dict:
+    """K6-R2's pairs on examples/blocks/note-intake (256 of them: 8 priority geoms x 2 rings x 16 capsules): wall
+    seconds per simulated second built with and without them, with the robot standing (both rings parked, every pair
+    still checked) and driving at its NOTE with the rollers on (a ring in use for about the second half), and the
+    pairs' cost per step (ms). The least of 3 runs of PAIR_RUN_S, each from the start."""
+    from scrimmage.blocks.program import load
+
+    out = {}
+    for pairs in (True, False):
+        with pytest.MonkeyPatch.context() as mp:
+            if not pairs:
+                mp.setattr(soft, "pair_rings", lambda spec, rings, bodies: 0)
+            w = world_for(load(INTAKE_TEST))
+        assert (w.model.npair > 0) == pairs
+        for label, volts in (("standing", 0.0), ("driving in", 3.1)):
+            best, steps = math.inf, 0
+            for _ in range(3):
+                w.reset()
+                hal = HalState()
+                drive(hal, volts)
+                hal.devices[("PWM", "2")] = {"<init": True, "<speed": (8.0 if volts else 0.0) / VOLTS}
+                t0, s0, n = time.perf_counter(), w.data.time, 0
+                while w.data.time - s0 < PAIR_RUN_S - 1e-9:
+                    w.step(hal)
+                    n += 1
+                best, steps = min(best, (time.perf_counter() - t0) / (w.data.time - s0)), n / PAIR_RUN_S
+            out[f"{label}, {'pairs' if pairs else 'no pairs'}"] = round(best, 3)
+            out[f"{label}, steps per s"] = steps
+    for label in ("standing", "driving in"):
+        out[f"{label}, the pairs' ms per step"] = round(
+            1000 * (out[f"{label}, pairs"] - out[f"{label}, no pairs"]) / out[f"{label}, steps per s"], 4)
+    return out

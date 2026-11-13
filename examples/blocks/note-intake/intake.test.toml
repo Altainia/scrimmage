@@ -1,0 +1,34 @@
+# Drive at the AMP-side WING NOTE with the intake running; the NOTE must end lifted off the carpet in the bin.
+# With the roller at 0 V the robot pushes the NOTE ahead of it and this fails (the spike's control run).
+# The drive at 3.1 V is about 1 m/s.
+[test]
+robot = "note-intake-standin.toml"
+hopper = ["intake.hopper"]
+chart = ["intake.roller"]
+
+[[block]]
+do = "spin"
+motor = "intake.roller"
+volts = 8.0
+
+[[block]]
+do = "drive"
+seconds = 2.0
+volts = 3.1
+
+[[block]]
+do = "wait_until"
+until = { piece_in = { body = "intake.hopper", piece = "any" } }
+timeout = 3.0
+
+[[block]]
+do = "stop"
+motor = "intake.roller"
+
+[[block]]
+do = "wait"
+seconds = 1.0
+
+[[block]]
+do = "expect"
+that = { piece_in = { body = "intake.hopper", piece = "any" } }

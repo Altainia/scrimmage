@@ -305,6 +305,15 @@ N/m. A foam that creeps (keeps sinking) is read at 5 seconds.
 Don't use flat boards in place of the bars. Boards press on the whole ring at once, so the same squash takes several
 times the weight, and the number would come out several times too stiff.
 
+**Optional: two deep-squeeze readings.** The simulator's NOTE gets much harder past about 60 % squeeze, as a foam
+does, but where it does that is an estimate ([The soft NOTE](test-range.md#the-soft-note)). A tight intake nip passes
+or fails on it. To check it, keep the same bars and add weight until the gap is 0.6 in (a 70 % squeeze), then again
+until it is 0.4 in (80 %), reading each at 5 seconds. Write down the force (in N) at each gap, beside the stiffness.
+The simulator's preset NOTE, at 2000 N/m, takes 133.5 N at 0.6 in and 494.3 N at 0.4 in. Those are large loads, about
+14 kg and 50 kg on the top bar, so press down with a lever or a bench vise instead of a stack of weights, with a
+bathroom scale under the bottom bar to read the force. There is no key for these readings: they check the simulator's
+estimate. If a real NOTE takes much less or much more force at those gaps, please report it, with the numbers.
+
 ## NOTE drop
 
 **Gives** `[piece.note] restitution`: its bounce off the carpet.

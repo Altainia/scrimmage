@@ -1,0 +1,39 @@
+# Stand-in box robot (the kitbot's chassis and tank drive) with the over-under NOTE intake in front of its front
+# bumper, on the 2024 field, facing the AMP-side blue WING NOTE (clear of the STAGE).
+
+[model]
+timestep = 0.001
+
+[robot]
+standin = true
+start_pose = [1.6, 7.0016, 0.0]   # the AMP-side blue WING NOTE is 1.3 m ahead (its center); the intake's mouth 0.7 m from it
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+[[part]]
+name = "drive"
+stock = "chassis"
+mass = 45.0
+com_offset = [0.0, 0.0, 0.0]
+ids = { gyro = { device = "ADXRS450[0]", axis = "x", cw_positive = true } }
+
+[[part]]
+name = "dt"
+stock = "differential"
+attach = "drive.center"
+ids = { left = "PWM:0", right = "PWM:1", left_encoder = { channel_a = 0, counts_per_rev = 2048 }, right_encoder = { channel_a = 2, counts_per_rev = 2048 } }
+
+[[part]]
+name = "intake"
+path = "parts/intake"
+attach = "drive.chassis"
+pos = [0.43, 0.0, 0.0]    # on the carpet at the front bumper's face
+ids = { roller = "PWM:2" }
+
+[range]
+file = "2024"

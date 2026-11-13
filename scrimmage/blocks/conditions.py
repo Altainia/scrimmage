@@ -135,7 +135,9 @@ class Watch:
         self.piece_names: dict[str, str] = {}               # a piece's body name -> what a student reads ("coral 1")
         if tr is not None and not one_round_kind(tr.range.kinds):
             self.piece_names = {n: tr.balls.piece_name(i) for i, n in enumerate(self._ball_names)}
-        self.hopper = list(program.hopper or [])             # where a piece should end up (the test's hopper)
+        # where a piece should end up (the test's hopper): the file's list, [] included, else the bodies its piece_in
+        # checks name (K6-R12: a test that asks what is in a body wants it in)
+        self.hopper = hopper_of(program)
         # (balls,) True for each ball or disc: only a rigid piece counts as in when a hopper body holds it (ruling
         # P26: a ball wedged on a hopper body outside its box is stuck, as always)
         self.round = np.array([tr.range.kinds[str(k)].form != "rigid" for k in tr.balls.kind], bool) \
@@ -347,6 +349,18 @@ class Watch:
             self._boxes[name] = (b, lo, hi)
         return self._boxes[name]
 
+    def hopper_body(self, ball: int) -> str | None:
+        """The first hopper body whose box holds ball `ball`'s center now (as hopper_mask reads it), else None."""
+        if not self._balls or not self.hopper_mask()[ball]:
+            return None
+        d = self.data
+        for name in self.hopper:
+            b, lo, hi = self._box(name)
+            local = (d.xpos[self._balls[ball]] - d.xpos[b]) @ d.xmat[b].reshape(3, 3)
+            if np.all((local >= lo) & (local <= hi)):
+                return name
+        return None
+
     def hopper_mask(self) -> np.ndarray:
         """(balls,) True for each range ball whose center is inside a hopper body's box now, and off the carpet
         (carried), in the range's ball order."""
@@ -497,11 +511,31 @@ def sensor_on(world, name: str, sees: str | None = None) -> bool:
     return r.on and (sees is None or r.color_name == sees)
 
 
+def hopper_of(program) -> list[str]:
+    """The test's hopper: its file's list (`[]` included), else the bodies its piece_in checks name, in order."""
+    if program.hopper is not None:
+        return list(program.hopper)
+    return list(dict.fromkeys(c.args["body"] for c in _conds(program.blocks, "piece_in")))
+
+
 def _conds(blocks, kind: str) -> list:
-    """The blocks' conditions of `kind`, through repeat bodies."""
+    """The blocks' conditions of `kind`, through repeat bodies and through conditions that hold conditions (an
+    all/any: a Cond arg, or a list of them)."""
     out = []
+
+    def walk(v) -> None:
+        if isinstance(v, (list, tuple)):
+            for item in v:
+                walk(item)
+        elif hasattr(v, "kind") and hasattr(v, "args"):
+            if v.kind == kind:
+                out.append(v)
+            for a in v.args.values():
+                walk(a)
+
     for b in blocks:
-        out += [v for v in b.args.values() if getattr(v, "kind", None) == kind]
+        for v in b.args.values():
+            walk(v)
         out += _conds(b.body, kind)
     return out
 

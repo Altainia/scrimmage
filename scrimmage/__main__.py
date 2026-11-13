@@ -783,9 +783,10 @@ def _test(args) -> None:
                  + blocks_run.air_lines(result) + blocks_run.clearance_lines(result)):
         print(f"  {line}")
     for f in result.feeds:
-        if f["outcome"] == "stuck":
-            what = "the floor piece" if f["source"] == "floor" else f"a piece from {f['source']}"
-            print(f"  stuck in the robot: {what} (fed at {f['t']:.1f} s) resting on {f['body']}")
+        # a fed piece only: the floor piece a hopper test tracks isn't fed, and the piece table says where it stuck
+        if f["outcome"] == "stuck" and f["source"] != "floor":
+            print("  " + i18n.t("stuck in the robot: a piece from {station} (fed at {t} s) resting on {body}",
+                                station=f["source"], t=f"{f['t']:.1f}", body=f["body"]))
     for note in result.notes:
         print(f"  note: {note}")
     lines = blocks_run.piece_lines(result)

@@ -56,11 +56,11 @@ coral slipped out on the way, or were set down anywhere else, it would fail.
 
 ## What it does
 
-The run finishes at 7.4 s. Its outcome is plain "finished", with no count of pieces that made it in: the coral is a
-floor piece, and a floor piece is counted only in a floor spread (below). The checks say what happened:
+The run finishes at 7.4 s. Its outcome says where the coral was placed, "1 placed on branch_l2": the coral leaving the jaws for the branch
+is the success, so there is no "made it in" fraction. The checks say what happened:
 
 ```
-finished
+1 placed on branch_l2
   passed: a coral is held by grabber from 1.4 s until it was set down on branch_l2 at 4.4 s (block 6)
   passed: a coral is seated at least 3 in on branch_l2 at 7.4 s (block 13)
   passed: a coral rests on branch_l2 at 7.4 s (block 14)

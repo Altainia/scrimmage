@@ -1,7 +1,7 @@
 """One outcome for every fed piece: made it in, placed on the field, stuck in the robot, or missed.
 
-The runner tracks each piece a station feeds (and, later, a floor piece a spread places) and updates the tracker
-every physics step. A piece's outcome is where it is when the run ends:
+The runner tracks each piece a station feeds (and the floor piece ahead, in a spread or in a test with a hopper that
+feeds from no station) and updates the tracker every physics step. A piece's outcome is where it is when the run ends:
 
 - **in**: its center is inside a hopper body's box (Watch.hopper_mask), the robot's ball path took it in (its
   ledger state is `robot`), or, for a rigid piece (not a ball or disc), a hopper body holds it (grip_watch.py's
@@ -247,16 +247,27 @@ class Outcomes:
         """The counts now: fed, in, stuck, missed (and placed: `counts`)."""
         return counts(self.final())
 
+    def _in_body(self, pc: _Piece) -> str | None:
+        """The hopper body a piece that is in is in or held by; None when the robot's ball path took it."""
+        if self.balls.state[pc.ball] != BallState.FIELD:
+            return None
+        if pc.now_in:
+            return self.watch.hopper_body(pc.ball)
+        held = self.watch.held.holders(pc.ball) & self._hopper
+        return min(held, key=lambda by: self.watch.held.since(pc.ball, by)) if held else None
+
     def final(self) -> list[dict]:
-        """One row per tracked piece, in the order fed: ball, source, t, outcome ("in" | "placed" | "stuck" | "missed"),
-        why (a placed piece's: the rod or element), t_outcome, body (the robot body a stuck piece rests on, else None)."""
+        """One row per tracked piece, in the order fed: ball, source, t, outcome ("in" | "placed" | "stuck" |
+        "missed"), why (a placed piece's: the rod or element), t_outcome, body (the robot body a stuck piece rests on,
+        or the hopper body an "in" piece is in or held by; else None)."""
         m = self.model
         rows = []
         for pc in self.pieces:
             outcome, why, when = self._outcome(pc)
             rows.append({"ball": pc.ball, "source": pc.source, "t": pc.t, "outcome": outcome, "why": why,
                          "t_outcome": None if math.isnan(when) else float(when),
-                         "body": m.body(pc.body).name if outcome == "stuck" else None})
+                         "body": m.body(pc.body).name if outcome == "stuck" else
+                         self._in_body(pc) if outcome == "in" else None})
         return rows
 
 
@@ -297,6 +308,8 @@ def sentence(rows: list[dict], hopper: bool = True) -> str:
     c = counts(rows)
     placed = c.get("placed", 0)
     parts = []
+    if placed and placed == c["fed"] and hopper:     # all placed: that is the success, not "0 of N made it in"
+        return i18n.tn("{count} placed {where}", "{count} placed {where}", placed, where=_placed_words(rows))
     if placed and not hopper:
         parts.append(i18n.t("{placed} of {fed} placed {where}", placed=placed, fed=c["fed"], where=_placed_words(rows)))
         if c["in"]:

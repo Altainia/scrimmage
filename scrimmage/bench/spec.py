@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .. import i18n
+from .. import i18n, units
 from ..launcher.inputs import PRESETS, Ball
 from ..launcher.rigid_aero import DRAG_COEFFICIENT, SPIN_DAMPING
 from ..testrange.pieces import PieceKind
@@ -118,6 +118,9 @@ class Plate:
     size: Vec
     rot_deg: Vec  # rotations about x, then y, then z
     material: str
+    # m/s, signed, along the plate's own x: its surface moves as a conveyor's does (MuJoCo's geom surfacevel), the
+    # plate itself still (K6-R14)
+    surface_speed: float = 0.0
 
 
 @dataclass(**_frozen)
@@ -259,7 +262,7 @@ _SECTIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "shaft": (("motor", "count", "gearing", "wheel_inertia", "added_inertia", "control", "target_rps", "voltage",
                "kP", "kS", "kV", "stator_limit", "supply_limit", "coupled_to", "ratio"), ()),
     "wheel": (("name", "shaft", "center", "axis", "diameter", "width", "tread"), ("center", "diameter", "width")),
-    "plate": (("name", "center", "size", "rot_deg", "material"), ("center", "size")),
+    "plate": (("name", "center", "size", "rot_deg", "material", "surface_speed"), ("center", "size")),
     "bar": (("name", "a", "b", "center", "axis", "length", "diameter", "material", "spring", "travel",
              "spring_axis"), ("a", "b", "center", "length", "diameter", "travel")),
     "curve": (("name", "center", "axis", "zero_dir", "radius", "radius_start", "radius_end", "start_deg", "end_deg",
@@ -665,6 +668,7 @@ def parse_bench(raw: dict, base_dir: Path, problems: list[Problem] | None = None
     if bt is not None:
         fields = attempt(lambda: (bt.text("name"), bt.text("author", ""), bt.text("idea", ""), bt.text("notes", "")))
     run = attempt(_parse_run, raw.get("run", {}), key="run")
+    warned += [surface_warning(p) for p in parsed["plate"] if p.surface_speed]
     if len(errors) > start:
         return None
     return Bench(
@@ -673,6 +677,13 @@ def parse_bench(raw: dict, base_dir: Path, problems: list[Problem] | None = None
         curves=parsed["curve"], cads=cads, inlets=parsed["inlet"], outlets=parsed["outlet"], flight=flight,
         run=run, materials=dict(MATERIALS), sweep=dict(sweep), charts=list(charts),
         raw=copy.deepcopy(raw), base_dir=base_dir, warnings=tuple(warned))
+
+
+def surface_warning(plate: Plate) -> str:
+    """The warning a moving plate gives (K6-R14), so a result never hides that the carpet, not the mechanism, moved
+    the piece."""
+    return i18n.t("plate {name} moves its surface at {speed} along its x", name=repr(plate.name),
+                  speed=units.fmt(plate.surface_speed, "speed"))
 
 
 def _raise(err: BenchError):

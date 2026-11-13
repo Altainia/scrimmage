@@ -135,6 +135,19 @@ def test_save_bad_shape_and_stale(tmp_path, test_app):
     assert len(_state(c)["test"]["blocks"]) == 3
 
 
+def test_a_save_keeps_the_files_top_comments(tmp_path, test_app):
+    """A student's comments at the top of the test file (what it tests) survive a save from the Test tab."""
+    t = write_test(tmp_path)
+    t.write_text("# Spin the arm and wait.\n# Written by hand.\n" + t.read_text(encoding="utf-8"), encoding="utf-8")
+    c = test_app(t)
+    st = _state(c)
+    good = {**st["test"], "blocks": [*st["test"]["blocks"], {"do": "wait", "seconds": 0.25}]}
+    s, b = c.call("POST", "/api/test/save", {"test": good, "version": st["version"]})
+    assert s == 200, b
+    text = t.read_text(encoding="utf-8")
+    assert text.startswith("# Spin the arm and wait.\n# Written by hand.\n[test]\n") and "seconds = 0.25" in text
+
+
 def test_run_waits_for_the_drive_session(tmp_path, test_app):
     """Review Focus 3: Run while another simulation holds the lock is a plain busy message; once it's free the test
     runs and its run is kept."""

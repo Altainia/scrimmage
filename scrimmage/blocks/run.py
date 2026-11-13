@@ -139,7 +139,7 @@ from ..protocol import HalState, frame
 from ..testrange.build import BALL_BITS
 from .aim import TURN, aim_error, aim_target
 from .clearance import PREFIX, inches, named
-from .conditions import IN, Watch, _amount, _conds, phase_word
+from .conditions import IN, Watch, _amount, _conds, hopper_of, phase_word
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .grip_watch import SLIP_LOOKBACK_S
@@ -218,6 +218,8 @@ class RunResult:
     rules: list | None = None
     # each camera [[sensor]]'s tags: [t, [IDs]] at the start and whenever the set it sees changes; {} without cameras
     cameras: dict[str, list[list]] = field(default_factory=dict)
+    # the soft NOTE guard's resets in the run (SoftPool.resets, K6-R7): 0 off a range or without a soft NOTE
+    soft_resets: int = 0
 
     @property
     def passed(self) -> bool:
@@ -257,6 +259,11 @@ class _Air:
             out["compressor_s"] += dt
         if out["below_working_t"] is None and psi < out["working_psi"]:
             out["below_working_t"] = t
+
+
+def _feeds_from_a_station(blocks) -> bool:
+    """Some block, through repeat bodies, feeds from a station (start_feeding or feed_one)."""
+    return any(b.do in ("start_feeding", "feed_one") or _feeds_from_a_station(b.body) for b in blocks)
 
 
 def _aims(blocks) -> list[tuple[str, str]]:
@@ -320,7 +327,12 @@ class TestRun(_FailureWords):
         self.feeder = world.test_range.feeder if world.test_range is not None else None
         self.standin = is_standin(Path(program.path).parent / program.robot)
         self.placement = placement
-        self._floor = spread_ball(world) if placement is not None else None
+        # the floor piece ahead of the start (the one a spread places) is tracked in a placed run, and in a run whose
+        # test has a hopper (it asks whether a piece got in) and feeds from no station, so its feed outcome reaches
+        # the result however the test is run. A station test counts only what its stations fed, and a test with no
+        # hopper keeps its outcome as it was
+        floor = placement is not None or (hopper_of(program) and not _feeds_from_a_station(program.blocks))
+        self._floor = spread_ball(world) if floor else None
         if placement is not None and self._floor is None:
             raise TestFileError(no_ball())
 
@@ -495,7 +507,7 @@ class TestRun(_FailureWords):
         def outcome() -> str:
             said = _v(ending)
             if rows:
-                told = sentence(rows, hopper=bool(self.program.hopper))
+                told = sentence(rows, hopper=bool(watch.hopper))
                 said = told if finished else i18n.t("{ending}; {counts}", ending=said, counts=told)
             return i18n.t("reached {bar}, then {ending}", bar=top, ending=said) if top else said
         result.outcome = _w(outcome)
@@ -515,6 +527,11 @@ class TestRun(_FailureWords):
             result.goals = dict(tr.counts()["goals"])
         if tr is not None:
             result.pieces = piece_log(tr)
+            by_ball = {r["ball"]: r for r in rows}
+            for piece in result.pieces:
+                r = by_ball.get(piece["id"])
+                piece["feed"] = None if r is None else {"outcome": r["outcome"], "body": r["body"], "why": r["why"]}
+            result.soft_resets = tr.soft.resets if tr.soft is not None else 0
         if self.air is not None:
             result.air = dict(self.air.out)
         result.clearance = watch.closest.result()

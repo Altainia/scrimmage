@@ -251,6 +251,14 @@ def test_feed_problems():
     assert msgs(sprog(turn), w) == []
 
 
+def test_a_piece_in_check_is_the_hopper_without_a_hopper_line():
+    """K6-R12: with no `hopper` line, the bodies a piece_in check names are the hopper, as a run counts them."""
+    w = station_world()
+    piece_in = '[[block]]\ndo = "wait_until"\nuntil = { piece_in = { body = "drive.chassis" } }\n'
+    assert msgs(sprog(piece_in + WAIT_MADE_IT.format()), w) == []
+    assert msgs(sprog(piece_in + WAIT_HOPPER.format()), w) == []
+
+
 def test_turn_needs_a_drivetrain():
     from types import SimpleNamespace
     from scrimmage.blocks.palette import _block_problems

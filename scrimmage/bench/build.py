@@ -266,8 +266,11 @@ def _add_shafts(spec: mujoco.MjSpec, bench: Bench, shapes: _Shapes,
 def _add_static(spec: mujoco.MjSpec, bench: Bench, shapes: _Shapes) -> None:
     world, mats = spec.worldbody, bench.materials
     for p in bench.plates:
+        # a moving surface (K6-R14): MuJoCo's surfacevel is in the geom's own frame, so it runs along the plate's x
+        # (K6-P10), turned with it; the compiler sets flg_surfacevel only when some geom's is nonzero
+        moving = {"surfacevel": [p.surface_speed, 0.0, 0.0, 0.0, 0.0, 0.0]} if p.surface_speed else {}
         shapes.add(world, f"plate:{p.name}", p.name, mujoco.mjtGeom.mjGEOM_BOX, np.array(p.size) / 2, p.center,
-                   quat_from_rpy(p.rot_deg), mats[p.material].rigid_friction)
+                   quat_from_rpy(p.rot_deg), mats[p.material].rigid_friction, **moving)
     for bar in bench.bars:
         a, b = np.array(bar.a), np.array(bar.b)
         mid, length = (a + b) / 2, float(np.linalg.norm(b - a))

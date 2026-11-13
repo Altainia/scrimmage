@@ -38,7 +38,7 @@ from .. import i18n
 from ..blocks import store
 from ..blocks.palette import ANY_PIECE, hints, palette, problems
 from ..blocks.program import (Block, Cond, TestFileError, block_defaults, block_json, dumps, from_json, load,
-                              to_json)
+                              preamble, to_json)
 from ..blocks.run import TestRun, air_lines, clearance_lines, goal_lines, points_lines, rules_lines, world_for
 from ..blocks.spread import inside_robot, no_ball, no_spread, run_spread
 from ..blocks.sweep import MAX_SWEEP, _kind as sweep_kind, run_sweep
@@ -501,7 +501,11 @@ class TestSession:
                 new = from_json(body.get("test"), self.path)
             except TestFileError as e:      # a bad block's place goes as a code, so the page needn't read the words
                 raise SessionError(400, str(e), {"place": e.place, "problem": e.problem} if e.place else None) from None
-            text = dumps(new)
+            try:        # the file's own top comments stay (a student's description of the test)
+                head = preamble(self.path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                head = ""
+            text = dumps(new, head)
             tmp = None
             try:
                 with tempfile.NamedTemporaryFile("w", dir=self.path.parent, prefix=f".{self.path.name}.",

@@ -113,7 +113,7 @@ def test_the_beam_at_the_mouth_breaks_too_soon(tmp_path):
     run = _variant(tmp_path, TEST.read_text(encoding="utf-8"), cfg)
     r = run["result"]
     assert r.status == "check failed"
-    assert r.outcome == "a check failed (block 8): no ball was in intake.hopper at 2.0 s"
+    assert r.outcome == "a check failed (block 8): no ball was in intake.hopper at 2.0 s; 0 of 1 made it in (0%); 1 stuck in the robot"
     assert r.checks[0]["line"] == "passed: bin is on at 2.0 s (block 7)"
     assert _first_broken(run["seen"]) == pytest.approx(1.0, abs=0.05)
     x, _, z = run["ball"]
@@ -135,7 +135,8 @@ def test_the_roller_voltage_sweep(tmp_path, volts, finished, broke):
     r = run["result"]
     if not finished:
         assert r.status == "timed out", r.outcome
-        assert r.outcome == "waiting for bin to be on timed out at 5.3 s (block 4)"
+        assert r.outcome == "waiting for bin to be on timed out at 5.3 s (block 4); 0 of 1 made it in (0%); " \
+            "1 missed (1 still moving when the run ended)"
         return
     assert r.status == "finished", r.outcome
     t = _first_broken(run["seen"])

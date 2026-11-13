@@ -1,0 +1,134 @@
+# An over-under floor intake for the 2024 NOTE, written by hand (the intake spike's chosen design, 2026-11-12).
+# A 2 in top roller out front grabs the NOTE's top and drags it back into a 2 in bottom roller 3 mm over the carpet,
+# whose top moves into the robot: it lifts the NOTE's edge into the nip between the two (1.4 in apart, the 2 in NOTE
+# squeezed 0.6 in) and onto a floor level with its top, 2 in up. One more top roller over the floor carries it in.
+# Every roller is on one NEO at 3 to 1 (couplings), the same surface speed.
+# Coordinates: x forward, y left, z up, m; the origin is on the carpet at the front bumper's face.
+# Every `color` below is a drawing choice (rgba), not physics.
+#
+# Design rules this intake follows (the example's README.md says why; docs/test-range.md, "The soft NOTE"):
+# - every surface the NOTE can be pushed into is thick (5 cm, or the 5 cm floor slab). The soft NOTE's squash
+#   stiffens sharply past about 60 %, so it no longer goes through a 1/8 in plate even on an 8 m/s hit, and a part
+#   with `priority` still meets its squash. Thick parts are still good practice: they leave room to spare;
+# - a ceiling 2.1 in over the floor runs from the back stop forward over every roller (the rollers poke through it:
+#   a robot's own parts don't touch each other), so the NOTE's tail can't buckle up between the rollers;
+# - the front roller is on a sprung arm, so a NOTE pushed into a tight nip lifts it instead of jamming.
+
+[part]
+name = "intake"
+format = 1
+
+[[body]]
+name = "frame"
+mass = 0.6                    # choice: side plates and brackets (drawn only)
+# choice: a 5 cm marker cube up out of the way, drawn only (collide = false), so the frame has a shape to click
+geom = [{ box = [0.05, 0.05, 0.05], pos = [0.1, 0.0, 0.3], collide = false }]
+
+# The bin the NOTE ends in: a 5 cm floor slab whose top is 2.04 in up, a back stop, side walls 16 in apart, and a lid
+# 2.1 in over the floor. Its box (the piece_in check's) is behind the bottom roller only.
+# choice: the sizes: 16 in inside (the 14 in NOTE with 1 in each side), every wall 5 cm thick, the walls 12 cm tall,
+# the floor's top level with the bottom roller's top less 2 mm (2.04 in), the lid 2.1 in over it (the 2 in NOTE with
+# 0.1 in to spare), the floor ending 3 mm behind the bottom roller.
+# estimate: friction 0.4, polycarbonate on the NOTE's foam. priority = 1: this geom's friction wins against the
+# NOTE's; a soft NOTE keeps its own squash (docs/parts.md).
+[[body]]
+name = "hopper"
+parent = "frame"
+mass = 1.0                    # choice: polycarbonate sheet and its brackets
+geom = [
+  { box = [0.05, 0.5064, 0.12], pos = [-0.0123, 0.0, 0.064], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },   # back stop
+  { box = [0.4589, 0.4064, 0.0498], pos = [0.24215, 0.0, 0.0269], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },   # floor slab, 2 mm over the carpet to 2.04 in up
+  { box = [0.4716, 0.05, 0.12], pos = [0.2358, 0.2282, 0.064], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },   # side walls, 16 in apart inside
+  { box = [0.4716, 0.05, 0.12], pos = [0.2358, -0.2282, 0.064], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },
+  { box = [0.4716, 0.5064, 0.05], pos = [0.2358, 0.0, 0.13014], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },   # lid, 2.1 in over the floor
+]
+
+# Side guides round the rollers and the ceiling over them, the lid carried forward to just past the front roller.
+# choice: the guides 16 cm long and 13 cm tall round the rollers, in line with the bin's walls; the ceiling at the
+# lid's height, from the bin's front to 3 cm past the front roller's center. Friction and priority as the bin's.
+[[body]]
+name = "guide"
+parent = "frame"
+mass = 0.5                    # choice: as the bin's
+geom = [
+  { box = [0.16, 0.05, 0.13], pos = [0.53, 0.2282, 0.075], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },
+  { box = [0.16, 0.05, 0.13], pos = [0.53, -0.2282, 0.075], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },
+  { box = [0.140271, 0.5064, 0.05], pos = [0.541736, 0.0, 0.13014], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },
+]
+
+# The front roller's arm: it pivots on a hinge behind and above the roller (3 in back, 1.4 in up from its center),
+# and a spring holds it down on a stop, with the roller in its place below. A NOTE pushed into a tight nip lifts the
+# roller up to 25 degrees instead of jamming, as real over-under intakes have. The arm itself is drawn only.
+[[body]]
+name = "arm"
+parent = "frame"
+pos = [0.505671, 0.0, 0.09088]   # choice: the hinge 3 in behind and 0.035 m over the roller's center (0.581871, 0.05588)
+mass = 0.1                    # choice: a pair of light side plates
+# hinge = [0, -1, 0]: positive angles lift the roller. choice: the stop at 0 is where the roller sits; it swings up to
+# 25 degrees, which opens the 1.4 in nip to about 2.3 in, wider than the 2 in NOTE.
+# choice: the spring pulls toward -5 degrees, so it presses the arm on its stop with about 15 N at the roller:
+# 14 N*m/rad x 5 degrees (0.087 rad) over the 0.084 m arm is 14.6 N.
+# source: that is the force of the nominal nip's squeeze, so the nip still grips: a NOTE pushes back with its
+# stiffness x the squash / 2 (docs/test-range.md, the soft NOTE), and the 1.4 in nip squashes the 2024 preset
+# (2000 N/m) 0.6 in, 30 %: 2000 x 0.01524 / 2 = 15.2 N. The intake's grids pass the same from 7 to 28 N*m/rad.
+joint = { name = "arm", hinge = [0, -1, 0], range = [0, 25], spring = { stiffness = 14.0, rest = -5 } }
+# choice: a drawn-only bar from the hinge to the roller (0.084 m long, as wide as the roller)
+geom = [{ box = [0.0839, 0.4, 0.006], pos = [0.0381, 0.0, -0.0175], collide = false }]
+
+# The front top roller, on the arm: its bottom 1.2 in over the carpet, 3.2 in ahead of the bottom roller (centers
+# 3.4 in apart: a 1.4 in nip) while the arm is on its stop. Positive volts turn it so its bottom moves back into the
+# robot.
+[[body]]
+name = "roller"
+parent = "arm"
+pos = [0.0762, 0.0, -0.035]      # choice: on the arm, so at [0.581871, 0, 0.05588] in the part (the spike's place)
+mass = 0.25                   # choice: a 2 in roller with a grippy sleeve
+com = [0.0, 0.0, 0.0]         # choice: on the axle
+# choice: a solid cylinder's: 1/2 m r^2 about the axle (0.000081), m (3 r^2 + L^2) / 12 about the others (0.003374)
+inertia = [0.003374, 8.1e-05, 0.003374]
+joint = { name = "roller", hinge = "y" }
+# choice: 2 in across and 0.4 m long, the bin's width less a little. estimate: friction 1.0, a grippy sleeve
+geom = [{ cylinder = [0.0254, 0.4], axis = "y", color = [0.95, 0.5, 0.1, 1.0], friction = 1.0 }]
+
+# The bottom roller: its bottom 3 mm over the carpet, its top (2.08 in up) moving back into the robot.
+# choice: the same roller as the front one (mass, inertia, size, friction).
+[[body]]
+name = "bottom"
+parent = "frame"
+pos = [0.5, 0.0, 0.0284]      # choice: 0.5 m ahead of the bumper; 3 mm + its 1 in radius up
+mass = 0.25
+com = [0.0, 0.0, 0.0]
+inertia = [0.003374, 8.1e-05, 0.003374]
+joint = { name = "bottom", hinge = "y" }
+geom = [{ cylinder = [0.0254, 0.4], axis = "y", color = [0.95, 0.5, 0.1, 1.0], friction = 1.0 }]
+
+# Over the floor's front: its bottom 1.4 in over the floor.
+# choice: the same roller as the front one (mass, inertia, size, friction).
+[[body]]
+name = "top0"
+parent = "frame"
+pos = [0.48, 0.0, 0.11276]    # choice: 2 cm behind the bottom roller; the floor's top + 1.4 in + its 1 in radius up
+mass = 0.25
+com = [0.0, 0.0, 0.0]
+inertia = [0.003374, 8.1e-05, 0.003374]
+joint = { name = "top0", hinge = "y" }
+geom = [{ cylinder = [0.0254, 0.4], axis = "y", color = [0.95, 0.5, 0.1, 1.0], friction = 1.0 }]
+
+# One motor for all three, the bottom roller turning the other way (a belt crossed, or a gear)
+[[coupling]]
+joints = ["roller", "bottom"]
+ratio = -1.0                  # choice: the same speed, turning the other way
+
+[[coupling]]
+joints = ["roller", "top0"]
+ratio = 1.0                   # choice: the same speed and way
+
+[[motor]]
+slot = "roller"
+joint = "roller"
+motor = "NEO"
+gearing = 3.0                 # choice: 3 to 1, about 20 rps at 8 V (2 in rollers: 3.4 m/s at the surface)
+
+[[mount]]
+name = "base"
+body = "frame"

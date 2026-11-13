@@ -158,6 +158,19 @@ def test_test_run_prints_each_stuck_piece(tmp_path, capsys, monkeypatch):
     assert out[1] == f"  stuck in the robot: a piece from feeder (fed at {SETTLE_S:.1f} s) resting on shelf.plate"
 
 
+def test_a_station_test_doesnt_count_the_floor_piece_ahead(tmp_path):
+    """A test that feeds from a station counts the pieces the station fed, not a floor piece that lies ahead of the
+    start untouched (K6-R12 tracks the floor piece only in a hopper test that feeds from no station)."""
+    field = station_file(tmp_path, (1.183, 4.0, 1.0), extra="stock = 1\n")     # choice: over the bin's middle
+    with open(field, "a", encoding="utf-8") as f:
+        f.write("\n[[floor_balls]]\nat = [[0.3, 4.3]]\n")   # choice: 0.9 m ahead of the start, 19 deg off its heading
+    r = run(write(tmp_path, FEED_ONE + '\n[[block]]\ndo = "expect"\nthat = { made_it_in = { at_least = 100.0 } }\n',
+                  field))
+    assert r.counts == {"fed": 1, "in": 1, "stuck": 0, "missed": 0}, r.outcome
+    assert r.passed and r.outcome == "1 of 1 made it in (100%)"
+    assert [f["source"] for f in r.feeds] == ["feeder"]
+
+
 def test_a_piece_on_the_standins_own_body_is_not_stuck(tmp_path):
     field = station_file(tmp_path, (1.523, 4.0, 1.0), extra="stock = 1\n")
     r = run(write(tmp_path, FEED_ONE, field, HOPPER + SHELF_STOCK))
@@ -315,6 +328,14 @@ def test_a_timed_out_made_it_in_wait_reads_naturally(tmp_path):
     wait = '\n[[block]]\ndo = "wait_until"\nuntil = { made_it_in = { at_least = 80.0 } }\ntimeout = 0.5\n'
     r = run(write(tmp_path, wait))
     assert r.outcome.startswith("waiting for at least 80% to have made it in timed out at "), r.outcome
+
+
+def test_a_run_whose_pieces_were_all_placed_says_where():
+    on = [{"outcome": "placed", "why": "branch_l2"}]
+    assert sentence(on) == "1 placed on branch_l2" and sentence(on * 2) == "2 placed on branch_l2"
+    # a mixed run keeps the fraction; with no hopper the older wording stays
+    assert sentence(on + rows(1, 0, 0, 0)) == "1 of 2 made it in (50%); 1 placed on branch_l2"
+    assert sentence(on, hopper=False) == "1 of 1 placed on branch_l2"
 
 
 def rows(n_in, stuck, bounced, moving, floor=0):

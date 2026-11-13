@@ -772,8 +772,26 @@ def _write_block(b: Block, header: str, out: list) -> None:
         _write_block(x, header + ".body", out)
 
 
-def dumps(p: Program) -> str:
-    out = ["[test]", f"robot = {_value(p.robot.as_posix())}"]
+def preamble(text: str) -> str:
+    """The comment lines at the top of a test file's text, before its first table or key (blank lines among them
+    kept, trailing ones dropped), each ending in a newline: what dumps puts back at the top, so a save from the Test
+    tab keeps a student's description of the test. Comments further down aren't kept."""
+    lines = []
+    for line in text.replace("\r\n", "\n").split("\n"):
+        s = line.strip()
+        if s and not s.startswith("#"):
+            break
+        lines.append(line.rstrip())
+    while lines and not lines[-1]:
+        lines.pop()
+    return "".join(f"{x}\n" for x in lines)
+
+
+def dumps(p: Program, head: str = "") -> str:
+    """The test file's text for `p`, with `head` (preamble's comment lines) at the top."""
+    # Split on "\n" only, as preamble does: splitlines() also breaks on U+2028, U+2029 and U+0085, which TOML allows
+    # inside a comment, and would write the rest of such a comment as a line that isn't one.
+    out = ([head.rstrip("\n")] if head else []) + ["[test]", f"robot = {_value(p.robot.as_posix())}"]
     if p.hooks:
         out.append(f"hooks = {_value(p.hooks)}")
     if p.hopper is not None:

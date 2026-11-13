@@ -213,3 +213,17 @@ def test_a_new_seed_is_named_in_the_outcome(tmp_path):
     assert load_run(base, "004")["seed"] is None and load_run(base, "004")["counts"] is None
     save_run(replace(first, seed=2), program, base)            # the newest kept run had no seed: no note
     assert load_run(base, "005")["outcome"] == "1 of 1 made it in (100%)"
+
+
+def test_the_saved_hopper_flag_counts_piece_in_bodies(tmp_path):
+    """K6-R12: a test with no `hopper` line but a piece_in check has a hopper (its body), as its run counts it, so the
+    Test tab's fed-pieces summary shows its "in" count."""
+    path = write_test(tmp_path, WAIT_1)
+    program, r = _run(path)
+    piece_in = loads(path.read_text(encoding="utf-8")
+                     + '[[block]]\ndo = "wait_until"\nuntil = { piece_in = { body = "arm.link" } }\n', path)
+    assert piece_in.hopper is None
+    base = tmp_path / "runs"
+    save_run(r, program, base)
+    save_run(r, piece_in, base)
+    assert load_run(base, "001")["hopper"] is False and load_run(base, "002")["hopper"] is True

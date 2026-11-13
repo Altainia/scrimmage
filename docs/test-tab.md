@@ -65,6 +65,8 @@ The bottom bar says whether the test is saved and how many blocks it has.
   says "Not saved yet: a block needs a check plugged in". Plug one in from **Check**.
 - **If the file is changed somewhere else** (you edited it in a text editor), the tab reloads it and says so. A file it
   can't read shows the error and keeps the last good version on screen.
+- **Comments at the top of the file are kept.** Describe the test in `#` lines above `[test]` and a save keeps them.
+  The tab writes the rest of the file itself, so comments further down are dropped when it saves.
 
 ## The blocks
 
@@ -119,6 +121,14 @@ the blocks gain a **Station** group:
 
 Two conditions go with them. **\<station\> is empty** is true when the station has no balls left to feed. **At least
 (or at most) n pieces in the hopper** counts the balls inside the hopper right now.
+
+A test with no `hopper = [...]` line treats the bodies its **piece in** checks name as its hopper, so a passing
+**piece in intake.hopper** is also counted as "made it in". Write `hopper = []` to turn that off.
+
+A test with a hopper that feeds from no station counts the floor piece ahead of the robot's start (the nearest one
+within 30° of its heading and 3 m of it) the same way, so a floor intake's test reads `1 of 1 made it in`. A test with
+a **start feeding** or **feed one from** block counts only the pieces its stations fed: a floor piece lying ahead isn't
+counted.
 
 **Where a piece should end up.** The test needs to know where a piece counts as "in". In Setup, **Where a piece should
 end up**, tick the bodies a piece lands in or is held by: a hopper, an intake, a claw. A piece is in when its center is
@@ -384,7 +394,12 @@ any it picks up, go out of the launcher, fly, and score or miss. Nothing about s
   piece that moved): its number and kind, where it came from, when it was fired and its exit speed, its outcome, and
   where it went (the goal and time it scored, where it rests or left the field, what it hit first, and how high a
   missed shot got against the goal's rim). The run's `result.json` keeps them as `pieces`, and the MCP `test_run`
-  returns them too (in meters and m/s).
+  returns them too (in meters and m/s). Two tables, two sets of words: this table's outcome column is the *feed*
+  outcome (`in`, `stuck`, `placed`, `missed`) for a piece the run tracked (a fed piece, or the floor piece ahead of the
+  robot: always in a spread, and in a test that has a hopper and feeds from no station), and its last column then
+  says where (`in intake.hopper`, `in the robot`, `stuck on drive.chassis`). So a NOTE lifted into the bin reads `in`
+  here, where the scenario ledger (a `scrimmage run` scenario's ball table) says
+  `on_field`, because it is still on the field. Pieces the run did not track keep the ledger's words.
 - **The replay** shows the balls in flight.
 
 In the test file:
@@ -883,7 +898,7 @@ absolute path. **`test_spread`** runs the floor spread. The agent writes the `.t
 
 ## The examples
 
-Thirteen worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
+Fourteen worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
 
 - **`examples/blocks/intake`**, a roller and bin that take a ball off the carpet. Run it and it finishes at 3.3 s
   with the ball in the bin. The README has a sweep of the roller's voltage.
@@ -941,6 +956,13 @@ Thirteen worked examples are in `examples/blocks/`. Each has a README with the s
   chain (Setup's partner, **Hangs on**) and scores 5 in the endgame: ONSTAGE's 3 and HARMONY's 2. The README says where
   the partner hangs and why: the STAGE's legs leave room for it only near the low point, and hooks don't slide along
   a chain.
+- **`examples/blocks/note-intake`**, the stand-in kitbot with an over-under floor intake (a part written by hand)
+  behind the built-in `2024` field's AMP-side blue WING NOTE. It drives at the NOTE at about 1 m/s with the rollers at
+  8 V and expects it in `intake.hopper`: `1 of 1 made it in`, and the piece table says `in intake.hopper`. Near the
+  robot the NOTE is a soft ring that squashes in the rollers' nip. At 0 V the robot pushes it ahead and the test
+  fails. The README has the robustness grids (`tests/intake_grid.py`: the test run 101 times with the intake built a
+  little off, the driver fast or crooked, the NOTE off center), which it passes, and why its front roller is on a
+  sprung arm.
 
 Open one with `scrimmage edit examples/blocks/intake/intake.test.toml`.
 

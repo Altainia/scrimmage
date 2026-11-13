@@ -449,7 +449,7 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
 
     def record(i: int, row: dict, result):
         row.update(status=result.status, outcome=result.outcome, picked=_floor_outcome(result) == "in",
-                   words=result.words)
+                   words=result.words, soft_resets=result.soft_resets)
         return program, {"spread": ps[i], "index": i}
 
     rows = [{"placement": labels[i], **p, "status": COULDNT_RUN, "picked": False, "outcome": ""}
@@ -498,9 +498,12 @@ def _write_words(path: Path, ps: list, names: list, kind, rows: list, picked: li
 
 
 def _write_table(path: Path, rows: list[dict]) -> None:
+    """table.csv; a soft_resets column only when a row had one (sweep.resets_column)."""
+    from .sweep import resets_column
+    resets = resets_column(rows)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["placement", *SPREAD_AXES, "status", "picked up", "outcome"])
+        w.writerow(["placement", *SPREAD_AXES, "status", "picked up", "outcome", *(["soft_resets"] if resets else [])])
         for r in rows:
             w.writerow([r["placement"], *(_n(r[a]) for a in SPREAD_AXES), r["status"],
-                        "yes" if r["picked"] else "no", r["outcome"]])
+                        "yes" if r["picked"] else "no", r["outcome"], *([r.get("soft_resets", 0)] if resets else [])])

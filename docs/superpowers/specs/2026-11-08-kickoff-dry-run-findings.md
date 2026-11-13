@@ -234,6 +234,34 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
      - the foam numbers are uncalibrated (stiffness 2000 N/m, restitution 0.3; docs/measuring.md has the two tests);
      - soft is for rings only. The 2023 cube and other squashy pieces stay rigid stand-ins;
      - the soft ring's squash is a soft contact, good for where the NOTE goes, not for the forces on it.
+   - **K6 status (2026-11-12).** What works now (docs/superpowers/specs/2026-11-12-soft-note-robustness-design.md):
+     - the three simulator problems an intake spike hit are fixed at their causes:
+       - the squash went through thin parts: the ring's contact now stiffens past about 60 % of its squash (K6-R1),
+         so a 1/8 in plate holds a 200 N roller load and an 8 m/s hit;
+       - a part with `priority` replaced the NOTE's contact with MuJoCo's softer default: each such robot geom now
+         meets the rings through explicit pairs with the NOTE's own contact (K6-R2);
+       - the ring passed through itself: its self-contacts now have the same ramp (K6-R3);
+       - a slab 2 mm over the carpet ran the NOTE over: that was the `priority` path, and the two fixes above stop
+         it;
+     - `stiffness` and `restitution` keep their meaning (the damping refit, K6-R6), and an acceptance suite checks
+       all of it at 1000, 2000 and 20000 N/m (`tests/test_range_soft_robust.py`);
+     - a guard resets a soft NOTE that blows up anyway and says so in the run's notes, with a `soft_resets` count in
+       every result, sweep and spread row (K6-R7). It never fired in the example's grids;
+     - **a floor intake picks a soft NOTE off the carpet:** `examples/blocks/note-intake`, an over-under nip with its
+       front roller on a sprung arm. It passes the intake spike's three grids on its own files: 44 of 45 one setting
+       at a time (only the 0 V control fails, as it should), 16 of 16 corners and 40 of 40 random draws. CI runs the
+       grids on every pull request (the `intake-grid` job);
+     - the smaller points: a test's `piece_in` bodies are its hopper (K6-R12), the piece table shows the feed
+       outcome (`in intake.hopper`, K6-R13), and a bench plate can move its surface (`surface_speed`, K6-R14), so
+       `examples/bench/note_intake_flex.toml` feeds the same nip on a moving carpet.
+   - What doesn't work yet:
+     - how hard the foam is at a deep squeeze is an estimate (the ramp's width, owner question 1). The example's
+       tight-nip corners pass or fail on it. docs/measuring.md now has optional readings at 0.6 in and 0.4 in gaps;
+     - a firm custom NOTE (about 10 times the preset's stiffness) sliding faster than about 7 m/s can gain a few
+       percent of energy from MuJoCo's friction (a documented limit);
+     - a rigid piece against a part with `priority` and no `solref` still meets MuJoCo's soft default contact
+       (K6-R16, queued: fixing it changes robots' contacts with the field);
+     - the bench's front roller is fixed: a bench wheel can't swing on the example's sprung arm.
 
 4. **No match or game-scoring model; scenarios need robot code.** — **B** for "check it scored X points in auto", M–L
    - Needed: the 15 s / 3 s / 135 s match with points, LEAVE, amplification and endgame.

@@ -64,7 +64,7 @@ def test_the_robot_moves_balls_by_physics_only(intake):
 def test_intake_takes_a_ball(intake):
     r = intake["result"]
     assert r.status == "finished", r.outcome
-    assert r.outcome == "finished"
+    assert r.outcome == "1 of 1 made it in (100%)"      # the hopper names a body, so the floor ball is counted
     (check,) = r.checks
     assert check["passed"] and check["text"] == "a ball reaches intake.hopper", check
     x, y, z = _ball_in_bin(intake["world"])
@@ -99,7 +99,7 @@ def test_scrimmage_test_run_on_the_example(tmp_path, capsys, monkeypatch):
         main(["test", "run", str(EXAMPLE / "intake.test.toml"), "--out", str(tmp_path / "runs")])
     out = capsys.readouterr().out
     assert e.value.code == 0, out
-    assert out.startswith("finished") and "passed: a ball reaches intake.hopper" in out
+    assert out.startswith("1 of 1 made it in (100%)") and "passed: a ball reaches intake.hopper" in out
     assert json.loads((tmp_path / "runs" / "001" / "result.json").read_text(encoding="utf-8"))["status"] == "finished"
 
 

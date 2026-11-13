@@ -660,7 +660,7 @@ def _signal_summary(signals: dict) -> dict:
 
 
 PIECE_KEYS = ("id", "kind", "origin", "fired_t", "exit_speed", "outcome", "goal", "scored_t", "first_hit", "last_pos",
-              "at_rest")
+              "at_rest", "feed")
 
 
 def _pieces(pieces: list[dict]) -> list[dict]:
@@ -674,19 +674,23 @@ async def test_run(path: str) -> dict:
     Returns "status" (finished, check failed, timed out, tipped over, walked off, time limit, repeat limit),
     "outcome" (one plain sentence to read to the room), "passed" (finished with every check passed), "t_end"
     (seconds), "checks" (one plain line each, with whether it passed), "hung" (the bars the robot hung from),
-    "signals" (each measured signal's min, max and final value), "counts" (on a field with a human player
-    station: fed, in, stuck, missed, and placed when a piece was placed; else null), "feeds" (one row per fed piece:
-    ball, source, t, outcome "in", "placed" (on a rod or element a seated or rests on check names: why is its name),
-    "stuck" or "missed", why, t_outcome, body for a stuck piece), "seed" (the stations' seed, or null), "marks" (the
-    moments the replay marks: {t, kind "slip", text, ball}, such as when a held piece slipped out), "notes" (what the
-    numbers rest on: each gripped body's material and friction, and on a robot with cylinders each valve's
-    conductance; UNCALIBRATED while one is an estimate, else measured, naming the file, who, when and how many trials;
-    say them with the outcome),
-    "goals" (on a field with a shooter: the balls scored in each goal, else null), "pieces" (each game piece that took
-    part: id, kind, origin (floor, preload or station), fired_t, exit_speed (m/s), outcome (held, on_field, in_flight,
-    scored, out_of_field, stuck), goal and scored_t when it scored, first_hit (what it touched first after its
-    release), last_pos [x, y, z] (m), at_rest; null for what never happened: where each shot went, scored or not),
-    "air" (on a robot with cylinders:
+    "signals" (each measured signal's min, max and final value), "counts" (fed, in, stuck, missed, and placed when a
+    piece was placed: on a field with a human player station, or for the floor piece ahead of the robot when the test
+    has a hopper and feeds from no station; else null), "feeds" (one row per fed or tracked piece: ball, source (a
+    station, or floor), t, outcome "in", "placed" (on a rod or element a seated or rests on check names: why is its
+    name), "stuck" or "missed", why, t_outcome, body (the hopper body an "in" piece is in or held by, the robot body
+    a stuck piece touches; else null)), "seed" (the stations' seed, or null), "marks" (the moments the replay marks:
+    {t, kind "slip", text, ball}, such as when a held piece slipped out), "notes" (what the numbers rest on: each
+    gripped body's material and friction, and on a robot with cylinders each valve's conductance; UNCALIBRATED while
+    one is an estimate, else measured, naming the file, who, when and how many trials; a soft NOTE that blew up and
+    was reset, or MuJoCo restarting an unstable simulation; say them with the outcome), "goals" (on a field with a
+    shooter: the balls scored in each goal, else null), "pieces" (each game piece that took part: id, kind, origin
+    (floor, preload or station), fired_t, exit_speed (m/s), outcome (held, on_field, in_flight, scored, out_of_field,
+    stuck), goal and scored_t when it scored, first_hit (what it touched first after its release), last_pos [x, y, z]
+    (m), at_rest; null for what never happened: where each shot went, scored or not; and feed: {outcome, body, why}
+    from its "feeds" row, or null for a piece the run didn't track; a NOTE in a hopper reads outcome on_field but
+    feed.outcome "in"), "soft_resets" (how many times a soft NOTE blew up and was reset to its rest shape; 0 is
+    normal, and above 0 a note says when, so results near then aren't trustworthy), "air" (on a robot with cylinders:
     start_psi, end_psi, low_psi, low_t, compressor_s, below_working_t (when the tanks fell below working_psi, the
     cylinders weaker from then on; null if never), and working_psi; else null), "air_lines" (the air in words),
     "clearance" (each field element the test measures, in a clears check or a clearance.<element> chart signal:
@@ -721,7 +725,7 @@ def _test_run(file) -> dict:
             "hung": list(result.hung), "signals": _signal_summary(result.signals),
             "counts": result.counts, "feeds": result.feeds, "seed": result.seed,
             "marks": list(result.marks), "notes": list(result.notes), "goals": result.goals,
-            "pieces": _pieces(result.pieces),
+            "pieces": _pieces(result.pieces), "soft_resets": result.soft_resets,
             "air": result.air, "air_lines": blocks_run.air_lines(result),
             "clearance": result.clearance, "clearance_lines": blocks_run.clearance_lines(result),
             "run_folder": str(folder.resolve())}
@@ -740,9 +744,10 @@ async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict
     "interval"} is a station's interval (also stock, spread_yaw_deg, spread_pitch_deg, spread_speed, spread_position,
     spread_rotation_deg; the last two set all three axes). values: the numbers
     (for a grip, material names or numbers) to try, in order (at most 12).
-    Returns "rows" (each value's status, outcome, t_end and a passed or failed per check), "sweep_folder" (table.csv
-    and sweep.json, each run kept inside; the app's Test tab shows them) and any "problems" to tell the room. A value
-    that can't run gets a row saying why; the rest still run. path: an absolute path."""
+    Returns "rows" (each value's status, outcome, t_end, a passed or failed per check, and soft_resets: how many times
+    a soft NOTE blew up and was reset in that run, 0 normally; above 0 that row isn't trustworthy), "sweep_folder"
+    (table.csv and sweep.json, each run kept inside; the app's Test tab shows them) and any "problems" to tell the
+    room. A value that can't run gets a row saying why; the rest still run. path: an absolute path."""
     file = _test_file(path)
 
     def work():
@@ -754,7 +759,7 @@ async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict
         with units.machine_text():      # refusals too (the file's), as they always were, whatever the settings
             folder = run_sweep(blocks_program.load(file), target, values, blocks_store.runs_dir(file))
         with open(folder / "table.csv", newline="", encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
+            rows = _with_resets(list(csv.DictReader(f)))
         meta = json.loads((folder / "sweep.json").read_text(encoding="utf-8"))
         info = {"rows": rows, "sweep_folder": str(folder.resolve())}
         if meta.get("problems"):
@@ -767,6 +772,11 @@ async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict
         raise ToolError(str(e)) from None
 
 
+def _with_resets(rows: list[dict]) -> list[dict]:
+    """table.csv's rows with soft_resets a whole number on each (table.csv has the column only when a run had one)."""
+    return [{**r, "soft_resets": int(r.get("soft_resets") or 0)} for r in rows]
+
+
 @_tool()
 async def test_spread(path: str) -> dict:
     """Run a block test once per placement of its floor spread (the test file's [setup] floor_spread, e.g.
@@ -776,7 +786,8 @@ async def test_spread(path: str) -> dict:
     rotation_deg (the piece turned, from the robot's heading for a piece other than a ball) and tip_deg (0 to 90: a
     coral's axis pitched up from lying; 90 stands it on end). Returns "sentence" ("picked up 7 of 9; missed at 6 in
     left at 30° and 6 in right at 30°", or for a coral "picked up 2 of 3; missed standing on end", to read to the
-    room), "rows" (each placement's words, its five axes, status, "picked up" yes or no, and outcome) and
+    room), "rows" (each placement's words, its five axes, status, "picked up" yes or no, outcome, and soft_resets: how
+    many times a soft NOTE blew up and was reset in that run, 0 normally; above 0 that row isn't trustworthy) and
     "spread_folder" (table.csv and spread.json, each run kept inside; the app's Test tab shows them). path: an
     absolute path."""
     file = _test_file(path)
@@ -790,7 +801,7 @@ async def test_spread(path: str) -> dict:
         with units.machine_text():      # refusals too ("inside the robot"), as they always were, whatever the setting
             folder = run_spread(blocks_program.load(file), blocks_store.runs_dir(file))
         with open(folder / "table.csv", newline="", encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
+            rows = _with_resets(list(csv.DictReader(f)))
         meta = json.loads((folder / "spread.json").read_text(encoding="utf-8"))
         return {"sentence": meta["sentence"], "rows": rows, "spread_folder": str(folder.resolve())}
 

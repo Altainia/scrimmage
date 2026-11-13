@@ -10,7 +10,8 @@ The ring:
 - The ring lies in the plane across the kind's axis through the kind's body origin (its center of mass), so a rigid
   slot's pose maps onto it: a ring built at `pos` is the rigid NOTE at `pos`, unturned.
 - Its squash across the tube is MuJoCo's soft contact: a negative solref (stiffness k, damping b, per unit of the
-  contact's effective mass) with impedance SOFT_SOLIMP. Its bending is the ball joints' springs.
+  contact's effective mass) with an impedance that ramps up with depth (ring_contact, K6-R1). Its bending is the ball
+  joints' springs.
 
 Its numbers follow a rule, not a fit at build time (R10). The spike fitted the ring once, at `stiffness` FIT_STIFFNESS
 and restitution 0.3 (FIT_CONTACT_K, FIT_JOINT_K). The world scales from there:
@@ -23,9 +24,20 @@ and restitution 0.3 (FIT_CONTACT_K, FIT_JOINT_K). The world scales from there:
 - the joint damping gives one segment swinging about its joint a damping ratio of JOINT_ZETA.
 
 MuJoCo's soft contact is not a plain spring: with impedance d a static load sees d / (1 - d) times the stiffness an
-impact does, so SOFT_SOLIMP's d = 0.2 keeps the squeeze and the drop within 1.25x of each other. That is also why the
-closed form alone gives too much damping, and why the scale was measured (R10). tests/test_range_soft.py checks the
-rule against both of the spike's fitted foams.
+impact does, so a shallow contact's d = SOFT_DMIN = 0.2 keeps the squeeze and the drop within 1.25x of each other.
+That is also why the closed form alone gives too much damping, and why the scale was measured (R10).
+tests/test_range_soft.py checks the rule against both of the spike's fitted foams.
+
+A real foam densifies past about 60 % of its squash, so the contact does too (K6-R1, ring_contact): the impedance
+ramps from SOFT_DMIN to dmax over RAMP_WIDTH tube radii of depth, and the solref is scaled by f = dmax / SOFT_DMIN
+(f^2 on the spring, f on the damping) so a shallow contact is exactly the one above. At depth the impact spring grows
+by up to f^2 and the static one by f^2 (1 - SOFT_DMIN) / (1 - dmax). dmax is capped by stiffness so the stiffest
+contact's frequency per unit mass stays at W_RING (and never below SOFT_DMIN). It keeps a roller or a hard hit from
+pushing the ring through a thin plate.
+
+A geom with `priority` would set the contact's solref and solimp too, so a priority part would meet the ring with
+its own stiff contact. pair_rings gives each robot body with a priority geom explicit pairs with the rings instead,
+with the ring's squash and MuJoCo's own friction rule (K6-R2; parts/assemble.py calls it before compiling).
 
 A range with a soft kind builds POOL_SIZE rings per soft kind, `soft.<k>`, parked under the floor with PARKED_BITS
 (build.add_range); a parked ring is held in place (ParkedRings) and may sleep.
@@ -40,7 +52,8 @@ from dataclasses import dataclass
 import mujoco
 import numpy as np
 
-from .. import i18n
+from .. import i18n, units
+from ..flexcontact import PAIR_SUFFIX
 from .build import BALL_BITS, BALL_FRICTION, PARKED_BITS, RIGID_SOLMIX
 from .pieces import SOFT_SEGMENTS, PieceKind, piece_color, ring_basis, ring_diameters
 
@@ -48,18 +61,27 @@ RING_SEGMENTS = SOFT_SEGMENTS  # source: soft-note spike, candidate (b)
 POOL_SIZE = 2  # choice: spec D8
 SOFT_REACH = 0.25  # choice: spec D8
 SOFT_LINGER = 0.25  # choice: spec D8
-SOFT_SOLIMP = (0.2, 0.2, 0.001, 0.5, 2.0)  # source: spike: d = 0.2 keeps a static squeeze within 1.25x of an impact
+SOFT_DMIN = 0.2  # source: K5 spike (SOFT_SOLIMP's d): a static squeeze within 1.25x of an impact
+SOFT_DMAX = 0.95  # source: MuJoCo's default dmax (build.BALL_DMAX)
+RAMP_WIDTH = 1.0  # estimate: the ramp's width in tube radii; the foam densifies past about 60 % squeeze
+RAMP_MID, RAMP_POWER = 0.9, 6.0  # choice: flat to about half the width, hard by 0.9 of it
+W_RING = 700.0  # choice: rad/s, the stiffest contact's frequency per unit mass (stable at 700, not 1000)
 FIT_STIFFNESS = 2000.0  # source: soft-note spike, chain soft fit
 FIT_CONTACT_K = 11211.4  # source: soft-note spike, chain soft fit
 FIT_JOINT_K = 0.10276  # source: soft-note spike, chain soft fit
 FIT_MASS = 0.235  # source: soft-note spike: the fit's NOTE mass (the 2024-note preset's)
 JOINT_ZETA = 0.3  # source: spike
 # The contact damping's scale on the closed form, by stiffness (N/m): what makes a 1 m drop at e = 0.3 come back at
-# 0.3, interpolated in log(stiffness) and held at the ends (damping_scale). Refit with tests/fit_soft_damping.py.
-DAMPING_SCALES = (  # source: fitted offline by tests/fit_soft_damping.py, 2026-11-11
-    (1000.0, 0.8241), (2000.0, 0.8536), (6000.0, 0.9110), (20000.0, 1.0749))
+# 0.3, interpolated in log(stiffness) and held at the ends (damping_scale).
+DAMPING_SCALES = (  # source: fitted offline by tests/fit_soft_damping.py, 2026-11-12 (K6-R1's ramp); rerun with
+    # PYTHONPATH=<repo> .venv/bin/python tests/fit_soft_damping.py
+    (1000.0, 0.9173), (2000.0, 0.8722), (6000.0, 0.9112), (20000.0, 1.0750))
 CLOSE_SOLREF = (0.004, 1.0)  # source: spike's closing connect
 POOL_PREFIX = "soft"  # the pool's rings are soft.0, soft.1, ...
+# the guard (K6-R7): a last resort that resets a blown-up ring and says so, never a fix
+GUARD_SPEED = 25.0  # choice: m/s; the spike's rollers never passed 7 m/s, a robot drives under 5, a launched
+#   NOTE is rigid
+GUARD_RESET_SPEED = 7.0  # choice: m/s, the fastest roller surface the spike saw
 
 
 def damping_ratio_for(e: float) -> float:
@@ -118,6 +140,17 @@ def ring_params(kind: PieceKind) -> RingParams:
                       joint_k=kj, joint_b=2.0 * JOINT_ZETA * math.sqrt(kj * i_joint))
 
 
+def ring_contact(kind: PieceKind) -> tuple[list[float], list[float]]:
+    """The ring's capsules' (solref, solimp) for the kind (K6-R1; see the module docstring). ring_params stays
+    unscaled: the scale f is the geom's alone (K6-R9)."""
+    p, r = ring_params(kind), _dims(kind).r
+    # never below SOFT_DMIN: a light, stiff kind already past W_RING keeps K5's flat contact rather than a softening one
+    dmax = max(SOFT_DMIN, min(SOFT_DMAX, SOFT_DMIN * W_RING / math.sqrt(p.contact_k)))
+    f = dmax / SOFT_DMIN
+    return ([-p.contact_k * f * f, -p.contact_b * f],
+            [SOFT_DMIN, dmax, RAMP_WIDTH * r, RAMP_MID, RAMP_POWER])
+
+
 def _quat_of(rot: np.ndarray) -> np.ndarray:
     q = np.zeros(4)
     mujoco.mju_mat2Quat(q, np.ascontiguousarray(rot, dtype=float).ravel())
@@ -143,8 +176,9 @@ def add_ring(spec: mujoco.MjSpec, name: str, kind: PieceKind, pos, bits: dict) -
     # condim 3 (choice): sliding friction only; a capsule segment's own rolling and twisting friction do nothing for
     # the ring (it bends at its joints), and condim 6 cost a pushed ring twice the solver rows. The squeeze, drop and
     # damping fits are the same at either (tests/test_range_soft.py)
-    contact = {"condim": 3, "friction": [kind.friction, *BALL_FRICTION[1:]], "solref": [-p.contact_k, -p.contact_b],
-               "solimp": list(SOFT_SOLIMP), "solmix": RIGID_SOLMIX}
+    solref, solimp = ring_contact(kind)
+    contact = {"condim": 3, "friction": [kind.friction, *BALL_FRICTION[1:]], "solref": solref, "solimp": solimp,
+               "solmix": RIGID_SOLMIX}
     rgba = [*piece_color(kind), 1.0]
     parent = spec.worldbody
     for j in range(n):
@@ -165,6 +199,60 @@ def add_ring(spec: mujoco.MjSpec, name: str, kind: PieceKind, pos, bits: dict) -
     eq.data[:3] = [d.half, 0.0, 0.0]
     eq.solref = list(CLOSE_SOLREF)
     spec.add_exclude(bodyname1=f"{name}.s{n - 1}", bodyname2=f"{name}.s0")
+
+
+# ------------------------------------------------------------------------------------------- priority parts (K6-R2)
+
+
+def _colliding(body: mujoco.MjsBody) -> list:
+    return [g for g in body.geoms if g.contype or g.conaffinity]
+
+
+def priority_bodies(roots: list[mujoco.MjsBody]) -> list[mujoco.MjsBody]:
+    """The bodies in each root's subtree, the root included, with a colliding geom (contype or conaffinity nonzero)
+    of priority above 0, each once."""
+    out, seen = [], set()
+    for root in roots:
+        for body in [root, *root.find_all(mujoco.mjtObj.mjOBJ_BODY)]:
+            if body.name not in seen and any(g.priority > 0 for g in _colliding(body)):
+                seen.add(body.name)
+                out.append(body)
+    return out
+
+
+def _mix(geom, cap) -> tuple[list[float], int]:
+    """MuJoCo's own rule for a contact's friction and condim: the higher priority's, or the larger of each at equal
+    priority."""
+    if geom.priority != cap.priority:
+        g = geom if geom.priority > cap.priority else cap
+        return [float(x) for x in g.friction], int(g.condim)
+    return [float(max(a, b)) for a, b in zip(geom.friction, cap.friction)], int(max(geom.condim, cap.condim))
+
+
+def pair_rings(spec: mujoco.MjSpec, rings: list[str], bodies: list[mujoco.MjsBody]) -> int:
+    """K6-R2: each ring meets each of `bodies` (priority_bodies) through explicit pairs, so a priority part meets the
+    NOTE with the ring's squash (its capsules' solref and solimp, ring_contact) rather than its own. Each ring segment
+    is excluded from each body, dropping MuJoCo's own contact between them, and each colliding geom of the body gets a
+    pair with each capsule, with MuJoCo's friction and condim rule (_mix) and the larger margin and gap. An unnamed
+    geom is named "<body>#soft-pair-<k>" first. Returns the pairs added."""
+    added = 0
+    for body in bodies:
+        geoms = _colliding(body)
+        for k, g in enumerate(geoms):
+            if not g.name:
+                g.name = f"{body.name}{PAIR_SUFFIX}{k}"
+        for ring in rings:
+            for j in range(RING_SEGMENTS):
+                spec.add_exclude(bodyname1=f"{ring}.s{j}", bodyname2=body.name)
+                cap = spec.geom(f"{ring}.g{j}")
+                for g in geoms:
+                    mu, condim = _mix(g, cap)
+                    spec.add_pair(geomname1=cap.name, geomname2=g.name, condim=condim,
+                                  friction=[mu[0], mu[0], mu[1], mu[2], mu[2]], solref=list(cap.solref),
+                                  solimp=list(cap.solimp), margin=max(g.margin, cap.margin),
+                                  gap=max(g.gap, cap.gap))
+                    added += 1
+    return added
 
 
 # ------------------------------------------------------------------------------------------- the ring's state
@@ -263,10 +351,11 @@ class Ring:
         va = qvel[:3] + np.cumsum(step, axis=0)
         return com, rot, va + _cross(w, com - anchor), w
 
-    def _state(self, data: mujoco.MjData, spin: bool):
+    def _state(self, data: mujoco.MjData, spin: bool, segments=None):
         """The ring's center of mass, Kabsch rotation (w x y z) and center's velocity; with `spin` also its angular
-        momentum about the center and its inertia there (world frame), else None for both."""
-        com, rot, v, w = self._segments(data.qpos[self.q], data.qvel[self.v])
+        momentum about the center and its inertia there (world frame), else None for both. `segments`: _segments'
+        result for the ring now, if it is already worked out."""
+        com, rot, v, w = segments if segments is not None else self._segments(data.qpos[self.q], data.qvel[self.v])
         c = self.m @ com / self.mass
         vc = self.m @ v / self.mass
         r = com - c
@@ -299,6 +388,24 @@ class Ring:
         swap back keeps (SoftPool)."""
         c, quat, vc, ang, _ = self._state(data, True)
         return c, quat, vc, ang
+
+    def speeds(self, data: mujoco.MjData) -> np.ndarray:
+        """Each segment's center speed (m/s), shape (16,), from the ring's own kinematics. MuJoCo's cvel is taken
+        about the tree's center of mass, so its linear part overstates a spinning segment's speed (K6-R8)."""
+        _, _, v, _ = self._segments(data.qpos[self.q], data.qvel[self.v])
+        return np.sqrt((v * v).sum(1))
+
+    def read_with_speeds(self, data: mujoco.MjData):
+        """read(data, spin=False) and speeds(data) from one pass of the ring's kinematics: (center of mass, Kabsch
+        rotation, the center's velocity, each segment's center speed). The guard's per-step read (SoftPool.shadow)."""
+        seg = self._segments(data.qpos[self.q], data.qvel[self.v])
+        c, quat, vc, _, _ = self._state(data, False, seg)
+        v = seg[2]
+        return c, quat, vc, np.sqrt((v * v).sum(1))
+
+    def finite(self, data: mujoco.MjData) -> bool:
+        """Whether every one of the ring's qpos and qvel rows is finite."""
+        return bool(np.isfinite(data.qpos[self.q]).all() and np.isfinite(data.qvel[self.v]).all())
 
     def write(self, data: mujoco.MjData, pos, quat, vel, ang_vel) -> None:
         """write_rigid, for this ring."""
@@ -420,6 +527,12 @@ class SoftPool:
       chain by a robot stays soft. The fix, if it is needed, is to pose the chain's probe on its links near the NOTE
       (blocks/clearance.py).
     - A full pool: a NOTE that comes near while every ring of its kind is in use stays rigid, noted once per reset.
+    - The guard (K6-R7, K6-P12), a last resort that is visible, never a fix: after its read each step, a ring in use
+      and awake with a segment faster than GUARD_SPEED goes back to its rest shape at its read center and rotation,
+      moving at its center's velocity capped at GUARD_RESET_SPEED, with no spin; one whose state is not finite goes
+      back to its stand-in's last shadow pose, at rest. Either way its dofs' warm start is zeroed and `resets` counts
+      it. notes() has one note per NOTE that blew up, with how many times and the first time's when and why. A
+      parked or sleeping ring is never read, so it never trips it.
     """
 
     def __init__(self, model: mujoco.MjModel, data: mujoco.MjData, balls, layout, robot_root: int):
@@ -462,6 +575,8 @@ class SoftPool:
         self._far: dict[int, float | None] = {}     # slot in use -> when its center went out of reach, None: in it
         self.balls.soft[:] = False
         self.swaps = 0
+        self.resets = 0                             # the guard's resets since the last reset()
+        self._blowups: list[tuple[str, float, float | None]] = []   # each: (slot's name, t, speed; None: not finite)
         self._full_noted = False
         self._swapped_kinds: list[str] = []
 
@@ -476,7 +591,9 @@ class SoftPool:
         return {int(self.balls.bodies[s]) for s in self._slot_of if s >= 0}
 
     def notes(self, lang: str | None = None) -> list[str]:
-        """The full pool's note (once per reset) and, for each kind that turned soft, its uncalibrated numbers."""
+        """The full pool's note (once per reset), for each kind that turned soft its uncalibrated numbers, and one
+        note for each NOTE the guard reset (K6-R7): how many times, and the first time's when and why (its speed in
+        the Units setting, or a state that was not finite)."""
         out = []
         if self._full_noted:
             out.append(i18n.tn("a NOTE came near the robot while the soft pool's {count} NOTE was in use; it stayed "
@@ -487,6 +604,26 @@ class SoftPool:
             out.append(i18n.t("soft NOTE: its stiffness ({stiffness} N/m) and restitution ({restitution}) are "
                               "UNCALIBRATED estimates; measure them (docs/measuring.md)", lang=lang,
                               stiffness=f"{kind.stiffness:g}", restitution=f"{kind.restitution:g}"))
+        first: dict[str, tuple[float, float | None]] = {}
+        times: dict[str, int] = {}
+        for name, t, speed in self._blowups:        # one note per NOTE, in the order they first blew up
+            first.setdefault(name, (t, speed))
+            times[name] = times.get(name, 0) + 1
+        for name, (t, speed) in first.items():
+            n = times[name]
+            if speed is None:
+                out.append(i18n.tn("soft NOTE {name} blew up at {t} s (its state was not finite); it was reset to "
+                                   "its rest shape, so results near then aren't trustworthy",
+                                   "soft NOTE {name} blew up {count} times (first at {t} s, its state was not "
+                                   "finite); each time it was reset to its rest shape, so results near then aren't "
+                                   "trustworthy", n, lang=lang, name=name, t=f"{t:.2f}"))
+            else:
+                out.append(i18n.tn("soft NOTE {name} blew up at {t} s (a segment at {speed}); it was reset to its "
+                                   "rest shape, so results near then aren't trustworthy",
+                                   "soft NOTE {name} blew up {count} times (first at {t} s, a segment at {speed}); "
+                                   "each time it was reset to its rest shape, so results near then aren't "
+                                   "trustworthy", n, lang=lang, name=name, t=f"{t:.2f}",
+                                   speed=units.fmt(speed, "speed")))
         return out
 
     # ---- every step -------------------------------------------------------------------------------------------------
@@ -494,7 +631,7 @@ class SoftPool:
     def shadow(self) -> None:
         """Each soft slot takes its ring's center, rotation and velocity (read_rigid, no spin: the stand-in touches
         nothing, so its spin is left at zero). A ring asleep hasn't moved: its stand-in is put back where it was, at
-        rest, without reading the ring again."""
+        rest, without reading the ring again. Each ring read is checked by the guard first (the class docstring)."""
         b, d = self.balls, self.data
         asleep = d.tree_asleep
         for k, s in enumerate(self._slot_of):
@@ -506,13 +643,36 @@ class SoftPool:
                 b._qpos[s, :3], b._qpos[s, 3:] = pos, quat
                 b._qvel[s] = 0.0
                 continue
-            c, quat, vc, _ = ring.read(d, spin=False)
+            if not ring.finite(d):
+                self._guard_reset(k, s, None)
+            c, quat, vc, speeds = ring.read_with_speeds(d)
+            fastest = float(speeds.max())
+            if fastest > GUARD_SPEED:
+                cap = float(np.linalg.norm(vc))
+                vc = vc * (GUARD_RESET_SPEED / cap) if cap > GUARD_RESET_SPEED else vc
+                self._guard_reset(k, s, fastest, (c, quat, vc))
             pos = c - _mat(quat) @ self._ipos[s]
             b._qpos[s, :3] = pos
             b._qpos[s, 3:] = quat
             b._qvel[s, :3] = vc
             b._qvel[s, 3:] = 0.0
             self._last[k] = (pos, quat)
+
+    def _guard_reset(self, k: int, s: int, speed: float | None, state=None) -> None:
+        """Ring k (slot s's) back to its rest shape, at rest at its stand-in's last shadow pose (`state` None: its own
+        state is not finite), or at `state`'s (center, rotation, velocity) with no spin; its dofs' warm start zeroed,
+        counted and noted (K6-P12)."""
+        ring, d, b = self.parked.rings[k], self.data, self.balls
+        if state is None:
+            pos, quat = self._last[k] if self._last[k] is not None else (b._qpos[s, :3].copy(), b._qpos[s, 3:].copy())
+            c, vc = np.asarray(pos) + _mat(quat) @ self._ipos[s], np.zeros(3)
+        else:
+            c, quat, vc = state
+        # unchecked for overlap (K6-P12): a ring reset while squashed may blow up and be reset again a few times
+        ring.write(d, c, quat, vc, np.zeros(3))
+        d.qacc_warmstart[ring.v] = 0.0
+        self.resets += 1
+        self._blowups.append((b.piece_name(s), float(d.time), speed))
 
     def update(self) -> None:
         """After the step's ledger work: release the rings of slots out of play, swap back the rings out of reach for

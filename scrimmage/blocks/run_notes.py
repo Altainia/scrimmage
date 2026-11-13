@@ -70,7 +70,8 @@ def run_notes(world, program: Program) -> list[str]:
     or seated with no grip anywhere gets default_grip_note, so its grip isn't read as measured either. A field piece
     whose friction is measured gets piece_notes' line. A robot with cylinders gets pneumatic_note. A test that
     measures an element's clearance, on a robot with stock parts whose collide is off, gets clearance.uncounted_note:
-    those parts aren't measured. A range with a soft NOTE adds its soft pool's notes (RangeRuntime.soft_notes)."""
+    those parts aren't measured. A range adds its notes (RangeRuntime.notes): a soft NOTE's pool, the soft guard's
+    resets, and MuJoCo's restarts of an unstable simulation."""
     from ..parts.grip import grip_notes
     notes = grip_notes(world)
     if not notes and any(_conds(program.blocks, k) for k in GRIP_CONDITIONS):
@@ -85,8 +86,8 @@ def run_notes(world, program: Program) -> list[str]:
     if rng is not None:         # the range's warnings (a goal behind the walls), in the setting being worded
         notes += [str(w) if units.is_machine() else shown(w) for w in rng.warnings]
     tr = getattr(world, "test_range", None)
-    if hasattr(tr, "soft_notes"):       # a soft NOTE's: a full pool, its uncalibrated numbers
-        notes += tr.soft_notes()
+    if hasattr(tr, "notes"):    # a soft NOTE's (a full pool, its numbers, the guard's resets) and MuJoCo's restarts
+        notes += tr.notes()
     return notes
 
 
@@ -196,8 +197,18 @@ def piece_lines(result: RunResult) -> list[str]:
     for p in result.pieces:
         fired = "-" if p.get("fired_t") is None else f"{p['fired_t']:.2f}"
         exit_speed = "-" if p.get("exit_speed") is None else f"{units.to_display(p['exit_speed'], 'speed'):.2f}"
-        rows.append([str(p["id"]), str(p.get("kind") or "-"), p["origin"], fired, exit_speed, p["outcome"],
-                     _ball_result({**p, "last_pos": tuple(p["last_pos"]) if p.get("last_pos") else None})])
+        where = _ball_result({**p, "last_pos": tuple(p["last_pos"]) if p.get("last_pos") else None})
+        outcome = p["outcome"]
+        feed = p.get("feed")
+        if feed is not None:                # the feed's outcome and place, not the ledger's (K6-R13)
+            outcome = feed["outcome"]
+            if outcome == "in":
+                where = i18n.t("in {body}", body=feed["body"]) if feed["body"] else i18n.t("in the robot")
+            elif outcome == "stuck":
+                where = i18n.t("stuck on {body}", body=feed["body"])
+            elif outcome == "placed":
+                where = i18n.t("placed on {why}", why=feed["why"])
+        rows.append([str(p["id"]), str(p.get("kind") or "-"), p["origin"], fired, exit_speed, outcome, where])
     widths = [max(len(r[k]) for r in [head, *rows]) for k in range(len(head) - 1)]
     return ["  ".join(c.ljust(w) for c, w in zip(r, widths)) + "  " + r[-1] for r in [head, *rows]]
 
