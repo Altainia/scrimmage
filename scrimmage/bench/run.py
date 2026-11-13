@@ -453,8 +453,15 @@ class _Run:
         self.speeds: list[np.ndarray] = []
         self.currents: list[np.ndarray] = []
         self.badqacc = 0
-        self._vel6 = np.zeros(6)
-        self._f6 = np.zeros(6)
+        # rigid_contacts' lookups, by contact id and by body: the shape (an index into shape_names, -1 for none) and
+        # the shaft (an index into bench.shafts, -1 for none)
+        self.id_shape = np.full(n_ids(m), -1, dtype=int)
+        for g, s in lay.shape_of_geom.items():
+            self.id_shape[g] = self.shape_names.index(s)
+        self.shaft_names = list(bench.shafts)
+        self.body_shaft = np.full(m.nbody, -1, dtype=int)
+        for b, s in self.shaft_of_body.items():
+            self.body_shaft[b] = self.shaft_names.index(s)
         self._held = np.ones(n, dtype=bool)
 
     # ---------------------------------------------------------------------------------------- piece state
@@ -523,8 +530,10 @@ class _Run:
     # ------------------------------------------------------------------------------------------ contacts
 
     def touch(self, i: int, shape: str | None, normal: float, point: np.ndarray, t: float,
-              forces: np.ndarray, shape_force: dict, shape_best: dict) -> None:
-        forces[i] += normal
+              forces: np.ndarray | None, shape_force: dict, shape_best: dict) -> None:
+        """A piece pressing on a shape. `forces` None: its share of the piece's total is added already."""
+        if forces is not None:
+            forces[i] += normal
         if shape is None:
             return
         shape_force[shape] = shape_force.get(shape, 0.0) + normal
@@ -544,59 +553,95 @@ class _Run:
 
     def rigid_contacts(self, t: float, forces, shape_force, shape_best) -> None:
         """Rigid and flex pieces after a step: d.contact, efc_force and cvel are all the step's start, so each
-        contact's power is its force times the other body's velocity then. Sides are contact ids (flexcontact)."""
+        contact's power is its force times the other body's velocity then. Sides are contact ids (flexcontact).
+        Read as arrays: two flex NOTEs lying flat make about 900 contacts a step. Only contacts with a named shape go
+        through touch() one at a time, in contact order."""
         m, d = self.m, self.d
         ids = contact_ids(m, d)
         pcs = self.geom_piece[ids]
-        for c in np.flatnonzero((pcs >= 0).any(axis=1)):
-            c = int(c)
-            g, pc = (int(ids[c, 0]), int(ids[c, 1])), (int(pcs[c, 0]), int(pcs[c, 1]))
-            mujoco.mj_contactForce(m, d, c, self._f6)
-            if self._f6[0] <= 0.0:
-                continue
-            frame = d.contact.frame[c].reshape(3, 3)
-            f2 = frame.T @ self._f6[:3]  # on side 2, from side 1 (the frame's normal points from side 1 to side 2)
-            p = d.contact.pos[c].copy()
-            for side in (0, 1):
-                i = pc[side]
-                if i < 0:
-                    continue
-                f = f2 if side == 1 else -f2
-                other = g[1 - side]
-                if other < m.ngeom:
-                    body = int(m.geom_bodyid[other])
-                    if m.body_weldid[body] != 0:  # a moving body does work on the piece
-                        mujoco.mj_objectVelocity(m, d, mujoco.mjtObj.mjOBJ_BODY, body, self._vel6, 0)
-                        v_o = self._vel6[3:6] + np.cross(self._vel6[0:3], p - d.xipos[body])
-                        power = float(f @ v_o)
-                        self.work[i] += power * self.dt
-                        s = self.shaft_of_body.get(body)
-                        if s is not None:
-                            self.shaft_energy[s] += power * self.dt
-                else:  # another flex piece: its vertices' velocity at the contact
-                    self.work[i] += float(f @ self._flex_velocity(c, 1 - side, other - m.ngeom)) * self.dt
-                self.touch(i, self.lay.shape_of_geom.get(other), float(self._f6[0]), p, t, forces, shape_force,
-                           shape_best)
+        rows = np.flatnonzero((pcs >= 0).any(axis=1))
+        if rows.size == 0:
+            return
+        f6 = self._contact_forces(rows)
+        pushing = f6[:, 0] > 0.0
+        rows, f6 = rows[pushing], f6[pushing]
+        frame = d.contact.frame[rows].reshape(-1, 3, 3)
+        f2 = np.einsum("kji,kj->ki", frame, f6)  # on side 2, from side 1 (the frame's normal points from 1 to 2)
+        normal, p = f6[:, 0], d.contact.pos[rows]
+        g, pc = ids[rows], pcs[rows]
+        shaped = []
+        for side in (0, 1):
+            k = np.flatnonzero(pc[:, side] >= 0)
+            i, other = pc[k, side], g[k, 1 - side]
+            f = f2[k] if side == 1 else -f2[k]
+            v_o = np.zeros((k.size, 3))
+            geom = other < m.ngeom
+            body = m.geom_bodyid[other[geom]]
+            moving = m.body_weldid[body] != 0  # a moving body does work on the piece
+            v = np.zeros((body.size, 3))
+            if moving.any():
+                v[moving] = self._point_velocity(body[moving], p[k[geom][moving]])
+            v_o[geom] = v
+            if not geom.all():  # another flex piece: its vertices' velocity at the contact
+                v_o[~geom] = self._flex_velocity(rows[k[~geom]], 1 - side, other[~geom] - m.ngeom)
+            power = np.einsum("ki,ki->k", f, v_o)
+            np.add.at(self.work, i, power * self.dt)
+            shaft = self.body_shaft[body]
+            for s in np.unique(shaft[shaft >= 0]):
+                self.shaft_energy[self.shaft_names[s]] += float(power[geom][shaft == s].sum()) * self.dt
+            np.add.at(forces, i, normal[k])
+            named = np.flatnonzero(self.id_shape[other] >= 0)
+            shaped += [(int(k[j]), side, int(i[j]), int(self.id_shape[other[j]])) for j in named]
+        for c, _, i, s in sorted(shaped):
+            self.touch(i, self.shape_names[s], float(normal[c]), p[c].copy(), t, None, shape_force, shape_best)
 
-    def _flex_velocity(self, c: int, side: int, f: int) -> np.ndarray:
-        """Flex f's velocity at contact c's `side` (at the step's start, from cvel): its vertex's there, else the mean
-        of its element's vertices'."""
+    def _contact_forces(self, rows: np.ndarray) -> np.ndarray:
+        """(len(rows), 3): contacts' forces in their own frames (normal, then the two tangents), mj_contactForce's
+        first three. The bench's cone is elliptic, so these are efc_force's rows as they stand."""
         m, d = self.m, self.d
-        a = int(m.flex_vertadr[f])
-        vert, elem = int(d.contact.vert[c, side]), int(d.contact.elem[c, side])
-        if vert >= 0:
-            verts = [vert]
-        elif elem >= 0:
-            k = int(m.flex_dim[f]) + 1
-            start = int(m.flex_elemdataadr[f]) + elem * k
-            verts = [int(v) for v in m.flex_elem[start:start + k]]
-        else:  # pragma: no cover - a flex contact names one or the other
-            return np.zeros(3)
-        v = np.zeros(3)
-        for b in m.flex_vertbodyid[a + np.array(verts)]:
-            mujoco.mj_objectVelocity(m, d, mujoco.mjtObj.mjOBJ_BODY, int(b), self._vel6, 0)
-            v += self._vel6[3:6]
-        return v / len(verts)
+        out = np.zeros((rows.size, 3))
+        if m.opt.cone != mujoco.mjtCone.mjCONE_ELLIPTIC:  # pragma: no cover - build.py sets an elliptic cone
+            f6 = np.zeros(6)
+            for k, c in enumerate(rows):
+                mujoco.mj_contactForce(m, d, int(c), f6)
+                out[k] = f6[:3]
+            return out
+        adr, dim = d.contact.efc_address[rows], d.contact.dim[rows]
+        on = adr >= 0
+        out[on, 0] = d.efc_force[adr[on]]
+        full = on & (dim >= 3)
+        out[full, 1] = d.efc_force[adr[full] + 1]
+        out[full, 2] = d.efc_force[adr[full] + 2]
+        return out
+
+    def _point_velocity(self, bodies: np.ndarray, points: np.ndarray) -> np.ndarray:
+        """Each body's velocity at its point (at the step's start, from cvel): mj_objectVelocity's, moved from the
+        body's center of mass to the point."""
+        m, d = self.m, self.d
+        cv = d.cvel[bodies]
+        lin = cv[:, 3:6] + np.cross(cv[:, 0:3], d.xipos[bodies] - d.subtree_com[m.body_rootid[bodies]])
+        return lin + np.cross(cv[:, 0:3], points - d.xipos[bodies])
+
+    def _flex_velocity(self, rows: np.ndarray, side: int, flexes: np.ndarray) -> np.ndarray:
+        """(len(rows), 3): flex `flexes[k]`'s velocity at contact `rows[k]`'s `side` (at the step's start, from cvel):
+        its vertex's there, else the mean of its element's vertices'."""
+        m, d = self.m, self.d
+        out = np.zeros((rows.size, 3))
+        vert, elem = d.contact.vert[rows, side], d.contact.elem[rows, side]
+        for f in np.unique(flexes):
+            here = flexes == f
+            a = int(m.flex_vertadr[f])
+            one = here & (vert >= 0)
+            if one.any():
+                b = m.flex_vertbodyid[a + vert[one]]
+                out[one] = self._point_velocity(b, d.xipos[b])
+            many = here & (vert < 0) & (elem >= 0)
+            if many.any():
+                n = int(m.flex_dim[f]) + 1
+                start = int(m.flex_elemdataadr[f]) + elem[many] * n
+                b = m.flex_vertbodyid[a + m.flex_elem[start[:, None] + np.arange(n)]]   # (rows, n)
+                out[many] = self._point_velocity(b.ravel(), d.xipos[b.ravel()]).reshape(-1, n, 3).mean(axis=1)
+        return out
 
     def soften(self) -> None:
         if self.soft.size and not self.flex:   # a flex's stiffness is its elasticity: nothing to spread

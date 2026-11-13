@@ -1008,11 +1008,10 @@ last line still says UNCALIBRATED, since it can't tell a typed number from an es
   dry run's 1.25 in pinch) and it leaves slower (7.1 m/s against the model's 9.6). Compare rigid-NOTE pinches with
   each other, not with the launcher model, or use `flex = true` ([Flex NOTE](#flex-note-experimental)), which agrees
   with the model within 4% on a quarter squeeze. (A test keeps the rigid case as a known failure.)
-- **Flex NOTEs touching each other are slow.** A flex NOTE resting flat on another makes about 900 contacts a step,
-  and the bench reads each one in Python: one simulated second of two stacked NOTEs took about 20 s of computer time
-  on the development machine, where one NOTE landing on another's rim and sliding off took about 3 s. A pinch shot
-  is unaffected (few contacts). Keep `count` low and space the feed out so flex NOTEs don't pile up; the contact
-  reader will be made faster if a flex intake ever needs it.
+- **Flex NOTEs touching each other are slow.** A flex NOTE resting flat on another makes about 900 contacts a step:
+  one simulated second of two stacked NOTEs took about 12 s of computer time on the development machine, 11 s of it
+  inside MuJoCo's own step, where one NOTE landing on another's rim and sliding off took about 3 s. A pinch shot is
+  unaffected (few contacts). Keep `count` low and space the feed out so flex NOTEs don't pile up.
 - **The flex NOTE is experimental**: fitted to estimates, on an integrator MuJoCo still calls new.
 - **Wheels are drawn with flat sides.** With a rigid piece other than a ball, each wheel (and each CAD wheel on a
   shaft) touches it as a 64-sided prism, not a round cylinder, so the picture shows the flats. MuJoCo 4.0.1 gives a
