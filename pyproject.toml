@@ -27,7 +27,7 @@ bench = ["coacd"]
 cad = ["cascadio>=0.1.1", "trimesh>=4.0"]
 robotpy = ["robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027"]
 # dev: websockets 15 for the tests' sync client (proxy=None), newer than the product needs
-dev = ["pytest", "websockets>=15", "pyyaml", "matplotlib", "mcp>=2.3,<3", "pillow", "robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027", "playwright==1.63.0", "cascadio>=0.1.1", "trimesh>=4.0"]
+dev = ["pytest", "websockets>=15", "pyyaml", "matplotlib", "mcp>=2.3,<3", "pillow", "robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027", "phoenix6>=26.3.0,<2027", "libgrapplefrc-py>=2026.0.0,<2027", "playwright==1.63.0", "cascadio>=0.1.1", "trimesh>=4.0"]
 
 [project.scripts]
 scrimmage = "scrimmage.__main__:main"

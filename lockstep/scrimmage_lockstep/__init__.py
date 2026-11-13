@@ -32,3 +32,9 @@ def loadExtension() -> None:
         rev_helper.install()
     except Exception:
         logger.exception("the scrimmage REV helper couldn't be installed")
+    try:  # feed Grapple LaserCANs (a no-op without libgrapplefrc-py); never stops the robot program
+        from . import grapple as grapple_helper
+
+        grapple_helper.install()
+    except Exception:
+        logger.exception("the scrimmage grapple helper couldn't be installed")

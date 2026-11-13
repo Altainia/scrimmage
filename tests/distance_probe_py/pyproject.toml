@@ -1,0 +1,11 @@
+# RobotPy project file for scrimmage's RobotPy CANrange and LaserCAN test robot (see robot.py).
+
+[tool.robotpy]
+
+robotpy_version = "2026.2.2"
+
+components = [
+    "sim",
+]
+
+requires = ["phoenix6>=26.3.0,<2027", "libgrapplefrc-py>=2026.0.0,<2027"]
