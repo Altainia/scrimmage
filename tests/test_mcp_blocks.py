@@ -44,6 +44,9 @@ def test_test_run_returns_the_counts_and_feeds(tmp_path):
     assert info["counts"] == {"fed": 1, "in": 1, "stuck": 0, "missed": 0}, info["outcome"]
     assert info["outcome"] == "1 of 1 made it in (100%)" and info["seed"] == 1
     assert [f["outcome"] for f in info["feeds"]] == ["in"] and info["feeds"][0]["source"] == "feeder"
+    fed = [p for p in info["pieces"] if p["feed"] is not None]       # a piece's row carries its feed outcome
+    assert [p["feed"]["outcome"] for p in fed] == ["in"] and fed[0]["id"] == info["feeds"][0]["ball"]
+    assert fed[0]["feed"]["body"] == info["feeds"][0]["body"]
     json.dumps(info)
 
 

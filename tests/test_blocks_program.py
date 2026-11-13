@@ -264,6 +264,18 @@ def test_the_preamble_is_the_top_comments():
     assert P.preamble("# a \u2028 b\n[test]\n") == "# a \u2028 b\n"       # TOML allows it in a comment: not a break
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_a_save_keeps_a_top_comment_that_python_would_split(newline):
+    """U+2028, U+2029 and U+0085 are legal inside a TOML comment (text pasted from a word processor can carry
+    them), but str.splitlines() breaks on them: a save must write them back inside the comment, not as a new line."""
+    body = '[test]\nrobot = "r.toml"\n'
+    text = ("# a \u2028 b \u2029 c \u0085 d\n# e\n\n" + body).replace("\n", newline)
+    p = P.loads(text, PATH)
+    saved = P.dumps(p, P.preamble(text))
+    assert P.loads(saved, PATH) == p
+    assert saved == "# a \u2028 b \u2029 c \u0085 d\n# e\n" + body
+
+
 @pytest.mark.parametrize("bad, words", [
     ('[setup]\ncolour = "red"', '"colour" isn\'t a setting'),
     ("[setup]\nseed = 2.5", "seed must be a whole number"),

@@ -56,7 +56,12 @@ def id_name(model: mujoco.MjModel, i: int) -> str:
     if i >= model.ngeom:
         f = i - model.ngeom
         return mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_FLEX, f) or f"flex {f}"
-    name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, i)
-    if name:        # a name given only for a soft pair (K6-P11) reads as its body's, as before
-        name = _PAIRED.sub("", name)
-    return name or mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[i])) or f"geom {i}"
+    return geom_name(model, i) or mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[i])) \
+        or f"geom {i}"
+
+
+def geom_name(model: mujoco.MjModel, g: int) -> str:
+    """Geom `g`'s own name, "" for an unnamed geom. A name given only for a soft pair (`<body>#soft-pair-<k>`,
+    K6-P11) isn't its own, so such a geom reads as unnamed, as it did before the pair."""
+    name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, g) or ""
+    return "" if _PAIRED.search(name) else name

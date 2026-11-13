@@ -326,7 +326,8 @@ class _Names:
         self.hollow = rng is not None and any(k.hole is not None for k in rng.kinds.values())
         self.field = set(world.contact_names()) | set(p["elements"]) | self.bars
         self.stations = set(p["stations"])
-        self.hopper = list(program.hopper or []) if program is not None else []
+        from .conditions import hopper_of          # conditions imports this module
+        self.hopper = hopper_of(program) if program is not None else []     # K6-R12: piece_in bodies count
         self.match = program is not None and program.match      # the test plays the range's [game] as a match
         self.stock = {}                     # station -> its stock after the test's setup (None: no stock)
         if rng is not None:

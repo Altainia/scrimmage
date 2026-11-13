@@ -97,6 +97,11 @@ def _numbered(base: Path, pattern: re.Pattern) -> list[tuple[int, Path]]:
     return sorted(out)
 
 
+def _hopper_of(program) -> list[str]:
+    from .conditions import hopper_of   # conditions imports palette, which imports spread, which imports this module
+    return hopper_of(program)
+
+
 def _now() -> str:
     return datetime.now().astimezone().isoformat(timespec="milliseconds")
 
@@ -280,7 +285,7 @@ def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
             "counts": getattr(result, "counts", None), "seed": seed, "marks": getattr(result, "marks", []),
             "notes": getattr(result, "notes", []), "seated": getattr(result, "seated", {}),
             "goals": getattr(result, "goals", None), "air": getattr(result, "air", None),
-            "clearance": getattr(result, "clearance", None), "hopper": bool(program.hopper),
+            "clearance": getattr(result, "clearance", None), "hopper": bool(_hopper_of(program)),
             "pieces": getattr(result, "pieces", []), "cameras": getattr(result, "cameras", {}),
             "soft_resets": getattr(result, "soft_resets", 0),
             **({"match": result.match, "points": result.points, "rules": result.rules}

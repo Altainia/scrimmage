@@ -612,8 +612,9 @@ That is a last resort, never a fix: what the NOTE did around then is not what a 
 covers each NOTE, with how many times it happened and the first time's when and why (`blew up 3 times (first at
 2.13 s, ...)`), since a reset NOTE may be reset again a few times in a row. The note shows wherever the run's notes
 do: the command line, the Test tab, a scenario's report and the MCP tools' results. The count is `soft_resets`: in a
-kept run's `result.json`, in the MCP tools' results, and in each row of a sweep or a spread, where `table.csv` gets a
-`soft_resets` column when any row has one and the Test tab marks the row. It is 0 in a normal run. A run or row with
+kept run's `result.json`, in MCP `test_run`'s result and in each row of MCP `test_sweep`'s and `test_spread`'s. A
+sweep's or spread's `table.csv` gets a `soft_resets` column only when a row had a reset, and the Test tab marks that
+row. A scenario's report has the note but no count. It is 0 in a normal run. A run or row with
 resets isn't trustworthy: change what made the NOTE blow up (usually a nip or a gap far too tight for it) and run it
 again. If MuJoCo itself finds the
 simulation unstable, it restarts it, and the run notes that too ("MuJoCo found the simulation unstable at 2.13 s and

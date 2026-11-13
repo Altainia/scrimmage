@@ -35,6 +35,7 @@ import numpy as np
 
 from .. import i18n
 from ..config import build_world, load_config
+from ..flexcontact import geom_name
 from ..hal_drive import driven_joints, joint_drives, position_volts
 from ..protocol import HalState
 from .script import Script, ScriptError, Wait
@@ -446,7 +447,7 @@ def _is_hook_of(hook: str, name: str) -> bool:
 
 def _geom_label(m, g: int) -> str:
     """A geom's name, or its body's name for an unnamed geom (a climber's tubes)."""
-    return m.geom(g).name or f"{m.body(int(m.geom_bodyid[g])).name} (geom {g})"
+    return geom_name(m, g) or f"{m.body(int(m.geom_bodyid[g])).name} (geom {g})"
 
 
 def run_climb(config_path, script: Script) -> ClimbResult:

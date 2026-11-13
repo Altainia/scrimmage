@@ -93,6 +93,22 @@ def test_the_cli_run_says_the_note_made_it_in(tmp_path, capsys):
     assert re.search(r"\bin\s+in intake\.hopper", out) and "on_field" not in out
 
 
+def test_the_cli_names_a_stuck_floor_note_once(tmp_path, capsys):
+    """At 0 V the NOTE ends stuck: the piece table says where, and the stations' "stuck in the robot: ... (fed at
+    ...)" line, which is for a fed piece, isn't printed for the floor piece."""
+    import argparse
+
+    from scrimmage.__main__ import _test
+
+    path = _copy(tmp_path, lambda s: s.replace("volts = 8.0", "volts = 0.0"))
+    with pytest.raises(SystemExit) as e:
+        _test(argparse.Namespace(test_command="run", file=path, out=tmp_path / "runs"))
+    out = capsys.readouterr().out
+    assert e.value.code == 1 and "1 stuck in the robot" in out.splitlines()[0], out
+    assert re.search(r"\bstuck\s+stuck on intake\.", out), out
+    assert "stuck in the robot:" not in out and "fed at" not in out
+
+
 def test_a_nested_piece_in_counts_as_a_hopper_body():
     inner = Cond("piece_in", {"body": "a.bin", "piece": "any"})
     outer = Cond("all", {"of": [inner, Cond("tilt", {"above": 1})]})

@@ -1,7 +1,7 @@
 """One outcome for every fed piece: made it in, placed on the field, stuck in the robot, or missed.
 
-The runner tracks each piece a station feeds (and, later, a floor piece a spread places) and updates the tracker
-every physics step. A piece's outcome is where it is when the run ends:
+The runner tracks each piece a station feeds (and the floor piece ahead, in a spread or in a test with a hopper that
+feeds from no station) and updates the tracker every physics step. A piece's outcome is where it is when the run ends:
 
 - **in**: its center is inside a hopper body's box (Watch.hopper_mask), the robot's ball path took it in (its
   ledger state is `robot`), or, for a rigid piece (not a ball or disc), a hopper body holds it (grip_watch.py's

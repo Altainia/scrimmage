@@ -2,9 +2,8 @@
 by any load an FRC mechanism makes, and its squeeze keeps its calibration. Each scene is one ring alone on the world's
 options (tests/soft_helpers.py), at both ends of the soft range and the preset.
 
-Written before the fixes: FIXED_BY names the K6 task that makes each case that fails today pass (Task 3, the
-contact ramp K6-R1, has landed; Task 5, the priority-part pairs K6-R2). Those cases are strict xfails, so a fix that
-lands shows up as an XPASS until its entry is removed."""
+Every case passes with the contact ramp (K6-R1) and the priority-part pairs (K6-R2); a case that fails is a
+regression in one of them."""
 
 from __future__ import annotations
 
@@ -49,9 +48,10 @@ SPEEDS = (2, 4, 6, 8)   # source: K6-R11: hits up to 8 m/s, a launched NOTE's wo
 TACO_GAPS = (0.12, 0.10, 0.08, 0.06)  # source: K6-R11: plates closing to 120 mm down to 60 mm
 LIFTS = (0.3, 1.0)      # source: K6-R11: the taco's lift on each far segment (N)
 PULLS = (0, 5, 10, 20)  # source: K6-R11: a roller's drag on the NOTE (N)
-# choice: 21 mm, ruled in Task 3 (K6-R11's drop bound; K6-R11 had 20 mm here). 200 N dragged at 1.0 r measures 18.3 mm at 2000 N/m and 20.3 mm at
-# 1000 N/m. The spec's 0.9 r fallback sends the NOTE through both plates, and 0.95 r sits next to that cliff. 20.3 mm
-# still leaves 4.7 mm before the 25 mm tube radius, and nothing goes through.
+# choice: 21 mm, ruled in Task 3 (K6-R11's drop bound; K6-R11 had 20 mm here). 200 N dragged at 1.0 r measures
+# 18.3 mm at 2000 N/m and 20.1 mm at 1000 N/m (20.3 mm before K6-R6's refit). The spec's 0.9 r fallback sends the
+# NOTE through both plates, and 0.95 r sits next to that cliff. 20.1 mm still leaves 4.9 mm before the 25 mm tube
+# radius, and nothing goes through.
 SQUASH_MAX = 0.021
 DEPTH_MAX = 0.024       # choice: 3 mm short of the 1/8 in flip at r + T/2; measured 23.1 mm at 1000 N/m, 8 m/s
 ENERGY_SLACK = 1.001    # choice: K6-P4; a hit never adds energy, within the integrator's rounding
@@ -68,9 +68,6 @@ SQUEEZE_GAPS = (1.5, 1.0, 0.6, 0.4)  # source: K6-R1's table: 25 %, 50 %, 70 % a
 SQUEEZE_STIFFNESSES = (1000.0, 2000.0, 6000.0, 20000.0)  # source: K6-R1's table, the range and the spike's 6000
 SQUEEZE_DEPTH = 0.25 * IN  # source: soft_scenes.SQUEEZE_GAP: each side of the 2 in NOTE squeezed 0.25 in at 1.5 in
 CALIBRATION_TOL = 0.02  # choice: K6-R11
-# today's failing cases and the K6 task that fixes each (the value is the xfail's reason). Task 3's ramp (K6-R1, with
-# its two rulings, SQUASH_MAX and LAUNCH_GAIN_SLACK) and Task 5's pairs (K6-R2) passed every case.
-FIXED_BY: dict[str, str] = {}
 
 
 def _at(stiffness: float):
@@ -78,10 +75,8 @@ def _at(stiffness: float):
 
 
 def _cases(rows):
-    """pytest params from (id, values) rows, each a strict xfail if FIXED_BY names it."""
-    return [pytest.param(*values, id=cid,
-                         marks=pytest.mark.xfail(strict=True, reason=FIXED_BY[cid]) if cid in FIXED_BY else ())
-            for cid, values in rows]
+    """pytest params from (id, values) rows."""
+    return [pytest.param(*values, id=cid) for cid, values in rows]
 
 
 def _sane(r: dict) -> None:
@@ -279,6 +274,22 @@ def test_a_paired_geom_keeps_its_contact_name():
     assert renamed
     for g in renamed:
         assert id_name(m, g) == m.body(int(m.geom_bodyid[g])).name
+
+
+def test_a_paired_geom_reads_as_unnamed_everywhere(monkeypatch):
+    """The climb runner's geom label and the app's view read a geom named only for its pairs as unnamed, as before the
+    pairs (K6-P11): "<body> (geom <g>)" and "", never the #soft-pair- suffix."""
+    from scrimmage.assembler.view import model_view
+    from scrimmage.climb.run import _geom_label
+    _priority_partner(monkeypatch)
+    w = World(tomllib.loads(INTAKE.read_text() + PARTNER_AT), INTAKE.parent)
+    m = w.model
+    renamed = [g for g in range(m.ngeom) if soft.PAIR_SUFFIX in (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g)
+                                                                    or "")]
+    assert renamed
+    for g in renamed:
+        assert _geom_label(m, g) == f"{m.body(int(m.geom_bodyid[g])).name} (geom {g})"
+    assert soft.PAIR_SUFFIX not in json.dumps(model_view(w, include_world=True))
 
 
 @pytest.mark.skipif(os.environ.get("SCRIMMAGE_TIMING") != "1", reason="timed locally only: set SCRIMMAGE_TIMING=1")

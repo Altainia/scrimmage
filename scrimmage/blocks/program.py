@@ -789,7 +789,9 @@ def preamble(text: str) -> str:
 
 def dumps(p: Program, head: str = "") -> str:
     """The test file's text for `p`, with `head` (preamble's comment lines) at the top."""
-    out = [*head.splitlines(), "[test]", f"robot = {_value(p.robot.as_posix())}"]
+    # Split on "\n" only, as preamble does: splitlines() also breaks on U+2028, U+2029 and U+0085, which TOML allows
+    # inside a comment, and would write the rest of such a comment as a line that isn't one.
+    out = ([head.rstrip("\n")] if head else []) + ["[test]", f"robot = {_value(p.robot.as_posix())}"]
     if p.hooks:
         out.append(f"hooks = {_value(p.hooks)}")
     if p.hopper is not None:

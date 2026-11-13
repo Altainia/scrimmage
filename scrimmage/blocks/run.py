@@ -261,6 +261,11 @@ class _Air:
             out["below_working_t"] = t
 
 
+def _feeds_from_a_station(blocks) -> bool:
+    """Some block, through repeat bodies, feeds from a station (start_feeding or feed_one)."""
+    return any(b.do in ("start_feeding", "feed_one") or _feeds_from_a_station(b.body) for b in blocks)
+
+
 def _aims(blocks) -> list[tuple[str, str]]:
     """(turret, goal) of each aim block and aimed condition, in the test's order, through repeat bodies."""
     out = []
@@ -322,10 +327,12 @@ class TestRun(_FailureWords):
         self.feeder = world.test_range.feeder if world.test_range is not None else None
         self.standin = is_standin(Path(program.path).parent / program.robot)
         self.placement = placement
-        # the floor piece ahead of the start (the one a spread places) is tracked in a placed run, and in any run
-        # whose test has a hopper (it asks whether a piece got in), so its feed outcome reaches the result however
-        # the test is run. A test with no hopper keeps its outcome as it was
-        self._floor = spread_ball(world) if placement is not None or hopper_of(program) else None
+        # the floor piece ahead of the start (the one a spread places) is tracked in a placed run, and in a run whose
+        # test has a hopper (it asks whether a piece got in) and feeds from no station, so its feed outcome reaches
+        # the result however the test is run. A station test counts only what its stations fed, and a test with no
+        # hopper keeps its outcome as it was
+        floor = placement is not None or (hopper_of(program) and not _feeds_from_a_station(program.blocks))
+        self._floor = spread_ball(world) if floor else None
         if placement is not None and self._floor is None:
             raise TestFileError(no_ball())
 

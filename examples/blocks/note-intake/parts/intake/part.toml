@@ -29,8 +29,8 @@ geom = [{ box = [0.05, 0.05, 0.05], pos = [0.1, 0.0, 0.3], collide = false }]
 # choice: the sizes: 16 in inside (the 14 in NOTE with 1 in each side), every wall 5 cm thick, the walls 12 cm tall,
 # the floor's top level with the bottom roller's top less 2 mm (2.04 in), the lid 2.1 in over it (the 2 in NOTE with
 # 0.1 in to spare), the floor ending 3 mm behind the bottom roller.
-# estimate: friction 0.4, polycarbonate on the NOTE's foam. priority = 1: this geom's friction and contact win
-# against the NOTE's (docs/parts.md).
+# estimate: friction 0.4, polycarbonate on the NOTE's foam. priority = 1: this geom's friction wins against the
+# NOTE's; a soft NOTE keeps its own squash (docs/parts.md).
 [[body]]
 name = "hopper"
 parent = "frame"

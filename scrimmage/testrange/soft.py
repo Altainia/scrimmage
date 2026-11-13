@@ -32,8 +32,8 @@ A real foam densifies past about 60 % of its squash, so the contact does too (K6
 ramps from SOFT_DMIN to dmax over RAMP_WIDTH tube radii of depth, and the solref is scaled by f = dmax / SOFT_DMIN
 (f^2 on the spring, f on the damping) so a shallow contact is exactly the one above. At depth the impact spring grows
 by up to f^2 and the static one by f^2 (1 - SOFT_DMIN) / (1 - dmax). dmax is capped by stiffness so the stiffest
-contact's frequency per unit mass stays at W_RING (and never below SOFT_DMIN). It keeps a roller or a hard hit from pushing the ring through a
-thin plate.
+contact's frequency per unit mass stays at W_RING (and never below SOFT_DMIN). It keeps a roller or a hard hit from
+pushing the ring through a thin plate.
 
 A geom with `priority` would set the contact's solref and solimp too, so a priority part would meet the ring with
 its own stiff contact. pair_rings gives each robot body with a priority geom explicit pairs with the rings instead,

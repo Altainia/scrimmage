@@ -8,6 +8,7 @@ import math
 import mujoco
 import numpy as np
 
+from ..flexcontact import geom_name
 from ..movers import movers as _movers
 from ..parts.model import quat_from_rpy
 
@@ -211,7 +212,7 @@ def _world_geoms(world, d, root: int, ms, meshes: list[dict], remap: dict[int, i
             mover, lpos, lquat = body_mover[b], [float(v) for v in m.geom_pos[g]], [float(v) for v in m.geom_quat[g]]
         else:       # a movable static geom is its own mover; the rest of the field never moves
             mover, lpos, lquat = geom_mover.get(g, -1), [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]
-        geom = {"name": mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or "", "type": kind, "size": size,
+        geom = {"name": geom_name(m, g), "type": kind, "size": size,
                 "pos": [float(v) for v in d.geom_xpos[g]], "quat": _quat(d.geom_xmat[g]),
                 "rgba": [float(v) for v in m.geom_rgba[g]], "mover": mover, "lpos": lpos, "lquat": lquat}
         if g in hidden:
