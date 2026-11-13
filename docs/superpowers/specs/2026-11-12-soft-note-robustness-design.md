@@ -377,14 +377,18 @@ Each one gives what was decided, why, and its cost if wrong.
   20000 N/m.
   - Every case passes only if:
     - the state stays finite;
-    - the ring's kinetic energy never rises above its start;
+    - the ring's kinetic energy never rises above its start, except one documented limit (Task 3's ruling): at
+      20000 N/m an 8 m/s slam may gain up to 8 % (`LAUNCH_GAIN_SLACK = 1.08`). It gains 6.8 % on the first step
+      after the launch, from the carpet, not the wall: MuJoCo's soft friction (B = contact_b/dmin, impratio 10) lifts
+      a contact sliding fast, and a rigid box hops too. Cutting the damping 10 % clears it but moves the drop's e to
+      0.335, outside its 10 %;
     - no segment passes 20 m/s (`# choice`, under the guard's 25);
     - the guard never fires.
   - **The cases:**
 
     | Scene | Cases | Bound |
     |---|---|---|
-    | Thin plates at roller loads (`press`) | 1/8 in and 6 mm plates; 25, 50, 100, 200 N; held, and dragged at 3.4 m/s | no segment center below the plate's top; squash under 20 mm (`# choice`; measured 18.3 at 200 N dragged) |
+    | Thin plates at roller loads (`press`) | 1/8 in and 6 mm plates; 25, 50, 100, 200 N; held, and dragged at 3.4 m/s | no segment center below the plate's top; squash under 21 mm (Task 3's ruling, K6-R11's drop bound: the 0.9 r fallback sends the NOTE through both plates at 200 N dragged, 1000 N/m, and 0.95 r sits next to that cliff; measured 18.3 at 2000 N/m and 20.3 at 1000 N/m, 4.7 mm short of the 25 mm tube radius, nothing through) |
     | Thin plates on hard hits (`slam`) | 1/8 in, 6 mm and 5 cm; 2, 4, 6, 8 m/s; priority 0 and 1 | never through; depth under 24 mm (`# choice: 3 mm short of the 1/8 in flip at r + T/2`; measured 23.1 at 1000 N/m, 8 m/s) |
     | A folded ring (`taco`) | plates at 120, 100, 80, 60 mm; lifts 0.3 and 1 N | self-overlap under 20 mm (`# choice`; measured 17.3) |
     | A 2 mm slab (`slab`) | priority 0 and 1; pulls 0, 5, 10, 20 N at 2 m/s | at most 2 segments under the slab at any time, and none at the end (`# choice`; measured 2, briefly, at 20 N with pairs) |

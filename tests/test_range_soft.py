@@ -287,6 +287,13 @@ def test_the_ramp_rule():
     p = soft.ring_params(_at(2000.0))
     # f = 0.95 / 0.2 = 4.75, f^2 = 22.5625
     assert solref == pytest.approx([-11211.4 * 22.5625, -p.contact_b * 4.75], rel=1e-6)
+    # a light, stiff legal kind is already past W_RING: its dmax is clamped to SOFT_DMIN, K5's flat contact
+    light = replace(NOTE, stiffness=20000.0, mass=0.05)  # choice: the review's 50 g ring at the top of the range
+    p = soft.ring_params(light)
+    assert soft.SOFT_DMIN * soft.W_RING / math.sqrt(p.contact_k) < soft.SOFT_DMIN
+    solref, solimp = soft.ring_contact(light)
+    assert solimp[1] == soft.SOFT_DMIN and solimp[1] >= solimp[0]
+    assert solref == pytest.approx([-p.contact_k, -p.contact_b], rel=1e-12)
 
 
 def test_the_ring_is_built_as_its_kind():

@@ -32,7 +32,7 @@ A real foam densifies past about 60 % of its squash, so the contact does too (K6
 ramps from SOFT_DMIN to dmax over RAMP_WIDTH tube radii of depth, and the solref is scaled by f = dmax / SOFT_DMIN
 (f^2 on the spring, f on the damping) so a shallow contact is exactly the one above. At depth the impact spring grows
 by up to f^2 and the static one by f^2 (1 - SOFT_DMIN) / (1 - dmax). dmax is capped by stiffness so the stiffest
-contact's frequency per unit mass stays at W_RING. It keeps a roller or a hard hit from pushing the ring through a
+contact's frequency per unit mass stays at W_RING (and never below SOFT_DMIN). It keeps a roller or a hard hit from pushing the ring through a
 thin plate.
 
 A range with a soft kind builds POOL_SIZE rings per soft kind, `soft.<k>`, parked under the floor with PARKED_BITS
@@ -134,7 +134,8 @@ def ring_contact(kind: PieceKind) -> tuple[list[float], list[float]]:
     """The ring's capsules' (solref, solimp) for the kind (K6-R1; see the module docstring). ring_params stays
     unscaled: the scale f is the geom's alone (K6-R9)."""
     p, r = ring_params(kind), _dims(kind).r
-    dmax = min(SOFT_DMAX, SOFT_DMIN * W_RING / math.sqrt(p.contact_k))
+    # never below SOFT_DMIN: a light, stiff kind already past W_RING keeps K5's flat contact rather than a softening one
+    dmax = max(SOFT_DMIN, min(SOFT_DMAX, SOFT_DMIN * W_RING / math.sqrt(p.contact_k)))
     f = dmax / SOFT_DMIN
     return ([-p.contact_k * f * f, -p.contact_b * f],
             [SOFT_DMIN, dmax, RAMP_WIDTH * r, RAMP_MID, RAMP_POWER])

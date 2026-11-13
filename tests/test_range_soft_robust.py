@@ -32,7 +32,7 @@ SPEEDS = (2, 4, 6, 8)   # source: K6-R11: hits up to 8 m/s, a launched NOTE's wo
 TACO_GAPS = (0.12, 0.10, 0.08, 0.06)  # source: K6-R11: plates closing to 120 mm down to 60 mm
 LIFTS = (0.3, 1.0)      # source: K6-R11: the taco's lift on each far segment (N)
 PULLS = (0, 5, 10, 20)  # source: K6-R11: a roller's drag on the NOTE (N)
-# choice: K6-R11's 21 mm, ruled in Task 3. 200 N dragged at 1.0 r measures 18.3 mm at 2000 N/m and 20.3 mm at
+# choice: 21 mm, ruled in Task 3 (K6-R11's drop bound; K6-R11 had 20 mm here). 200 N dragged at 1.0 r measures 18.3 mm at 2000 N/m and 20.3 mm at
 # 1000 N/m. The spec's 0.9 r fallback sends the NOTE through both plates, and 0.95 r sits next to that cliff. 20.3 mm
 # still leaves 4.7 mm before the 25 mm tube radius, and nothing goes through.
 SQUASH_MAX = 0.021
@@ -154,5 +154,6 @@ def test_the_squeeze_stiffens_and_keeps_its_calibration(stiffness):
     assert all(b > a for a, b in zip(forces, forces[1:])), forces
     if stiffness == 2000.0:
         # K6-R1's measured squeeze at the preset (choice: pins the rule)
+        assert forces[1] == pytest.approx(31.5, rel=0.10), forces
         assert forces[2] == pytest.approx(133.5, rel=0.10), forces
         assert forces[3] == pytest.approx(494.3, rel=0.10), forces
