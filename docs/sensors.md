@@ -224,7 +224,7 @@ dio = 6                           # and a DigitalInput 6 beside it
 | device | robot code | reads |
 |---|---|---|
 | CANrange | `getDistance()` (fast mode: `getDistanceMeters()`) | the distance in whole millimeters, as Phoenix keeps it |
-| CANrange | `getIsDetected()` | whether the distance is inside the CANrange's own configured threshold (`ProximityParams.ProximityThreshold`, 0.4 m unless robot code sets it). Scrimmage's `threshold` isn't used; it defaults to the same 0.4 m, so the Test tab's **is on** matches when neither is set |
+| CANrange | `getIsDetected()` | whether the distance is inside the CANrange's own configured threshold (`ProximityParams.ProximityThreshold`, 0.4 m unless robot code sets it). Scrimmage's `threshold` isn't used; it defaults to the same 0.4 m, so the Test tab's **is on** matches when neither is set. Fast mode's `ScrimmageCANrange` takes the threshold through `setProximityThreshold` |
 | LaserCAN | `getMeasurement()` (Java), `get_measurement()` (RobotPy) | null (`None`) until the first reading. Then status 0 with the distance, or status 2 with the mode's reach when nothing is in range |
 
 With nothing in range a CANrange reads `max_range` (3.0 m by default). A LaserCAN's status 2 is the "weak signal" status. Scrimmage uses it for nothing in range because the
@@ -234,7 +234,7 @@ firmware passes the ST chip's status through; that hasn't been seen on hardware.
 A CANrange whose `max_range` is at or under its ProximityThreshold plus hysteresis (0.4 m plus 0.01 m by default) reads
 "detected" with nothing in front, so set the threshold in robot code (and `threshold` in the config) below `max_range`.
 
-**A CANrange is a Phoenix 6 device.** (Not in fast mode, where `ScrimmageCANrange` is not.) A robot with one runs in real time, like every Phoenix robot: see
+**A CANrange is a Phoenix 6 device.** In fast mode `ScrimmageCANrange` is not a Phoenix device, so it doesn't force real time. A robot with one runs in real time, like every Phoenix robot: see
 [Simulation controls](drive.md#simulation-controls).
 
 **The LaserCAN needs scrimmage's helper**, loaded as REV's is ([rev.md](rev.md#setup)). Java robots load it through

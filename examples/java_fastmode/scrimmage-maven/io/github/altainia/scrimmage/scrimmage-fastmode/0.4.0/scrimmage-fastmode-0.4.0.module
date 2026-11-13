@@ -3,7 +3,7 @@
   "component": {
     "group": "io.github.altainia.scrimmage",
     "module": "scrimmage-fastmode",
-    "version": "0.3.1",
+    "version": "0.4.0",
     "attributes": {
       "org.gradle.status": "release"
     }
@@ -25,8 +25,8 @@
       },
       "files": [
         {
-          "name": "scrimmage-fastmode-0.3.1.jar",
-          "url": "scrimmage-fastmode-0.3.1.jar",
+          "name": "scrimmage-fastmode-0.4.0.jar",
+          "url": "scrimmage-fastmode-0.4.0.jar",
           "size": 32166,
           "sha512": "e00e3d70263582fe7832e631152e12e6c5332d09ddd3f08b95f606f86c76e859894f66cb5e2a7819fb30b00ed8879cb9f964338349d71122fc0f34460990e109",
           "sha256": "2acb6bb7e26487d8984ea823277a44ff203823f8f03ddcfb1c32b3dd22129aca",
@@ -46,8 +46,8 @@
       },
       "files": [
         {
-          "name": "scrimmage-fastmode-0.3.1.jar",
-          "url": "scrimmage-fastmode-0.3.1.jar",
+          "name": "scrimmage-fastmode-0.4.0.jar",
+          "url": "scrimmage-fastmode-0.4.0.jar",
           "size": 32166,
           "sha512": "e00e3d70263582fe7832e631152e12e6c5332d09ddd3f08b95f606f86c76e859894f66cb5e2a7819fb30b00ed8879cb9f964338349d71122fc0f34460990e109",
           "sha256": "2acb6bb7e26487d8984ea823277a44ff203823f8f03ddcfb1c32b3dd22129aca",
@@ -66,8 +66,8 @@
       },
       "files": [
         {
-          "name": "scrimmage-fastmode-0.3.1-sources.jar",
-          "url": "scrimmage-fastmode-0.3.1-sources.jar",
+          "name": "scrimmage-fastmode-0.4.0-sources.jar",
+          "url": "scrimmage-fastmode-0.4.0-sources.jar",
           "size": 18195,
           "sha512": "2234d3d617e6e9a3b1fb0376e0c083efefc3c75383c2efe203c4780476b5cc934c0b8ea875d9d7f2a3b32899b642d32251e9e6ae775d3dc180bc2f4e3b1766f7",
           "sha256": "c8a9fee3b8aa5bea5757ffc2014d0c0ca863808748cd25664f3415fa2b187bbb",

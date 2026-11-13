@@ -71,7 +71,8 @@ MAX_FPS = 1000                  # choice: a camera looks at most once a physics 
 STRAIGHT_UP_DEG = 1.0           # choice: a camera's toward this close to the body's z has no up to measure from
 COLOR_MAX_RANGE = 0.10          # m: a color sensor's longest range (spec C5: nothing past 10 cm)
 DEFAULT_VOLTS_PER_M = 0.977     # V/m: a MaxBotix MB1013's 5 V over 5.12 m (spec C3, an estimate)
-DEVICE_MAX_RANGE = {"CANrange": 3.0, "ScrimmageCANrange": 3.0, "LaserCAN": 4.0}   # m, a distance sensor's default max_range per device:
+DEVICE_MAX_RANGE = {"CANrange": 3.0, "ScrimmageCANrange": 3.0,   # m, a distance sensor's default max_range per
+                    "LaserCAN": 4.0}                              # device:
 # CANrange 3.0 m is CTRE's CANrange User's Guide (11/25/2024) section 1.3, long range mode; LaserCAN 4.0 m is
 # libgrapplefrc's LaserCanInterface RangingMode javadoc, long mode (checks file, sections 1 and 2)
 CANRANGE_THRESHOLD = 0.4        # m: a CANrange's default threshold: Phoenix 6's default ProximityThreshold
@@ -196,7 +197,7 @@ class _Table:
             return None
         key = given[0]
         want, v = DEVICE_KEYS[key], self.t[key]
-        if key == "scrimmage":
+        if key == "scrimmage":      # a fast-mode name: the rules of bindings._scrimmage_name
             if not isinstance(v, str) or not v or any(c.isspace() for c in v):
                 raise self.err(i18n.t("{key_setting}: expected a non-empty device name without spaces (e.g. "
                                       "{example})", key_setting=f"{key} = {plain(v)}", example='"intake_range"'))
@@ -338,7 +339,8 @@ def parse_sensor(table, index: int) -> SensorSpec:
             kw["volts_per_m"] = float(v)
         if device:
             kw["device"], kw["device_id"], kw["device_name"] = device
-        default = (min(CANRANGE_THRESHOLD, kw["length"]) if kw.get("device") in ("CANrange", FAST_DEVICE)     # Phoenix's default
+        default = (min(CANRANGE_THRESHOLD, kw["length"])     # Phoenix's default
+                   if kw.get("device") in ("CANrange", FAST_DEVICE)
                    else kw["length"] / 2.0)
         threshold = t.length("threshold", default)
         if threshold > kw["length"]:

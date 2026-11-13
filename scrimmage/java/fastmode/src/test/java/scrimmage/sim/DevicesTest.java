@@ -402,6 +402,17 @@ class DevicesTest {
     }
 
     @Test
+    void canrangeLatchUpdatesOnlyWhenCalled() {
+        requireHal();
+        try (ScrimmageCANrange r = new ScrimmageCANrange("sampled")) {
+            assertTrue(r.getIsDetected());
+            in("ScrimmageCANrange:sampled", "distance", 0.5); // crosses above...
+            in("ScrimmageCANrange:sampled", "distance", 0.2); // ...and back before the next call
+            assertTrue(r.getIsDetected(), "a crossing between two calls isn't seen");
+        }
+    }
+
+    @Test
     void canrangeCustomProximity() {
         requireHal();
         try (ScrimmageCANrange r = new ScrimmageCANrange("custom")) {

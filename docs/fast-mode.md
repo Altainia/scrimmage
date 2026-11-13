@@ -48,7 +48,8 @@ real IO class (Phoenix) and a fast-mode IO class (Scrimmage) implement the same 
    !scrimmage-maven/**/*.jar
    ```
 
-   Re-run the command after upgrading scrimmage. (While Scrimmage is private, the library travels in your
+   Re-run the command after upgrading scrimmage: `ScrimmageCANrange` needs library 0.4.0 or later (a build error
+   "cannot find symbol ScrimmageCANrange" means the vendored library is older: re-run it). (While Scrimmage is private, the library travels in your
    repository; once it's public, the vendordep will point at a hosted Maven repository instead.)
 3. **Choose the IO in `RobotContainer`** with `Scrimmage.fastMode()` (true when Scrimmage sets
    `SCRIMMAGE_MODE=fast`). From the sample:
