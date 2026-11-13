@@ -741,8 +741,9 @@ async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict
     "interval"} is a station's interval (also stock, spread_yaw_deg, spread_pitch_deg, spread_speed, spread_position,
     spread_rotation_deg; the last two set all three axes). values: the numbers
     (for a grip, material names or numbers) to try, in order (at most 12).
-    Returns "rows" (each value's status, outcome, t_end and a passed or failed per check), "sweep_folder" (table.csv
-    and sweep.json, each run kept inside; the app's Test tab shows them) and any "problems" to tell the room. A value
+    Returns "rows" (each value's status, outcome, t_end, a passed or failed per check, and soft_resets: how many times
+    a soft NOTE blew up and was reset in that run, 0 normally; above 0 that row isn't trustworthy), "sweep_folder"
+    (table.csv and sweep.json, each run kept inside; the app's Test tab shows them) and any "problems" to tell the room. A value
     that can't run gets a row saying why; the rest still run. path: an absolute path."""
     file = _test_file(path)
 
@@ -755,7 +756,7 @@ async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict
         with units.machine_text():      # refusals too (the file's), as they always were, whatever the settings
             folder = run_sweep(blocks_program.load(file), target, values, blocks_store.runs_dir(file))
         with open(folder / "table.csv", newline="", encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
+            rows = _with_resets(list(csv.DictReader(f)))
         meta = json.loads((folder / "sweep.json").read_text(encoding="utf-8"))
         info = {"rows": rows, "sweep_folder": str(folder.resolve())}
         if meta.get("problems"):
@@ -768,6 +769,11 @@ async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict
         raise ToolError(str(e)) from None
 
 
+def _with_resets(rows: list[dict]) -> list[dict]:
+    """table.csv's rows with soft_resets a whole number on each (table.csv has the column only when a run had one)."""
+    return [{**r, "soft_resets": int(r.get("soft_resets") or 0)} for r in rows]
+
+
 @_tool()
 async def test_spread(path: str) -> dict:
     """Run a block test once per placement of its floor spread (the test file's [setup] floor_spread, e.g.
@@ -777,7 +783,8 @@ async def test_spread(path: str) -> dict:
     rotation_deg (the piece turned, from the robot's heading for a piece other than a ball) and tip_deg (0 to 90: a
     coral's axis pitched up from lying; 90 stands it on end). Returns "sentence" ("picked up 7 of 9; missed at 6 in
     left at 30° and 6 in right at 30°", or for a coral "picked up 2 of 3; missed standing on end", to read to the
-    room), "rows" (each placement's words, its five axes, status, "picked up" yes or no, and outcome) and
+    room), "rows" (each placement's words, its five axes, status, "picked up" yes or no, outcome, and soft_resets: how
+    many times a soft NOTE blew up and was reset in that run, 0 normally; above 0 that row isn't trustworthy) and
     "spread_folder" (table.csv and spread.json, each run kept inside; the app's Test tab shows them). path: an
     absolute path."""
     file = _test_file(path)
@@ -791,7 +798,7 @@ async def test_spread(path: str) -> dict:
         with units.machine_text():      # refusals too ("inside the robot"), as they always were, whatever the setting
             folder = run_spread(blocks_program.load(file), blocks_store.runs_dir(file))
         with open(folder / "table.csv", newline="", encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
+            rows = _with_resets(list(csv.DictReader(f)))
         meta = json.loads((folder / "spread.json").read_text(encoding="utf-8"))
         return {"sentence": meta["sentence"], "rows": rows, "spread_folder": str(folder.resolve())}
 

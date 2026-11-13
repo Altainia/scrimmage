@@ -76,8 +76,9 @@ def test_test_sweep_returns_the_table(tmp_path):
     info = asyncio.run(mcp_server.test_sweep(str(path), {"robot": "mass"}, [30, 45]))
     assert info["sweep_folder"] == str((tmp_path / "t-runs" / "sweep-001").resolve())
     assert [float(r["value"]) for r in info["rows"]] == [30, 45]
-    assert all(r["status"] == "finished" for r in info["rows"])
-    assert (tmp_path / "t-runs" / "sweep-001" / "table.csv").is_file()
+    assert all(r["status"] == "finished" and r["soft_resets"] == 0 for r in info["rows"])
+    table = (tmp_path / "t-runs" / "sweep-001" / "table.csv").read_text(encoding="utf-8")
+    assert "soft_resets" not in table           # no reset: table.csv as it always was (K6-R7)
     with pytest.raises(ToolError, match="can't sweep"):
         asyncio.run(mcp_server.test_sweep(str(path), {"nope": 1}, [1]))
     with pytest.raises(ToolError, match="at least one value"):
@@ -90,6 +91,8 @@ def test_test_spread_returns_the_sentence_and_rows(tmp_path):
     info = asyncio.run(mcp_server.test_spread(str(path)))
     assert info["sentence"] == "picked up 1 of 2; missed at 30 in left", info
     assert [r["picked up"] for r in info["rows"]] == ["yes", "no"]
+    assert [r["soft_resets"] for r in info["rows"]] == [0, 0]
+    assert "soft_resets" not in (path.parent / "intake-runs" / "spread-001" / "table.csv").read_text(encoding="utf-8")
     assert info["spread_folder"] == str((path.parent / "intake-runs" / "spread-001").resolve())
     json.dumps(info)
     with pytest.raises(ToolError, match="test file not found"):
@@ -97,3 +100,40 @@ def test_test_spread_returns_the_sentence_and_rows(tmp_path):
     path.write_text(path.read_text(encoding="utf-8").split("[setup.floor_spread]")[0], encoding="utf-8")
     with pytest.raises(ToolError, match="no floor spread"):
         asyncio.run(mcp_server.test_spread(str(path)))
+
+
+def _resets_on_second_run(monkeypatch) -> None:
+    """Every block test's second run reports 2 soft NOTE resets (a real one needs a soft NOTE kicked by hand:
+    tests/test_range_soft_robust.py)."""
+    from scrimmage.blocks.run import TestRun
+    real, calls = TestRun.run, []
+
+    def run(self, *a, **kw):
+        result = real(self, *a, **kw)
+        calls.append(1)
+        if len(calls) == 2:
+            result.soft_resets = 2
+        return result
+    monkeypatch.setattr(TestRun, "run", run)
+
+
+def test_sweep_and_spread_rows_carry_the_soft_resets(tmp_path, monkeypatch):
+    """K6-R7, task 6 review I1: a run whose soft NOTE was reset carries the count in its row: table.csv gains a
+    soft_resets column (only then), and MCP test_sweep's and test_spread's rows have it as a whole number."""
+    import csv
+    from test_blocks_spread import spread_test
+    _resets_on_second_run(monkeypatch)
+    (tmp_path / "sweep").mkdir()
+    path = write_test(tmp_path / "sweep", MOVE_45)
+    info = asyncio.run(mcp_server.test_sweep(str(path), {"robot": "mass"}, [30, 45]))
+    assert [r["soft_resets"] for r in info["rows"]] == [0, 2]
+    with open(tmp_path / "sweep" / "t-runs" / "sweep-001" / "table.csv", newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    assert rows[0][-1] == "soft_resets" and [r[-1] for r in rows[1:]] == ["0", "2"]
+    _resets_on_second_run(monkeypatch)
+    path = spread_test(tmp_path / "spread", "offset_in = [0, 30]")
+    info = asyncio.run(mcp_server.test_spread(str(path)))
+    assert [r["soft_resets"] for r in info["rows"]] == [0, 2]
+    with open(path.parent / "intake-runs" / "spread-001" / "table.csv", newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    assert rows[0][-2:] == ["outcome", "soft_resets"] and [r[-1] for r in rows[1:]] == ["0", "2"]

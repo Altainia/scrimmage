@@ -3,7 +3,7 @@
 
 import { $, h } from "./app.js";
 import { units } from "./units.js";
-import { i18n, t } from "./i18n.js";
+import { i18n, t, tn } from "./i18n.js";
 import { result, show } from "./test_run.js";
 import { PAD_L, TICKS_H, rp, statusWord, inSetting, outcomeText, sentence, resultKey } from "./test_run_state.js";
 import { shownUnit, toShown, tokens } from "./test_run_chart.js";
@@ -89,7 +89,7 @@ const sweepNumber = (id) => (/^sweep-(\d+)$/.exec(id || "") || [])[1];
 const rowRun = (sweep, k) => `${sweep.id}/${String(k + 1).padStart(3, "0")}`;
 const hasRun = (id) => ((rp.state && rp.state.runs) || []).some((r) => r.id === id);
 const shownSweep = () => ((rp.state && rp.state.sweeps) || []).find((s) => s.id === rp.sweepId) || null;
-const checkColumns = (sweep) => (sweep.rows.length ? Object.keys(sweep.rows[0]).filter((c) => !["value", "status", "outcome", "t_end"].includes(c)) : []);
+const checkColumns = (sweep) => (sweep.rows.length ? Object.keys(sweep.rows[0]).filter((c) => !["value", "status", "outcome", "t_end", "soft_resets"].includes(c)) : []);
 
 export function sweepShown() {
   const sw = shownSweep();
@@ -245,7 +245,10 @@ function rowOutcome(sw, r, k) {
   if (r.status === "couldn't run") return t("Couldn't run: {why}", { why: r.outcome });
   const kept = (inSetting(sw.table && sw.table.words) || {}).outcomes;
   const said = Array.isArray(kept) && kept[k] != null ? kept[k] : r.outcome;
-  return t("{status}: {outcome}", { status: statusWord(r.status), outcome: outcomeText({ status: r.status, outcome: said }) });
+  const text = t("{status}: {outcome}", { status: statusWord(r.status), outcome: outcomeText({ status: r.status, outcome: said }) });
+  const resets = +(r.soft_resets || 0);     // table.csv has the column only when a run's soft NOTE was reset (K6-R7)
+  return resets > 0 ? tn("{outcome} (a soft NOTE blew up and was reset, so this row isn't trustworthy)",
+    "{outcome} (a soft NOTE blew up and was reset {count} times, so this row isn't trustworthy)", resets, { outcome: text }) : text;
 }
 
 // -- the floor spread ------------------------------------------------------------------------------------------------

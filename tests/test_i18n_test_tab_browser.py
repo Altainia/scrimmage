@@ -167,3 +167,28 @@ def test_a_kept_sweep_and_its_run_follow_the_units(test_page, tmp_path):
     page.wait_for_function("document.querySelector('#test-outcome').textContent.startsWith("
                            "\"Drive (block 1) didn't reach 6 m in 0.3 s (went \")")
     assert "didn't reach 6 m" in page.inner_text("#test-runs")
+
+
+def test_a_sweep_row_whose_soft_note_was_reset_says_so(test_page, tmp_path):
+    """K6-R7, task 6 review I1: a sweep row whose run had soft NOTE resets (table.csv's soft_resets column, written
+    only then) says so after its outcome, and the column is not shown as a check."""
+    import csv
+    from scrimmage.blocks import store
+    from scrimmage.blocks.program import loads
+    from scrimmage.blocks.sweep import run_sweep
+    page, path = test_page(DRIVE_SHORT)
+    folder = run_sweep(loads(path.read_text(encoding="utf-8"), path), {"block": [0], "key": "distance"}, [5.0, 6.0],
+                       store.runs_dir(path))
+    with open(folder / "table.csv", newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    rows = [rows[0] + ["soft_resets"], rows[1] + ["0"], rows[2] + ["2"]]        # as a run with 2 resets writes it
+    with open(folder / "table.csv", "w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerows(rows)
+    page.wait_for_function("__scrimmageTest.replay.runId === 'sweep-001/002' && __scrimmageTest.sweep")
+    outcomes = "[...document.querySelectorAll('#test-sweep-table .test-sweep-outcome')].map((e) => e.textContent)"
+    page.wait_for_function(f"{outcomes}.length === 2")
+    said = page.evaluate(outcomes)
+    assert "soft NOTE" not in said[0], said
+    assert said[1].endswith(" (a soft NOTE blew up and was reset 2 times, so this row isn't trustworthy)"), said
+    heads = "[...document.querySelectorAll('#test-sweep-table thead th')].map((e) => e.textContent)"
+    assert page.evaluate(heads) == ["Value", "Outcome"]

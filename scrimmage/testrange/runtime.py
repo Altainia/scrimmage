@@ -105,7 +105,7 @@ class RangeRuntime:
         self.events: list[tuple[int, str]] = []     # the last step's (ball, "scored" | "out")
         self.unstable: list[float] = []             # each step-start time at which MuJoCo reset the state (_BAD)
         self._t0 = float(world.data.time)           # the step's start time (before_physics)
-        self._badqacc = self._bad_count()
+        self._bad = self._bad_count()
 
     # ------------------------------------------------------------------------------------------------ setup
 
@@ -166,7 +166,7 @@ class RangeRuntime:
         self.events = []
         self.unstable = []
         self._t0 = float(self.world.data.time)
-        self._badqacc = self._bad_count()
+        self._bad = self._bad_count()
 
     def reset_robot(self) -> None:
         """With World.reset_robot (the robot's joints at rest, balls left where they are): the shooter shaft at rest
@@ -303,9 +303,9 @@ class RangeRuntime:
         """MuJoCo's own reset clears its warnings before it counts the one that caused it, so a second reset leaves the
         count where the first did: a clock that went back past the step's start is a reset too."""
         bad = self._bad_count()
-        if bad > self._badqacc or (bad > 0 and float(self.world.data.time) < self._t0):
+        if bad > self._bad or (bad > 0 and float(self.world.data.time) < self._t0):
             self.unstable.append(self._t0)
-        self._badqacc = bad
+        self._bad = bad
 
     def sensor_updates(self, hal: HalState) -> list[Update]:
         return self.ball_path.beam_updates() if self.ball_path is not None else []

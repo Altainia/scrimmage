@@ -359,7 +359,8 @@ def run_sweep(program: Program, target: dict, values: list[float | str], base, o
 
     def record(i: int, row: dict, result):
         row.update(status=result.status, outcome=result.outcome, t_end=result.t_end,
-                   checks={_check_column(c): "passed" if c["passed"] else "failed" for c in result.checks})
+                   checks={_check_column(c): "passed" if c["passed"] else "failed" for c in result.checks},
+                   soft_resets=result.soft_resets)
         if result.words:            # the outcome and each check's column in every setting, for table.json
             row["words"] = {k: {"outcome": w["outcome"],
                                 "columns": {_check_column(c): (c, wc["text"]) for c, wc in zip(result.checks,
@@ -472,11 +473,19 @@ def _write_words(path: Path, rows: list[dict], measure: tuple[str, float] | None
     path.write_text(json.dumps(table, ensure_ascii=False), encoding="utf-8")
 
 
+def resets_column(rows: list[dict]) -> bool:
+    """Whether table.csv has a soft_resets column (the soft NOTE guard's resets in each run, K6-R7): only when a row
+    had one, so a table without any is as it always was."""
+    return any(r.get("soft_resets", 0) > 0 for r in rows)
+
+
 def _write_table(path: Path, rows: list[dict]) -> None:
     cols = _columns(rows)
+    resets = resets_column(rows)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["value", "status", "outcome", "t_end", *cols])
+        w.writerow(["value", "status", "outcome", "t_end", *cols, *(["soft_resets"] if resets else [])])
         for r in rows:
             t = "" if r["t_end"] is None else f"{r['t_end']:.3f}"
-            w.writerow([_value_text(r["value"]), r["status"], r["outcome"], t, *(r["checks"].get(c, "") for c in cols)])
+            w.writerow([_value_text(r["value"]), r["status"], r["outcome"], t, *(r["checks"].get(c, "") for c in cols),
+                        *([r.get("soft_resets", 0)] if resets else [])])

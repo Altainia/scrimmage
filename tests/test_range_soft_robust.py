@@ -8,6 +8,7 @@ lands shows up as an XPASS until its entry is removed."""
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import sys
@@ -15,8 +16,6 @@ import time
 import tomllib
 from dataclasses import replace
 from pathlib import Path
-
-import json
 
 import mujoco
 import numpy as np
@@ -513,3 +512,8 @@ def test_a_badqvel_rise_is_noted_once(tmp_path):
     assert rt.unstable == [pytest.approx(t0), pytest.approx(t1)]
     notes = [n for n in rt.notes() if n.startswith("MuJoCo found the simulation unstable")]
     assert notes == [f"MuJoCo found the simulation unstable at {t0:.2f} s and restarted it"], notes
+    # World.reset after real MuJoCo resets (the count at 1, the clock back to 0) is no rise
+    w.reset()
+    for _ in range(100):
+        w.step(hal)
+    assert rt.unstable == [] and not [n for n in rt.notes() if "unstable" in n]

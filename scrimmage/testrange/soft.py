@@ -668,6 +668,7 @@ class SoftPool:
             c, vc = np.asarray(pos) + _mat(quat) @ self._ipos[s], np.zeros(3)
         else:
             c, quat, vc = state
+        # unchecked for overlap (K6-P12): a ring reset while squashed may blow up and be reset again a few times
         ring.write(d, c, quat, vc, np.zeros(3))
         d.qacc_warmstart[ring.v] = 0.0
         self.resets += 1
