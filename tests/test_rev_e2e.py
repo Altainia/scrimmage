@@ -352,6 +352,78 @@ def test_a_launched_run_with_a_spark_still_to_come_blames_neither_the_agent_nor_
                                                              "created it")], offset_run.warnings
 
 
+# ------------------------------------------------------------------ a REV Color Sensor V3 (the probe's PROBE_COLOR=1)
+
+CARGO_R = 0.12065           # m: a 2022 cargo's radius
+COLOR_PRINT = re.compile(r"^color raw=(\d+),(\d+),(\d+) ir=(\d+) rgb=([\d.]+),([\d.]+),([\d.]+) prox=(\d+)$", re.M)
+
+# A red 2022 cargo on the carpet ahead of the robot (its near side 0.479 m ahead of the center, as in
+# test_sensors_robot_e2e.py's RobotPy run), and a color sensor on the MXP I2C port 2.9 cm from it.
+RED_CARGO = """
+[range]
+name = "One red cargo"
+
+[piece.red_cargo]
+ball = "2022-cargo"
+color = "red"
+
+[[floor_balls]]
+at = [[2.6, 4.0]]
+kind = "red_cargo"
+"""
+
+COLOR_SENSOR = f"""
+[range]
+file = "one_red.toml"
+
+[[sensor]]
+name = "eye"
+kind = "color"
+body = "drive.chassis"
+at = [0.45, 0.0, {CARGO_R}]
+toward = [1, 0, 0]
+i2c = "mxp"
+"""
+
+
+@pytest.fixture(scope="module")
+def color_run(tmp_path_factory) -> dict:
+    """PROBE_COLOR=1 with a red cargo ahead of the color sensor. Advance until the robot has printed three readings."""
+    tmp = tmp_path_factory.mktemp("rev_color")
+    (tmp / "one_red.toml").write_text(RED_CARGO)
+    cfg = probe_config(tmp, PROBE_COLOR="1")
+    cfg.write_text(cfg.read_text() + COLOR_SENSOR)
+    out: dict = {}
+
+    async def main():
+        s = Session(cfg, nt=False)
+        try:
+            await s.start()
+            for _ in range(100):    # values, not wall time: 0.1 s of simulation until the prints have come through
+                await s.advance(0.1)
+                console = "\n".join(l["text"] for l in s.console()["lines"])
+                out["prints"] = COLOR_PRINT.findall(console)
+                out["console"] = console
+                if len(out["prints"]) >= 3:
+                    break
+                await asyncio.sleep(0.05)
+        finally:
+            await s.stop()
+    asyncio.run(main())
+    return out
+
+
+def test_the_java_robot_reads_the_red_cargo_on_the_color_sensor(color_run):
+    prints = color_run["prints"]
+    assert len(prints) >= 3, color_run["console"][-2000:]
+    for red, green, blue, ir, r, g, b, prox in prints:
+        red, green, blue, ir, prox = map(int, (red, green, blue, ir, prox))
+        assert red > 1000 and red > 5 * blue and red > 5 * green, (red, green, blue)
+        assert ir > 1000 and prox > 1000, (ir, prox)
+        # getColor() is the raw color over its sum: red's (0.9, 0.1, 0.1) over 1.1
+        assert (float(r), float(g), float(b)) == pytest.approx((0.9 / 1.1, 0.1 / 1.1, 0.1 / 1.1), abs=0.002)
+
+
 # ------------------------------------------------------------------ an inverted SPARK
 
 

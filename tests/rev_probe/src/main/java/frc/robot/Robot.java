@@ -1,5 +1,6 @@
 package frc.robot;
 
+import com.revrobotics.ColorSensorV3;
 import com.revrobotics.PersistMode;
 import com.revrobotics.ResetMode;
 import com.revrobotics.sim.SparkMaxSim;
@@ -11,10 +12,12 @@ import com.revrobotics.spark.config.LimitSwitchConfig.Behavior;
 import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
 import com.revrobotics.spark.config.SparkMaxConfig;
 import edu.wpi.first.math.system.plant.DCMotor;
+import edu.wpi.first.wpilibj.I2C;
 import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.RobotController;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.wpilibj.util.Color;
 
 /**
  * Test robot for scrimmage's REV tests (tests/rev_probe.toml): an arm on SPARK MAX 1 (NEO, absolute encoder on its
@@ -22,7 +25,8 @@ import edu.wpi.first.wpilibj.Timer;
  * lazily in teleopInit) and SPARK MAX 4 (follows CAN id 9, which this program never creates).
  *
  * <p>Environment: PROBE_INVERT=1 configures SPARK 1 inverted, and its absolute encoder inverted; PROBE_FEEDBACK=abs
- * closes the arm's loop on the absolute encoder instead of the built-in encoder.
+ * closes the arm's loop on the absolute encoder instead of the built-in encoder; PROBE_COLOR=1 adds a REV Color Sensor
+ * V3 on the MXP I2C port and prints its readings on a "color ..." line every 5 loops.
  *
  * <p>Joystick 0, in teleop and disabled alike (a disabled SPARK ignores what it is sent): axis 0 is the arm's duty
  * cycle; holding button 1 runs a position PID, button 2 a MAXMotion move, both to axis 1 x 90 (degrees); pressing
@@ -39,11 +43,16 @@ public class Robot extends TimedRobot {
   // A student-style physics sim, as in REV's examples. Under scrimmage the agent turns its iterate into a no-op.
   private final SparkMaxSim studentSim = new SparkMaxSim(arm, DCMotor.getNEO(2));
 
+  private ColorSensorV3 eye;  // only with PROBE_COLOR=1: the other tests' devices stay as they were
+
   private final Joystick stick = new Joystick(0);
   private int loops = 0;
 
   public Robot() {
     boolean inverted = "1".equals(System.getenv("PROBE_INVERT"));
+    if ("1".equals(System.getenv("PROBE_COLOR"))) {
+      eye = new ColorSensorV3(I2C.Port.kMXP);
+    }
     boolean onAbs = "abs".equals(System.getenv("PROBE_FEEDBACK"));
     var cfg = new SparkMaxConfig();
     cfg.idleMode(IdleMode.kBrake).inverted(inverted);
@@ -115,6 +124,12 @@ public class Robot extends TimedRobot {
 
   @Override
   public void robotPeriodic() {
+    if (eye != null && loops % 5 == 0) {
+      var raw = eye.getRawColor();
+      Color color = eye.getColor();
+      System.out.printf("color raw=%d,%d,%d ir=%d rgb=%.4f,%.4f,%.4f prox=%d%n", raw.red, raw.green, raw.blue,
+          eye.getIR(), color.red, color.green, color.blue, eye.getProximity());
+    }
     if (++loops <= 5 || loops % 5 == 0) {
       System.out.printf("rev loop=%d t=%.4f abs=%.4f rel=%.4f rel2=%.4f app1=%.4f app2=%.4f cur1=%.3f cur2=%.3f"
               + " fwd=%b app3=%.4f app4=%.4f%n",

@@ -6,7 +6,10 @@ costs nothing extra). Each sensor is a ray in its body's frame:
   - a beam break casts from `from` toward `to`, |to - from| long, plus END_SLOP at each end, and reads broken while a
     game piece is on it;
   - a distance or color sensor casts from `at` along `toward`, max_range long, and reads the first piece it hits
-    (sees = "pieces") or the first thing that isn't the robot (sees = "anything").
+    (sees = "pieces") or the first thing that isn't the robot (sees = "anything");
+  - a distance sensor with a fov_deg casts a cone of CONE_RAYS rays from `at` instead (cone_directions: the axis and
+    two rings of 8 at a quarter and a half of the angle off it), each as one ray is, and reads the nearest hit along
+    its own ray.
 
 Either way the field blocks it: a wall, a goal, an obstacle, a field element or the carpet in front of a piece hides
 it, as it would from a real beam. A pieces-only sensor that hits the field first reads nothing (a beam clear, a
@@ -34,9 +37,9 @@ ground to the terrain and climb monitors, and groups 3 to 5 aren't drawn by MuJo
 `_cast` excludes the sensor's own body (the geom a beam is drawn through is most often its own) and, when a cast hits
 the rest of the robot, casts again from just past that hit. A clear path, or a piece or the field first, is one
 mj_ray a step; each robot surface in the way adds one (a box the ray passes through is two: in and out). MAX_CASTS
-bounds a step's casts per sensor; a sensor that runs out of them is a warning in the world's warnings, once. Recasting
-changes no model setting, so a robot's renders and every other monitor are as before, and it is exact for every
-piece shape (spheres, cylinders, boxes and meshes).
+bounds a step's casts per ray; a sensor with a ray that runs out of them is a warning in the world's warnings, once.
+Recasting changes no model setting, so a robot's renders and every other monitor are as before, and it is exact for
+every piece shape (spheres, cylinders, boxes and meshes).
 """
 
 from __future__ import annotations
@@ -57,6 +60,7 @@ from .spec import (COLOR_MAX_RANGE, FAST_DEVICE, I2C_PORTS, LASERCAN_DEVICE, LAS
 END_SLOP = 0.001    # m: a beam reaches this far past each end, so a piece resting exactly on an end reads broken on
                     # every step (a resting piece settles by far less than this) and never flickers
 SKIP = 1e-6         # m: a recast starts this far past a hit it skipped
+CONE_RING = 8       # rays in each of a cone's two rings (the axis is a 17th)
 MAX_CASTS = 32      # a sensor's most casts in one step (robot surfaces in the way); past them it sees nothing
 # A REV Color Sensor V3's values (spec C5, estimates): brightness 1 at 2 cm, 0.5 at 6 cm, nothing past 10 cm,
 # straight lines between. With nothing in front it reads the dark carpet: DARK.
@@ -136,6 +140,23 @@ BRIGHTNESS = ((0.0, 1.0), (0.02, 1.0), (0.06, 0.5), (COLOR_MAX_RANGE, 0.0))
 DARK = {"Red": 12, "Green": 14, "Blue": 12, "IR": 8}    # estimate: a dark gray carpet, a few counts in each channel
 
 
+def cone_directions(direction, fov_deg: float) -> np.ndarray:
+    """The unit directions a cone of full angle `fov_deg` around unit `direction` casts: the axis, a ring of CONE_RING
+    at a quarter of the angle off the axis and a ring at half of it (the cone's edge), the rings offset by half a
+    step of azimuth. Shape (1 + 2 * CONE_RING, 3), the axis first."""
+    axis = np.asarray(direction, dtype=float)
+    u = np.cross(axis, [1.0, 0.0, 0.0] if abs(axis[0]) < 0.9 else [0.0, 1.0, 0.0])
+    u /= np.linalg.norm(u)
+    v = np.cross(axis, u)
+    out = [axis]
+    for ring, half in enumerate((0.25, 0.5)):
+        off = np.radians(fov_deg * half)
+        for k in range(CONE_RING):
+            az = 2.0 * np.pi * (k + 0.5 * ring) / CONE_RING
+            out.append(np.cos(off) * axis + np.sin(off) * (np.cos(az) * u + np.sin(az) * v))
+    return np.array(out)
+
+
 @dataclass(frozen=True)
 class Reading:
     on: bool                                        # broken (beam), closer than threshold (distance), sees a piece
@@ -212,7 +233,9 @@ class SensorRuntime:
             self._piece, self._colors = [-1] * m.ngeom, []
         self._start = [np.asarray(s.start, dtype=float) - (END_SLOP * np.asarray(s.direction) if s.kind == "beam"
                                                            else 0.0) for s in self._rays]
-        self._dir = [np.asarray(s.direction, dtype=float) for s in self._rays]
+        # per sensor, the directions it casts along (one ray, or a distance sensor's cone)
+        self._dir = [cone_directions(s.direction, s.fov_deg) if s.fov_deg is not None
+                     else np.asarray(s.direction, dtype=float)[None] for s in self._rays]
         self._reach = [s.length + (2 * END_SLOP if s.kind == "beam" else 0.0) for s in self._rays]
         self._gid = np.zeros(1, dtype=np.int32)
         self._pnt = np.zeros(3)
@@ -257,11 +280,14 @@ class SensorRuntime:
         at its own fps, or now with `force` (after a poke or a reset)."""
         if self.cameras is not None:
             self.cameras.update(data, force)
-        for s, b, start, direction, reach in zip(self._rays, self._bodies, self._start, self._dir, self._reach):
+        for s, b, start, dirs, reach in zip(self._rays, self._bodies, self._start, self._dir, self._reach):
             rot = data.xmat[b].reshape(3, 3)
             pnt = data.xpos[b] + rot @ start
-            vec = rot @ direction
-            hit = self._cast(data, pnt, vec, reach, s.sees == "pieces", b, s.name)
+            hit = None
+            for direction in dirs:      # a cone's nearest hit, measured along its own ray
+                got = self._cast(data, pnt, rot @ direction, reach, s.sees == "pieces", b, s.name)
+                if got is not None and (hit is None or got[0] < hit[0]):
+                    hit = got
             self._readings[s.name] = self._read(s, hit)
 
     def _read(self, s: SensorSpec, hit) -> Reading:
