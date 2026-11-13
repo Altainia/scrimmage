@@ -24,10 +24,16 @@ toward = [0, -1, 0]
 max_range = 0.40
 threshold = 0.25
 ctre = "CANrange:2"
+fov_deg = 10
 ```
 
 It looks across the bin from one side wall to the other, 34 cm. A ball in the bin reads closer than 25 cm (`threshold`:
 the sensor is on). An empty bin reads 40 cm (`max_range`: it sees no piece).
+
+`fov_deg = 10` narrows the cone: a CAN sensor's default is the vendors' 27 degrees
+([the cone](../../../docs/sensors.md#the-distance-sensors-cone)), which would see a ball still rolling in at the bin's
+mouth and stop the intake too soon. On the real CANrange, set the same field of view in robot code
+(`cfg.FovParams.FOVRangeX` and `FOVRangeY`); scrimmage doesn't read it.
 
 Run the test with no robot code:
 

@@ -19,6 +19,8 @@
     analog = 0                      # an AnalogInput, volts_per_m (0.977) volts per meter of distance
     dio = 1                         # and/or a DigitalInput that is on while closer than threshold (m, or threshold_in;
     threshold = 0.5                 #   default half of max_range; a CANrange's 0.4, Phoenix's default)
+    fov_deg = 27                    # the cone's full angle (degrees, more than 0, at most 60): 17 rays; a CAN sensor
+                                    #   (ctre or grapple) defaults to 27, any other distance sensor to one ray
     ctre = "CANrange:5"             # and/or a CTRE CANrange, or grapple = "LaserCAN:7" (one of them; ids 0 to 62); the
                                     #   robot reads it as it would the real one, and max_range defaults to its reach
 
@@ -77,6 +79,14 @@ CANRANGE_THRESHOLD = 0.4        # m: a CANrange's default threshold: Phoenix 6's
 # (ProximityParams in phoenix6 26.3.0's CANrangeConfiguration, hysteresis 0.01 m; getIsDetected() is true closer than
 # it), so the Test tab's "is on" matches getIsDetected() when neither is configured; capped at max_range
 DEVICE_KEYS = {"ctre": "CANrange", "grapple": "LaserCAN"}   # the config key that names each device
+# A CAN sensor's default field of view, the vendors' own, full angle in degrees: CTRE's CANrange FovParamsConfigs
+# FOVRangeX and FOVRangeY default 27 (minimum 6.75, maximum 27; phoenix6 26.3.0's docstrings) and the CANrange User's
+# Guide (11/25/2024) section 1.2 lists "Field of View 6.75 min, 27 typ, 27 max deg"; Grapple's LaserCAN sits on an ST
+# VL53L1X whose full 16x16 SPAD array is 27 deg by ST's datasheet (not read here; Grapple's product page says the ROI
+# is a window of that 16x16 array), and the firmware's default ROI is 16x16 (checks file, section 2). Any sensor with
+# a device (DEVICE_KEYS) gets it, so a new CAN key needs only its DEVICE_KEYS entry.
+CAN_FOV_DEG = 27.0
+MAX_FOV_DEG = 60.0              # choice: the widest cone fov_deg takes
 MAX_DEVICE_ID = 62              # a CAN id: 0 to 62
 LASERCAN_TYPE = "ScrimmageGrapple"      # the Grapple helper's SimDevice per LaserCAN: "ScrimmageGrapple:LaserCAN[<id>]"
 LASERCAN_DEVICE = re.compile(r"LaserCAN\[(?P<id>\d+)\]")
@@ -85,7 +95,7 @@ _LOOK = ("at", "at_in", "toward", "max_range", "max_range_in", "sees")
 KEYS = {
     "beam": _COMMON + ("from", "from_in", "to", "to_in", "dio", "active_low"),
     "distance": _COMMON + _LOOK + ("dio", "active_low", "threshold", "threshold_in", "analog", "volts_per_m",
-                                                       "ctre", "grapple", "pwf"),
+                                                       "ctre", "grapple", "pwf", "fov_deg"),
     "color": _COMMON + _LOOK + ("i2c",),
     "camera": _COMMON + ("at", "at_in", "toward", "hfov_deg", "vfov_deg", "max_range", "max_range_in",
                          "max_angle_deg", "fps"),
@@ -124,6 +134,7 @@ class SensorSpec:
     fps: float | None = None
     device: str | None = None               # a distance sensor's CAN device: "CANrange" or "LaserCAN"; None otherwise
     device_id: int | None = None            #   and its id (0 to 62)
+    fov_deg: float | None = None            # a distance sensor's cone, full angle in degrees; None: one ray
 
 
 class _Table:
@@ -336,6 +347,12 @@ def parse_sensor(table, index: int) -> SensorSpec:
             raise t.err(i18n.t("threshold ({threshold} m) is past max_range ({length} m); make it shorter",
                                threshold=f"{threshold:g}", length=f"{kw['length']:g}"))
         kw["threshold"] = threshold
+        fov = table.get("fov_deg", CAN_FOV_DEG if device else None)
+        if fov is not None:
+            if not _finite(fov) or not 0 < fov <= MAX_FOV_DEG:
+                raise t.err(i18n.t("fov_deg must be an angle more than 0 and at most {most} degrees, not {value}",
+                                   most=f"{MAX_FOV_DEG:g}", value=plain(fov)))
+            kw["fov_deg"] = float(fov)
     if kind == "color":
         kw["i2c"] = t.choice("i2c", I2C_PORTS, None)
     return SensorSpec(**kw)
