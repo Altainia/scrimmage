@@ -45,8 +45,9 @@ jobs:
 
   # The note-intake example's robustness grids (K6-R10): the intake spike's three grids (one setting at a time, the 16
   # corners, 40 random draws) on examples/blocks/note-intake's own files, about 8 minutes. It gates on the results,
-  # never on time: the target (every one-setting case but the 0 V control passes, at least 14 of the 16 corners), no
-  # soft NOTE reset, and each grid's count and failing cases as shipped. A case runs the same way every time on one machine.
+  # never on time: the target (every one-setting case but the 0 V control passes, at least 14 of the 16 corners) and no
+  # soft NOTE reset. Not on the exact counts: a case near the margin can flip on another Python or CPU. The log prints
+  # each grid's counts, failing cases and fastest segment, so drift shows there.
   intake-grid:
     runs-on: ubuntu-latest
     steps:

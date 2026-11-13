@@ -120,11 +120,14 @@ These rules made the difference between an intake that passes once and one that 
   holds it down on a stop with about 15 N at the roller, about what the NOTE pushes back with in the 1.4 in nip. A NOTE
   pushed into a tighter nip lifts the roller (up to 25 degrees) instead of jamming. Real over-under intakes have this.
 
-  Why the arm ships: the same intake with a fixed front roller passed only 13 of the 16 corners. Every miss was a
+  Why the arm ships: before the soft NOTE's contact fixes were finished (measured while they were being built; the
+  plan's "Task 1's record" in docs/superpowers/plans/2026-11-12-soft-note-robustness.md), the same intake with a
+  fixed front roller passed only 13 of the 16 corners. Every miss was a
   tight nip: moving the lip forward 1 in and the rollers down 0.5 in turns the 1.4 in nip into 0.3 in, an 85 %
   squeeze, and the NOTE stops on the front roller. Raising the fixed front roller 0.4 in made 14 of 16, right on the
-  target, where one small change can flip a corner. With the arm, all 16 pass, and they still do with the spring at
-  half or twice its stiffness (7 or 28 N·m/rad).
+  target, where one small change can flip a corner. With the arm, all 16 passed then, and still did with the spring at
+  half or twice its stiffness (7 or 28 N·m/rad). On the finished NOTE, the arm passes all 16 (the table above); the
+  fixed and raised front roller weren't rerun.
 
 ## The numbers
 
