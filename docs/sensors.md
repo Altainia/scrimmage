@@ -99,6 +99,7 @@ A distance sensor (`kind = "distance"`):
 | `volts_per_m` | 0.977 | volts per meter on the `analog` input (an estimate: a MaxBotix MB1013 ultrasonic sensor's 5 V over 5.12 m). The voltage stops at 5 V. It goes with `analog` |
 | `ctre` | none | `"CANrange:<id>"` (id 0 to 62): the sensor is also a CTRE CANrange the robot code reads. One device key per sensor, alone or beside `analog` and `dio`. `max_range` then defaults to 3.0 m. [CAN distance sensors](#can-distance-sensors) |
 | `grapple` | none | `"LaserCAN:<id>"` (id 0 to 62): the sensor is also a Grapple LaserCAN. One device key per sensor, alone or beside `analog` and `dio`. `max_range` then defaults to 4.0 m. [CAN distance sensors](#can-distance-sensors) |
+| `fov_deg` | 27 with `ctre` or `grapple`, else none (one ray) | the cone it sees, as a full angle in degrees (more than 0, at most 60): [the cone](#the-distance-sensors-cone). Unset on a sensor with no CAN key, it is one ray |
 | `pwf` | none | not supported yet: it is an error (the Playing With Fusion Time of Flight is a CAN sensor scrimmage can't feed yet). In simulation, use an `analog` stand-in sensor |
 | `dio` | none | a DIO channel that switches at `threshold`, like an IR proximity switch: on while something is closer than `threshold` |
 | `active_low` | `true` | `true`: the `dio` reads `false` while it is on. It goes with `dio` |
@@ -135,7 +136,8 @@ inches, not both (`at` and `at_in` together is an error).
 a reading is 1 ms behind the physics: far less than any real sensor's own response time.
 
 **What a sensor sees.** Each sensor is a straight line: a beam break's from `from` to `to`, a distance or color sensor's
-from `at` along `toward`, `max_range` long. On that line:
+from `at` along `toward`, `max_range` long (a [cone](#the-distance-sensors-cone) casts 17 of them, each as below). On
+that line:
 
 - **The robot is never in the way.** A sensor looks through its own robot's parts, so a beam drawn through a plate, or
   a sensor mounted inside a bracket, still sees a piece beyond it. It looks past at most 32 of the robot's surfaces
@@ -155,6 +157,39 @@ end, so a piece resting exactly on an end reads broken every step, and doesn't f
 **A distance sensor** reads the distance from `at` to the first thing it sees, or `max_range` with nothing closer. On
 `analog`, that is `volts_per_m` times the distance, from 0 V up to 5 V at the most: 1.95 V with nothing in range at the
 default 2 m. On `dio`, it is on while the distance is less than `threshold`.
+
+### The distance sensor's cone
+
+A real time-of-flight sensor sees a cone, not a line. Give a distance sensor `fov_deg` (the cone's full angle, in
+degrees) and it casts 17 rays instead of one: the axis (`toward`), a ring of 8 rays a quarter of the angle off the axis,
+and a ring of 8 at half the angle (the cone's edge), the rings turned 22.5 degrees from each other. Each ray is cast
+as the single ray is (past the robot's own surfaces, `sees`, `max_range`), and the reading is the **nearest hit of
+all the rays, measured along its own ray**, as a time-of-flight sensor measures path length. `threshold`, `dio`,
+`analog` and the CAN readings take that distance unchanged.
+
+A sensor with `ctre` or `grapple` has `fov_deg = 27` unless you give one; any other distance sensor is one ray unless
+you give `fov_deg`. 27 is what both vendors' defaults are:
+
+- CTRE's CANrange: `FovParamsConfigs` `FOVRangeX` and `FOVRangeY` (the full range of the field of view, in degrees)
+  default to 27, with a minimum of 6.75 and a maximum of 27 (Phoenix 6 26.3.0's documentation), and the CANrange User's
+  Guide (11/25/2024) lists "Field of View 6.75 min, 27 typ, 27 max". If robot code narrows the CANrange's field of
+  view (`cfg.FovParams.FOVRangeX` and `FOVRangeY`, at least 6.75), set `fov_deg` to match: scrimmage doesn't read
+  that configuration.
+- Grapple's LaserCAN: about 27 degrees, from memory of the ST VL53L1X datasheet (not checked). Its region of interest
+  defaults to the full 16x16 SPAD array (the firmware's default), and [Grapple's product
+  page](https://grapplerobotics.au/product/lasercan/) says the region of interest is set within that 16x16 array. A
+  robot that sets a smaller region of interest sees a narrower cone (set with `setRegionOfInterest` in Java, `set_roi`
+  in RobotPy): set `fov_deg` to match; scrimmage doesn't read it.
+
+**The gaps.** 17 rays are not a solid cone: a piece smaller than the gap between rays at its distance can slip through.
+At 27 degrees and 0.5 m the edge rays are about 9 cm apart, and at 1 m about 18 cm. A real sensor weights a
+zone by signal, so a small, near target at the edge of the cone reads nearer here than it would on a real one.
+
+**The cost.** A cone is 17 times the casts of one ray for that sensor (the 32-surface limit above is per ray, and the
+warning names the sensor once if any ray runs out). Measured on the kitbot with spare balls on the test range, one
+27 degree sensor on the front bumper, over 3000 physics steps on an Intel Core i7-13700 (Python 3.14, one core, nothing
+else running): a step took 73 us with no sensors, 83 us with one single-ray sensor and 128 us with the cone. The
+cone adds about 55 us a step (a second of simulated time is 1000 steps). Your machine's number will differ.
 
 ### The color sensor
 
@@ -197,7 +232,7 @@ kind = "distance"
 body = "drive.chassis"
 at = [0.33, 0.0, 0.10]
 toward = [1, 0, 0]
-ctre = "CANrange:2"               # max_range is then 3.0 m unless you give one
+ctre = "CANrange:2"               # max_range is then 3.0 m, and fov_deg 27, unless you give them
 
 [[sensor]]
 name = "shooter"
@@ -205,7 +240,7 @@ kind = "distance"
 body = "drive.chassis"
 at = [-0.33, 0.0, 0.30]
 toward = [-1, 0, 0]
-grapple = "LaserCAN:5"            # max_range is then 4.0 m unless you give one
+grapple = "LaserCAN:5"            # max_range is then 4.0 m, and fov_deg 27, unless you give them
 dio = 6                           # and a DigitalInput 6 beside it
 ```
 
@@ -214,6 +249,9 @@ dio = 6                           # and a DigitalInput 6 beside it
 **The default `max_range`.** A CANrange sees 3.0 m (CTRE's long-range mode). A LaserCAN sees 4.0 m, but it starts in
 **short** mode (1.3 m, the firmware's default), as the real one does, until robot code calls `setRangingMode(LONG)`
 (Java) or `set_range(Long)` (RobotPy). Past the mode's reach it reads the no-target status below.
+
+**The field of view.** Both default to a 27 degree cone ([the cone](#the-distance-sensors-cone)), so a piece beside
+the axis is seen as it would be on the real sensor. Give `fov_deg` for a narrower one.
 
 **What the robot code reads.**
 
@@ -669,10 +707,11 @@ what a real one adds).
 ## What isn't simulated
 
 - **Noise, delay and mounting.** Every reading is exact, 1 ms behind the physics. A real beam is a few millimeters
-  wide, a real distance sensor has a cone, not a line, and a real color sensor's numbers depend on its lighting and
+  wide, a real color sensor's numbers depend on its lighting and
   gain. Allow for them on the real robot.
-- **A cone.** A distance sensor is one ray. A real CANrange or LaserCAN sees a cone or a region of interest, so it can
-  see a piece at the edge of its view that the ray misses, and the other way round.
+- **A solid cone.** A cone is 17 rays ([the gaps](#the-distance-sensors-cone)), so a small piece can slip between them,
+  and a real sensor weights a zone by signal. A distance sensor with no CAN key and no `fov_deg` is one ray, and a
+  beam, a color sensor and the drawn ray are one line (the replay doesn't draw the cone).
 - **A CAN sensor's signal.** Signal strength, ambient light, noise and a LaserCAN's timing budget (its effect on speed
   and accuracy) aren't simulated. The reading is the ray's distance, whole millimeters.
 - **CANrange in fast mode.** Fast mode has no CANrange stand-in yet ([fast-mode.md](fast-mode.md)).

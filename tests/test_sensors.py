@@ -16,9 +16,9 @@ from range_fixtures import KITBOT, drive, range_cfg, spares_world  # noqa: E402
 from scrimmage.protocol import HalState  # noqa: E402
 from scrimmage.sensors.colors import NAMED_COLORS, nearest_color  # noqa: E402
 from scrimmage.sensors import runtime  # noqa: E402
-from scrimmage.sensors.runtime import SensorRuntime, color_values  # noqa: E402
-from scrimmage.sensors.spec import (CANRANGE_THRESHOLD, DEVICE_MAX_RANGE, SensorError, device_key,  # noqa: E402
-                                    parse_sensors)
+from scrimmage.sensors.runtime import CONE_RING, SensorRuntime, color_values, cone_directions  # noqa: E402
+from scrimmage.sensors.spec import (CAN_FOV_DEG, CANRANGE_THRESHOLD, DEVICE_MAX_RANGE,  # noqa: E402
+                                    SensorError, device_key, parse_sensors)
 from scrimmage.testrange.build import BALL_BITS  # noqa: E402
 from scrimmage.testrange.pieces import ball_kind, piece_color  # noqa: E402
 from scrimmage.world import World  # noqa: E402
@@ -214,6 +214,51 @@ def test_a_clear_sensor_casts_one_ray_a_step():
     assert w.sensors.casts - before == 10
 
 
+def test_a_cone_casts_seventeen_rays_a_step_and_a_single_ray_sensor_one():
+    w, _ = _ahead_world(kind="distance", fov_deg=27)
+    before = w.sensors.casts
+    step(w, 4)
+    assert w.sensors.casts - before == 4 * (1 + 2 * CONE_RING)
+
+
+def test_cone_directions_are_unit_rings_at_a_quarter_and_half_the_angle_off_the_axis():
+    axis = np.array([0.0, 0.6, 0.8])
+    d = cone_directions(axis, 40.0)
+    assert d.shape == (17, 3) and np.allclose(np.linalg.norm(d, axis=1), 1.0) and np.allclose(d[0], axis)
+    off = np.degrees(np.arccos(d[1:] @ axis))
+    assert np.allclose(off[:8], 10.0) and np.allclose(off[8:], 20.0)
+    assert len({tuple(np.round(r, 6)) for r in d}) == 17, "no two rays alike (the rings are offset)"
+    for a in ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0]):     # an axis along any axis has a basis
+        assert np.allclose(np.degrees(np.arccos(cone_directions(a, 20.0)[1:] @ np.asarray(a)))[8:], 10.0)
+
+
+def _cone_reading(fov, y, x=1.0):
+    """The reading of a sensor ahead of the bumper with a ball at `x` ahead and `y` to the side of its axis."""
+    w, front = _ahead_world(kind="distance", max_range=3.0, **({"fov_deg": fov} if fov else {}))
+    r = w.test_range.balls.r
+    w.test_range.balls.put(0, front + [x, y, 0.0], BALL_BITS)
+    step(w)
+    return w.sensors.reading("s"), r
+
+
+def test_a_cone_sees_a_piece_off_the_axis_inside_it_and_not_outside_it():
+    r = _cone_reading(None, 0.0)[1]
+    y = r + 0.05    # clear of the axis ray, 6.6 deg off at 1 m
+    assert _cone_reading(None, y)[0].distance == pytest.approx(3.0), "one ray misses it"
+    assert _cone_reading(27, y)[0].distance < 3.0, "inside the cone's 13.5 deg half angle"
+    assert _cone_reading(27, 0.5)[0].distance == pytest.approx(3.0), "26.6 deg off: outside"
+    assert _cone_reading(5, y)[0].distance == pytest.approx(3.0), "a narrow cone doesn't reach it"
+
+
+def test_a_cone_reads_the_nearest_ray_along_its_own_ray():
+    got, r = _cone_reading(27, 0.15)
+    center = np.hypot(1.0, 0.15)
+    assert center - r - 1e-3 <= got.distance <= center, "a hit on the ball's near surface, along a slanted ray"
+    ahead = _cone_reading(27, 0.0)[0].distance
+    assert ahead == pytest.approx(1.0 - r, abs=0.001), "on the axis the axis ray is nearest: as one ray reads it"
+    assert ahead == pytest.approx(_cone_reading(None, 0.0)[0].distance, abs=1e-9)
+
+
 def test_a_sensor_that_runs_out_of_casts_warns_once_naming_it(monkeypatch):
     """A beam on the drive's rails (not the chassis) straight down through the chassis's plate: with one cast a
     step, the plate uses it up. The world's warnings say so once, naming the sensor; a full MAX_CASTS gets past."""
@@ -237,6 +282,24 @@ def test_a_sensor_that_runs_out_of_casts_warns_once_naming_it(monkeypatch):
     assert said == ['[[sensor]] "down": the robot is in its way: its ray met 1 of the robot\'s surfaces in one step, '
                     "the most a sensor looks past, so it read nothing beyond them; move it or point it clear of the "
                     "robot"], w.warnings
+
+
+def test_a_cone_with_several_rays_out_of_casts_warns_once(monkeypatch):
+    """A cone looking down through the chassis's plate from the rails: with one cast a step, most of its 17 rays run
+    out, and the world's warnings name the sensor once, not once a ray or a step."""
+    w = spares_world(range_cfg())
+    m = w.model
+    plate = next(g for g in range(m.ngeom) if m.geom_bodyid[g] == m.body("drive.chassis").id
+                 and int(m.geom_type[g]) == 6)
+    top = m.geom_pos[plate] + [0.0, 0.0, m.geom_size[plate][2] + 0.02]
+    attach(w, {"name": "cone", "kind": "distance", "body": "dt.rails", "fov_deg": 20.0,
+               "at": body_point(w, "dt.rails", world_point(w, "drive.chassis", top)),
+               "toward": body_dir(w, "dt.rails", [0.0, 0.0, -1.0])})
+    step(w, 3)
+    assert not any('"cone"' in x for x in w.warnings), "every ray recast within MAX_CASTS"
+    monkeypatch.setattr(runtime, "MAX_CASTS", 1)
+    step(w, 5)
+    assert len([x for x in w.warnings if '"cone"' in x]) == 1, w.warnings
 
 
 # -------------------------------------------------------------------------------------------------- color sensors
@@ -598,3 +661,39 @@ def test_get_state_has_the_sensors_only_with_sensors_and_reads_them_again_after_
     # at (2, 4.035) facing +x nothing is within 3 m; turned round, the wall behind is 1.55 m off
     assert first["sensors"]["front"]["distance_m"] == 3.0
     assert turned["sensors"]["front"]["distance_m"] == pytest.approx(1.55, abs=0.01)
+
+
+def test_fov_deg_on_a_distance_sensor():
+    s, = parse_sensors([dist_table(fov_deg=40)])
+    assert s.fov_deg == 40.0
+    assert parse_sensors([dist_table(fov_deg=60)])[0].fov_deg == 60.0
+
+
+def test_a_distance_sensor_is_one_ray_without_fov_deg_or_a_can_key():
+    assert parse_sensors([dist_table()])[0].fov_deg is None
+    assert parse_sensors([dist_table(analog=0, dio=1)])[0].fov_deg is None
+
+
+@pytest.mark.parametrize("key, value", [("ctre", "CANrange:5"), ("grapple", "LaserCAN:7")])
+def test_a_can_sensor_defaults_to_the_vendors_27_degree_cone(key, value):
+    s, = parse_sensors([dist_table(**{key: value})])
+    assert s.fov_deg == CAN_FOV_DEG == 27.0
+    assert parse_sensors([dist_table(**{key: value}, fov_deg=10)])[0].fov_deg == 10.0, "fov_deg wins"
+
+
+@pytest.mark.parametrize("value", [0, -5, 61, 60.1, "wide", True, float("nan"), float("inf"), [27]])
+def test_bad_fov_deg(value):
+    with pytest.raises(SensorError) as e:
+        parse_sensors([dist_table(fov_deg=value)])
+    assert 'fov_deg must be an angle more than 0 and at most 60 degrees' in str(e.value)
+    assert '[[sensor]] "d"' in str(e.value)
+
+
+@pytest.mark.parametrize("t", [
+    {"name": "x", "kind": "beam", "body": "a.b", "from": [0, 0, 0], "to": [1, 0, 0], "fov_deg": 27},
+    {"name": "x", "kind": "color", "body": "a.b", "at": [0, 0, 0], "toward": [1, 0, 0], "fov_deg": 27},
+    {"name": "x", "kind": "camera", "body": "a.b", "at": [0, 0, 0], "toward": [1, 0, 0], "fov_deg": 27},
+])
+def test_fov_deg_only_on_a_distance_sensor(t):
+    with pytest.raises(SensorError, match="unknown key 'fov_deg'"):
+        parse_sensors([t])

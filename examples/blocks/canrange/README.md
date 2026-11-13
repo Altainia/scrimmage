@@ -24,10 +24,16 @@ toward = [0, -1, 0]
 max_range = 0.40
 threshold = 0.25
 ctre = "CANrange:2"
+fov_deg = 10
 ```
 
 It looks across the bin from one side wall to the other, 34 cm. A ball in the bin reads closer than 25 cm (`threshold`:
 the sensor is on). An empty bin reads 40 cm (`max_range`: it sees no piece).
+
+`fov_deg = 10` narrows the cone: a CAN sensor's default is the vendors' 27 degrees
+([the cone](../../../docs/sensors.md#the-distance-sensors-cone)), which would see a ball still rolling in at the bin's
+mouth and stop the intake too soon. On the real CANrange, set the same field of view in robot code
+(`cfg.FovParams.FOVRangeX` and `FOVRangeY`); scrimmage doesn't read it.
 
 Run the test with no robot code:
 
@@ -40,12 +46,15 @@ It finishes with the ball in the hopper and `bin` on, as `../beam`'s does.
 ## In robot code
 
 A CANrange is a Phoenix 6 device, so a robot that makes one runs in real time. The robot makes the device with the
-sensor's id, sets its proximity threshold to the config's `threshold` (25 cm), and reads it as usual:
+sensor's id, sets its proximity threshold to the config's `threshold` (25 cm) and its field of view to the config's `fov_deg` (10
+degrees; they go together, as scrimmage doesn't read the robot's), and reads it as usual:
 
 ```java
 CANrange bin = new CANrange(2);
 CANrangeConfiguration cfg = new CANrangeConfiguration();
 cfg.ProximityParams.ProximityThreshold = 0.25;        // meters: the config's threshold
+cfg.FovParams.FOVRangeX = 10;                         // degrees: the config's fov_deg
+cfg.FovParams.FOVRangeY = 10;
 bin.getConfigurator().apply(cfg);
 
 boolean ballIn = bin.getIsDetected().getValue();      // closer than the CANrange's threshold
