@@ -23,12 +23,17 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import soft_helpers as sh  # noqa: E402
+from scrimmage.blocks.program import load  # noqa: E402
+from scrimmage.blocks.run import TestRun  # noqa: E402
 from scrimmage.flexcontact import id_name  # noqa: E402
 from scrimmage.parts import partner as partner_mod  # noqa: E402
 from scrimmage.parts.assemble import assemble  # noqa: E402
+from scrimmage.protocol import HalState  # noqa: E402
 from scrimmage.testrange import soft  # noqa: E402
 from scrimmage.testrange.pieces import kind_preset  # noqa: E402
 from scrimmage.world import World  # noqa: E402
+from test_range_soft import ROBOT as WING_ROBOT  # noqa: E402
+from test_range_soft import _soft_now, wing_world  # noqa: E402
 
 NOTE = kind_preset("2024-note")
 IN = 0.0254
@@ -308,3 +313,151 @@ def test_a_paired_partner_geom_keeps_its_contact_name(monkeypatch):
     monkeypatch.setattr(fc, "contact_ids", lambda model, data: np.array([[robot_geom, renamed[0]]]))
     touching = w.robot_contacts()
     assert touching and not [n for n in touching if soft.PAIR_SUFFIX in n], touching
+
+
+# ------------------------------------------------------------------------------------------------ the guard (K6-R7)
+
+KICK = 100.0            # choice: m/s, four times the guard's GUARD_SPEED (K6-R11's guard case)
+
+
+def _kicked(w: World) -> soft.Ring:
+    """The wing world's NOTE soft (test_range_soft._soft_now), its ring's free joint given KICK m/s along +x, away
+    from the robot."""
+    slot = _soft_now(w)
+    ring = soft.ring_view(w.model, w.test_range.soft.in_use()[slot])
+    w.data.qvel[ring.free_v:ring.free_v + 3] = [KICK, 0.0, 0.0]
+    return ring
+
+
+def _blew_up(notes: list[str]) -> list[str]:
+    return [n for n in notes if "blew up" in n]
+
+
+def _shape_is_rest(w: World, ring: soft.Ring) -> None:
+    """The ring's segment centers about its center are its rest shape turned by its Kabsch rotation (1e-6 m)."""
+    com, _, _, _ = ring._segments(w.data.qpos[ring.q], None)
+    c = ring.m @ com / ring.mass
+    _, quat, _, _ = ring.read(w.data, spin=False)
+    rot = np.zeros(9)
+    mujoco.mju_quat2Mat(rot, quat)
+    assert np.abs((com - c) - ring.rest @ rot.reshape(3, 3).T).max() < 1e-6
+
+
+def _guard_test(tmp_path: Path, seconds: float = 3.0):
+    """A block test on the wing world: drive at 2 V for `seconds`, toward the NOTE."""
+    path = tmp_path / "guard.test.toml"
+    path.write_text(f'[test]\nrobot = "{WING_ROBOT.as_posix()}"\n\n[[block]]\ndo = "drive"\nseconds = {seconds}\n'
+                    'volts = 2.0\n', encoding="utf-8")
+    return load(path)
+
+
+def test_the_guard_resets_a_blown_up_ring(tmp_path):
+    """K6-R7: a ring kicked to 100 m/s by hand is reset in the next step: once, its segments no faster than
+    GUARD_RESET_SPEED, its shape its rest shape, and the "blew up" note said once. A block test kicked the same way
+    in on_sample counts it in soft_resets and its notes."""
+    w = wing_world(tmp_path / "w")
+    pool = w.test_range.soft
+    ring = _kicked(w)
+    w.step(HalState())
+    assert pool.resets == 1
+    assert ring.speeds(w.data).max() <= soft.GUARD_RESET_SPEED + 1e-6
+    _shape_is_rest(w, ring)
+    said = _blew_up(w.test_range.notes())
+    assert len(said) == 1 and "(a segment at " in said[0] and "rest shape" in said[0], said
+    # a block test, kicked in on_sample once its NOTE is soft
+    w = wing_world(tmp_path / "run")
+    kicked = []
+
+    def on_sample(t, row):
+        rt = w.test_range
+        if not kicked and rt.soft.in_use():
+            r = soft.ring_view(w.model, next(iter(rt.soft.in_use().values())))
+            w.data.qvel[r.free_v:r.free_v + 3] = [KICK, 0.0, 0.0]
+            kicked.append(t)
+    result = TestRun(w, _guard_test(tmp_path)).run(on_sample=on_sample)
+    assert kicked and result.soft_resets == 1, (kicked, result.outcome)
+    assert len(_blew_up(result.notes)) == 1, result.notes
+
+
+def test_a_non_finite_ring_is_reset_where_its_stand_in_was(tmp_path):
+    """K6-P12: a ring whose state is not finite goes back to its stand-in's last shadow pose, at rest, and the note
+    says its state was not finite. Shadowed by hand: MuJoCo's own step would reset the whole state first."""
+    w = wing_world(tmp_path)
+    rt, d = w.test_range, w.data
+    pool, balls = rt.soft, rt.balls
+    slot = _soft_now(w, extra=300)              # pushed by the robot: awake
+    ring = soft.ring_view(w.model, pool.in_use()[slot])
+    assert d.tree_asleep[ring.tree] < 0
+    pos, quat = balls._qpos[slot, :3].copy(), balls._qpos[slot, 3:].copy()
+    d.qpos[ring.q.start + 7] = np.nan           # a ball joint's quaternion
+    pool.shadow()
+    assert pool.resets == 1
+    assert np.isfinite(d.qpos[ring.q]).all() and not d.qvel[ring.v].any()
+    c, q, v, _ = ring.read(d, spin=False)
+    rot = np.zeros(9)
+    mujoco.mju_quat2Mat(rot, quat)
+    assert np.abs(c - (pos + rot.reshape(3, 3) @ pool._ipos[slot])).max() < 1e-9
+    assert min(np.abs(q - quat).max(), np.abs(q + quat).max()) < 1e-9 and not v.any()
+    assert np.abs(balls._qpos[slot, :3] - pos).max() < 1e-9 and not balls._qvel[slot].any()
+    _shape_is_rest(w, ring)
+    said = _blew_up(rt.notes())
+    assert len(said) == 1 and "(its state was not finite)" in said[0], said
+
+
+def test_a_reset_clears_the_guards_note_and_count(tmp_path):
+    """Review Focus 1: World.reset after the guard fired leaves no count and no "blew up" note, and a quiet block
+    test after it has soft_resets 0."""
+    w = wing_world(tmp_path)
+    pool = w.test_range.soft
+    _kicked(w)
+    w.step(HalState())
+    assert pool.resets == 1 and _blew_up(w.test_range.notes())
+    w.reset()
+    assert pool.resets == 0 and not _blew_up(w.test_range.notes())
+    result = TestRun(w, _guard_test(tmp_path)).run()
+    assert w.test_range.soft.swaps >= 1
+    assert result.soft_resets == 0 and not _blew_up(result.notes), result.notes
+
+
+def test_parked_and_sleeping_rings_never_trip_the_guard(tmp_path):
+    """Review Focus 2: the guard reads only rings in use and awake. Idling 2 s with no NOTE near, a parked ring given
+    100 m/s, and an in-use ring asleep with 100 m/s written over it: no reset."""
+    w = wing_world(tmp_path)
+    rt, d = w.test_range, w.data
+    pool, hal = rt.soft, HalState()
+    for _ in range(2000):
+        w.step(hal)
+    assert pool.in_use() == {} and pool.resets == 0
+    parked = soft.ring_view(w.model, "soft.1")
+    d.qvel[parked.free_v:parked.free_v + 3] = [KICK, 0.0, 0.0]
+    w.step(hal)
+    assert pool.resets == 0
+    slot = _soft_now(w)
+    ring = soft.ring_view(w.model, pool.in_use()[slot])
+    assert pool.parked.rings.index(ring) != pool.parked.rings.index(parked)
+    d.qvel[parked.free_v:parked.free_v + 3] = [KICK, 0.0, 0.0]      # parked, while the other is in use
+    pool.shadow()
+    assert pool.resets == 0
+    d.tree_asleep[ring.tree] = ring.tree        # asleep (a cycle of its own tree)
+    d.qvel[ring.free_v:ring.free_v + 3] = [KICK, 0.0, 0.0]
+    pool.shadow()
+    assert pool.resets == 0 and not _blew_up(rt.notes())
+
+
+def test_a_badqacc_rise_is_noted(tmp_path):
+    """K6-R7, K6-P7: a rise in MuJoCo's BADQACC warning count (its own reset of the whole state) after a step is
+    noted with the step's start time, once; World.reset clears it."""
+    w = wing_world(tmp_path)
+    rt, hal = w.test_range, HalState()
+    for _ in range(100):
+        w.step(hal)
+    t0 = w.time
+    w.step(hal)
+    assert rt.unstable == [] and rt.notes() == rt.soft_notes()
+    w.data.warning[mujoco.mjtWarning.mjWARN_BADQACC].number += 1
+    rt.after_physics()
+    rt.after_physics()          # no further rise: no second note
+    note = f"MuJoCo found the simulation unstable at {t0:.2f} s and restarted it"
+    assert rt.unstable == [pytest.approx(t0)] and rt.notes().count(note) == 1, rt.notes()
+    w.reset()
+    assert rt.unstable == [] and note not in rt.notes()

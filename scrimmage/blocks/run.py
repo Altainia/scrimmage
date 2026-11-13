@@ -218,6 +218,8 @@ class RunResult:
     rules: list | None = None
     # each camera [[sensor]]'s tags: [t, [IDs]] at the start and whenever the set it sees changes; {} without cameras
     cameras: dict[str, list[list]] = field(default_factory=dict)
+    # the soft NOTE guard's resets in the run (SoftPool.resets, K6-R7): 0 off a range or without a soft NOTE
+    soft_resets: int = 0
 
     @property
     def passed(self) -> bool:
@@ -515,6 +517,7 @@ class TestRun(_FailureWords):
             result.goals = dict(tr.counts()["goals"])
         if tr is not None:
             result.pieces = piece_log(tr)
+            result.soft_resets = tr.soft.resets if tr.soft is not None else 0
         if self.air is not None:
             result.air = dict(self.air.out)
         result.clearance = watch.closest.result()

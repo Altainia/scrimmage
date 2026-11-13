@@ -681,12 +681,13 @@ async def test_run(path: str) -> dict:
     moments the replay marks: {t, kind "slip", text, ball}, such as when a held piece slipped out), "notes" (what the
     numbers rest on: each gripped body's material and friction, and on a robot with cylinders each valve's
     conductance; UNCALIBRATED while one is an estimate, else measured, naming the file, who, when and how many trials;
-    say them with the outcome),
+    a soft NOTE that blew up and was reset, or MuJoCo restarting an unstable simulation; say them with the outcome),
     "goals" (on a field with a shooter: the balls scored in each goal, else null), "pieces" (each game piece that took
     part: id, kind, origin (floor, preload or station), fired_t, exit_speed (m/s), outcome (held, on_field, in_flight,
     scored, out_of_field, stuck), goal and scored_t when it scored, first_hit (what it touched first after its
     release), last_pos [x, y, z] (m), at_rest; null for what never happened: where each shot went, scored or not),
-    "air" (on a robot with cylinders:
+    "soft_resets" (how many times a soft NOTE blew up and was reset to its rest shape; 0 is normal, and above 0 a
+    note says when, so results near then aren't trustworthy), "air" (on a robot with cylinders:
     start_psi, end_psi, low_psi, low_t, compressor_s, below_working_t (when the tanks fell below working_psi, the
     cylinders weaker from then on; null if never), and working_psi; else null), "air_lines" (the air in words),
     "clearance" (each field element the test measures, in a clears check or a clearance.<element> chart signal:
@@ -721,7 +722,7 @@ def _test_run(file) -> dict:
             "hung": list(result.hung), "signals": _signal_summary(result.signals),
             "counts": result.counts, "feeds": result.feeds, "seed": result.seed,
             "marks": list(result.marks), "notes": list(result.notes), "goals": result.goals,
-            "pieces": _pieces(result.pieces),
+            "pieces": _pieces(result.pieces), "soft_resets": result.soft_resets,
             "air": result.air, "air_lines": blocks_run.air_lines(result),
             "clearance": result.clearance, "clearance_lines": blocks_run.clearance_lines(result),
             "run_folder": str(folder.resolve())}

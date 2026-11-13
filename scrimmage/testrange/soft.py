@@ -52,7 +52,7 @@ from dataclasses import dataclass
 import mujoco
 import numpy as np
 
-from .. import i18n
+from .. import i18n, units
 from ..flexcontact import PAIR_SUFFIX
 from .build import BALL_BITS, BALL_FRICTION, PARKED_BITS, RIGID_SOLMIX
 from .pieces import SOFT_SEGMENTS, PieceKind, piece_color, ring_basis, ring_diameters
@@ -78,6 +78,10 @@ DAMPING_SCALES = (  # source: fitted offline by tests/fit_soft_damping.py, 2026-
     (1000.0, 0.9173), (2000.0, 0.8722), (6000.0, 0.9112), (20000.0, 1.0750))
 CLOSE_SOLREF = (0.004, 1.0)  # source: spike's closing connect
 POOL_PREFIX = "soft"  # the pool's rings are soft.0, soft.1, ...
+# the guard (K6-R7): a last resort that resets a blown-up ring and says so, never a fix
+GUARD_SPEED = 25.0  # choice: m/s; the spike's rollers never passed 7 m/s, a robot drives under 5, a launched
+#   NOTE is rigid
+GUARD_RESET_SPEED = 7.0  # choice: m/s, the fastest roller surface the spike saw
 
 
 def damping_ratio_for(e: float) -> float:
@@ -347,10 +351,11 @@ class Ring:
         va = qvel[:3] + np.cumsum(step, axis=0)
         return com, rot, va + _cross(w, com - anchor), w
 
-    def _state(self, data: mujoco.MjData, spin: bool):
+    def _state(self, data: mujoco.MjData, spin: bool, segments=None):
         """The ring's center of mass, Kabsch rotation (w x y z) and center's velocity; with `spin` also its angular
-        momentum about the center and its inertia there (world frame), else None for both."""
-        com, rot, v, w = self._segments(data.qpos[self.q], data.qvel[self.v])
+        momentum about the center and its inertia there (world frame), else None for both. `segments`: _segments'
+        result for the ring now, if it is already worked out."""
+        com, rot, v, w = segments if segments is not None else self._segments(data.qpos[self.q], data.qvel[self.v])
         c = self.m @ com / self.mass
         vc = self.m @ v / self.mass
         r = com - c
@@ -389,6 +394,18 @@ class Ring:
         about the tree's center of mass, so its linear part overstates a spinning segment's speed (K6-R8)."""
         _, _, v, _ = self._segments(data.qpos[self.q], data.qvel[self.v])
         return np.sqrt((v * v).sum(1))
+
+    def read_with_speeds(self, data: mujoco.MjData):
+        """read(data, spin=False) and speeds(data) from one pass of the ring's kinematics: (center of mass, Kabsch
+        rotation, the center's velocity, each segment's center speed). The guard's per-step read (SoftPool.shadow)."""
+        seg = self._segments(data.qpos[self.q], data.qvel[self.v])
+        c, quat, vc, _, _ = self._state(data, False, seg)
+        v = seg[2]
+        return c, quat, vc, np.sqrt((v * v).sum(1))
+
+    def finite(self, data: mujoco.MjData) -> bool:
+        """Whether every one of the ring's qpos and qvel rows is finite."""
+        return bool(np.isfinite(data.qpos[self.q]).all() and np.isfinite(data.qvel[self.v]).all())
 
     def write(self, data: mujoco.MjData, pos, quat, vel, ang_vel) -> None:
         """write_rigid, for this ring."""
@@ -510,6 +527,11 @@ class SoftPool:
       chain by a robot stays soft. The fix, if it is needed, is to pose the chain's probe on its links near the NOTE
       (blocks/clearance.py).
     - A full pool: a NOTE that comes near while every ring of its kind is in use stays rigid, noted once per reset.
+    - The guard (K6-R7, K6-P12), a last resort that is visible, never a fix: after its read each step, a ring in use
+      and awake with a segment faster than GUARD_SPEED goes back to its rest shape at its read center and rotation,
+      moving at its center's velocity capped at GUARD_RESET_SPEED, with no spin; one whose state is not finite goes
+      back to its stand-in's last shadow pose, at rest. Either way its dofs' warm start is zeroed, `resets` counts it,
+      and a note says when (notes()). A parked or sleeping ring is never read, so it never trips it.
     """
 
     def __init__(self, model: mujoco.MjModel, data: mujoco.MjData, balls, layout, robot_root: int):
@@ -552,6 +574,8 @@ class SoftPool:
         self._far: dict[int, float | None] = {}     # slot in use -> when its center went out of reach, None: in it
         self.balls.soft[:] = False
         self.swaps = 0
+        self.resets = 0                             # the guard's resets since the last reset()
+        self._blowups: list[tuple[str, float, float | None]] = []   # each: (slot's name, t, speed; None: not finite)
         self._full_noted = False
         self._swapped_kinds: list[str] = []
 
@@ -566,7 +590,8 @@ class SoftPool:
         return {int(self.balls.bodies[s]) for s in self._slot_of if s >= 0}
 
     def notes(self, lang: str | None = None) -> list[str]:
-        """The full pool's note (once per reset) and, for each kind that turned soft, its uncalibrated numbers."""
+        """The full pool's note (once per reset), for each kind that turned soft its uncalibrated numbers, and one
+        note for each of the guard's resets (K6-R7), its speed in the Units setting."""
         out = []
         if self._full_noted:
             out.append(i18n.tn("a NOTE came near the robot while the soft pool's {count} NOTE was in use; it stayed "
@@ -577,6 +602,15 @@ class SoftPool:
             out.append(i18n.t("soft NOTE: its stiffness ({stiffness} N/m) and restitution ({restitution}) are "
                               "UNCALIBRATED estimates; measure them (docs/measuring.md)", lang=lang,
                               stiffness=f"{kind.stiffness:g}", restitution=f"{kind.restitution:g}"))
+        for name, t, speed in self._blowups:
+            if speed is None:
+                out.append(i18n.t("soft NOTE {name} blew up at {t} s (its state was not finite); it was reset to its "
+                                  "rest shape, so results near then aren't trustworthy", lang=lang, name=name,
+                                  t=f"{t:.2f}"))
+            else:
+                out.append(i18n.t("soft NOTE {name} blew up at {t} s (a segment at {speed}); it was reset to its "
+                                  "rest shape, so results near then aren't trustworthy", lang=lang, name=name,
+                                  t=f"{t:.2f}", speed=units.fmt(speed, "speed")))
         return out
 
     # ---- every step -------------------------------------------------------------------------------------------------
@@ -584,7 +618,7 @@ class SoftPool:
     def shadow(self) -> None:
         """Each soft slot takes its ring's center, rotation and velocity (read_rigid, no spin: the stand-in touches
         nothing, so its spin is left at zero). A ring asleep hasn't moved: its stand-in is put back where it was, at
-        rest, without reading the ring again."""
+        rest, without reading the ring again. Each ring read is checked by the guard first (the class docstring)."""
         b, d = self.balls, self.data
         asleep = d.tree_asleep
         for k, s in enumerate(self._slot_of):
@@ -596,13 +630,35 @@ class SoftPool:
                 b._qpos[s, :3], b._qpos[s, 3:] = pos, quat
                 b._qvel[s] = 0.0
                 continue
-            c, quat, vc, _ = ring.read(d, spin=False)
+            if not ring.finite(d):
+                self._guard_reset(k, s, None)
+            c, quat, vc, speeds = ring.read_with_speeds(d)
+            fastest = float(speeds.max())
+            if fastest > GUARD_SPEED:
+                cap = float(np.linalg.norm(vc))
+                vc = vc * (GUARD_RESET_SPEED / cap) if cap > GUARD_RESET_SPEED else vc
+                self._guard_reset(k, s, fastest, (c, quat, vc))
             pos = c - _mat(quat) @ self._ipos[s]
             b._qpos[s, :3] = pos
             b._qpos[s, 3:] = quat
             b._qvel[s, :3] = vc
             b._qvel[s, 3:] = 0.0
             self._last[k] = (pos, quat)
+
+    def _guard_reset(self, k: int, s: int, speed: float | None, state=None) -> None:
+        """Ring k (slot s's) back to its rest shape, at rest at its stand-in's last shadow pose (`state` None: its own
+        state is not finite), or at `state`'s (center, rotation, velocity) with no spin; its dofs' warm start zeroed,
+        counted and noted (K6-P12)."""
+        ring, d, b = self.parked.rings[k], self.data, self.balls
+        if state is None:
+            pos, quat = self._last[k] if self._last[k] is not None else (b._qpos[s, :3].copy(), b._qpos[s, 3:].copy())
+            c, vc = np.asarray(pos) + _mat(quat) @ self._ipos[s], np.zeros(3)
+        else:
+            c, quat, vc = state
+        ring.write(d, c, quat, vc, np.zeros(3))
+        d.qacc_warmstart[ring.v] = 0.0
+        self.resets += 1
+        self._blowups.append((b.piece_name(s), float(d.time), speed))
 
     def update(self) -> None:
         """After the step's ledger work: release the rings of slots out of play, swap back the rings out of reach for

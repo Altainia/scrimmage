@@ -507,6 +507,7 @@ def swap_run(w: World, press_s: float = 0.6, stop_s: float = 0.0, after_s: float
         if t_back is not None and w.time >= t_back + after_s - 1e-9:
             break
     assert t_in is not None and t_back is not None, "the NOTE never turned soft and back"
+    assert w.test_range.soft.resets == 0        # the guard never fired (K6-R7)
     first = next(k for k, r in enumerate(rows) if r["in_use"])
     back = next(k for k in range(first, len(rows)) if not rows[k]["in_use"])
     return slot, rows, first, back
@@ -645,6 +646,7 @@ def test_a_held_or_launched_note_stays_rigid(tmp_path):
     world = world_for(program)
     r = TestRun(world, program).run()
     assert r.status == "finished", r.outcome
+    assert r.soft_resets == 0
     assert [c["passed"] for c in r.checks] == [True]
     log = world.test_range.ball_log()[0]
     assert log["goal"] == "speaker_blue" and log["first_hit"] is None
@@ -668,7 +670,7 @@ def test_a_held_or_launched_note_stays_rigid(tmp_path):
     for _ in range(200):
         w.step(hal)
         assert np.isfinite(balls._full_bits_at[slot]) and pool.distances(np.array([slot]))[0] < soft.SOFT_REACH
-    assert pool.swaps == 0 and pool.in_use() == {}
+    assert pool.swaps == 0 and pool.in_use() == {} and pool.resets == 0
 
 
 def test_the_swap_back_on_the_carpet_doesnt_hop(tmp_path):
@@ -729,7 +731,7 @@ def test_a_reset_mid_swap_parks_every_ring(tmp_path):
         drive(hal, 2.0)
         for _ in range(2000):
             w.step(hal)
-        assert rt.soft.swaps == 1
+        assert rt.soft.swaps == 1 and rt.soft.resets == 0
         runs.append((rt.balls._qpos.copy(), d.qpos.copy()))
         w.reset()
         parked()
@@ -755,7 +757,7 @@ def test_a_full_pool_leaves_the_third_rigid_and_notes_it_once(tmp_path):
         assert len(pool.in_use()) <= 2
         if near.all() and len(pool.in_use()) == 2:
             full_seen = True
-    assert full_seen and pool.swaps >= 2
+    assert full_seen and pool.swaps >= 2 and pool.resets == 0
     n = soft.POOL_SIZE
     full = (f"a NOTE came near the robot while the soft pool's {n} NOTE was in use; it stayed rigid" if n == 1 else
             f"a NOTE came near the robot while all {n} soft NOTEs were in use; it stayed rigid")
@@ -886,6 +888,7 @@ def test_a_fast_note_turns_soft_before_it_reaches_the_robot(tmp_path, monkeypatc
         if pool.distances(np.array([slot]))[0] > soft.SOFT_REACH:
             predicted += 1
         w.step(hal)
+        assert pool.resets == 0, d0
         ring = set(soft.ring_view(m, "soft.0").geoms.tolist())
         for i, (a, b) in enumerate(contact_ids(m, d).tolist()):
             if (a in ring and b in robot) or (b in ring and a in robot):
@@ -912,6 +915,7 @@ def test_a_fed_note_turns_soft_at_a_waiting_robot(tmp_path):
         w.step(hal)
         if slot in rt.soft.in_use():
             assert rt.counts() == counts
+    assert rt.soft.resets == 0
 
 
 def test_a_swap_back_waits_until_the_note_is_clear_of_a_wall(tmp_path):
@@ -975,6 +979,7 @@ duration = 0.3
     assert report.error is None, report.summary()
     notes = json.loads((tmp_path / "out" / "report.json").read_text())["notes"]
     assert sum("UNCALIBRATED" in n and "soft NOTE" in n for n in notes) == 1, notes
+    assert not [n for n in notes if "blew up" in n or "unstable" in n], notes     # the guard never fired (K6-R7)
 
 
 @pytest.mark.skipif(os.environ.get("SCRIMMAGE_TIMING") != "1", reason="timed locally only: set SCRIMMAGE_TIMING=1")

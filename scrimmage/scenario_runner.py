@@ -703,9 +703,9 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
                 match.finish(session.t)
             report.notes.extend(terrain_notes(session.world, noted))
     report.notes.extend(session.world.warnings)
-    if (rng := session.world.test_range) is not None:    # a soft NOTE's: a full pool, its uncalibrated numbers
-        shown = _shown_now(rng.soft_notes)()
-        report.notes.extend(Said(note, lambda s=s: s) for note, s in zip(rng.soft_notes(), shown))
+    if (rng := session.world.test_range) is not None:    # a soft NOTE's, the guard's resets, MuJoCo's restarts
+        shown = _shown_now(rng.notes)()
+        report.notes.extend(Said(note, lambda s=s: s) for note, s in zip(rng.notes(), shown))
     if session.bridge.clock_freed:
         report.lockstep = False   # Phoenix 6 devices freed the robot's clock
     if session.bridge.realtime_reason:

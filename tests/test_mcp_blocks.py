@@ -28,7 +28,7 @@ def test_test_run_reports_and_keeps_the_run(tmp_path):
     assert info["outcome"] and info["t_end"] > 0
     assert len(info["checks"]) == 1 and info["checks"][0]["passed"] is True
     assert info["counts"] is None and info["feeds"] == [] and info["seed"] is None
-    assert info["marks"] == [] and info["notes"] == []
+    assert info["marks"] == [] and info["notes"] == [] and info["soft_resets"] == 0
     assert info["run_folder"] == str((tmp_path / "t-runs" / "001").resolve())
     assert (tmp_path / "t-runs" / "001" / "result.json").is_file()
     sig = info["signals"]

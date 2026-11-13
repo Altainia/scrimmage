@@ -156,7 +156,7 @@ def test_the_arm_is_a_sprung_hinge():
 
 
 def test_the_example_passes_as_saved():
-    """It passes, and the NOTE lifts the front roller's arm off its stop on the way in."""
+    """It passes, and the NOTE lifts the front roller's arm off its stop on the way in; the soft guard never fires."""
     prog = load(TEST)
     world = world_for(prog)
     q = world.model.jnt_qposadr[world.model.joint("intake.arm").id]
@@ -165,5 +165,6 @@ def test_the_example_passes_as_saved():
     def each(t, row):
         lift[0] = max(lift[0], float(world.data.qpos[q]))
 
-    assert TestRun(world, prog).run(on_sample=each).passed
+    result = TestRun(world, prog).run(on_sample=each)
+    assert result.passed and result.soft_resets == 0
     assert math.degrees(lift[0]) > ARM_LIFT_DEG
