@@ -348,6 +348,11 @@ def slab(kind: PieceKind, pull: float, priority: int = 0, pairs: bool = False, v
         vmax = max(vmax, float(ring.speeds(d).max()))
         front = float(d.mocap_pos[0][0]) - SLAB_HALF[0]
         x, z = d.xpos[ring.bodies, 0], d.xpos[ring.bodies, 2]
-        under = int(((x > front + r) & (x < front + 2.0 * SLAB_HALF[0]) & (z < gap + r)).sum())
+        y = d.xpos[ring.bodies, 1]
+        # within the slab's width too: a NOTE that rides up the slab's front and tilts can drop an edge onto the
+        # carpet past the slab's side, inside its x span and under its height, which is beside the slab, not under it
+        # (Task 5: every segment counted without this bound sat at |y| 0.35-0.49 m against the 0.30 m half width)
+        under = int(((x > front + r) & (x < front + 2.0 * SLAB_HALF[0]) & (z < gap + r)
+                     & (np.abs(y) < SLAB_HALF[1])).sum())
         under_max = max(under_max, under)
     return {"under_max": under_max, "under_end": under, "vmax": vmax, "finite": finite}

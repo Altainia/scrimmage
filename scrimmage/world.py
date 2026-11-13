@@ -561,7 +561,8 @@ class World:
             if g >= m.ngeom:            # a flex: no body of its own
                 out.add(id_name(m, g))
                 continue
-            for name in (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g),
+            # id_name: a geom named only for a soft pair (K6-P11) reads as its body
+            for name in (id_name(m, g) if mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) else None,
                          mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b)):
                 if name:
                     out.add(name)
@@ -573,8 +574,9 @@ class World:
         named by its `ball.<i>` (Balls.ball_of_geom), and a parked one touches nothing."""
         m = self.model
         root = m.body_rootid[self.robot_body]
-        names = {mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) for g in range(m.ngeom)
-                 if m.body_rootid[m.geom_bodyid[g]] != root}
+        from .flexcontact import id_name
+        names = {id_name(m, g) for g in range(m.ngeom)     # id_name: no soft pair's geom suffix (K6-P11)
+                 if m.body_rootid[m.geom_bodyid[g]] != root and mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g)}
         names |= {mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) for b in range(m.nbody)
                   if m.body_rootid[b] != root}
         names |= {mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_FLEX, f) for f in range(m.nflex)}

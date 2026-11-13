@@ -28,6 +28,7 @@ from scrimmage.parts import partner as partner_mod  # noqa: E402
 from scrimmage.parts.assemble import assemble  # noqa: E402
 from scrimmage.testrange import soft  # noqa: E402
 from scrimmage.testrange.pieces import kind_preset  # noqa: E402
+from scrimmage.world import World  # noqa: E402
 
 NOTE = kind_preset("2024-note")
 IN = 0.0254
@@ -137,6 +138,14 @@ def test_a_2mm_slab_doesnt_run_the_note_over(priority, pull, stiffness):
     _sane(r)
     assert r["under_max"] <= UNDER_MAX, r
     assert r["under_end"] == 0, r
+
+
+def test_a_note_beside_the_slab_isnt_under_it():
+    """Regression (Task 5): at 15 N and 2.0 m/s the NOTE rides up the slab's front and drops an edge onto the carpet
+    past the slab's side. Counted without the slab's width, 2 segments were "under" it and 1 at the end; none is."""
+    r = sh.slab(_at(2000.0), 15, priority=1, pairs=True)
+    _sane(r)
+    assert (r["under_max"], r["under_end"]) == (0, 0), r
 
 
 SQUEEZE = _cases((f"{s:g}", (s,)) for s in SQUEEZE_STIFFNESSES)
@@ -263,3 +272,24 @@ def test_pairs_cost_little_to_build():
     without, with_pairs = best(False), best(True)
     print(f"intake build: {without:.3f} s without pairs, {with_pairs:.3f} s with")
     assert with_pairs < BUILD_COST_MAX * without
+
+
+def test_a_paired_partner_geom_keeps_its_contact_name(monkeypatch):
+    """A partner geom named only for its pairs (K6-P11) reaches contact checks and their reports as its body:
+    World.contact_names() and World.robot_contacts() never show the #soft-pair- suffix."""
+    _priority_partner(monkeypatch)
+    w = World(tomllib.loads(INTAKE.read_text() + PARTNER_AT), INTAKE.parent)
+    m = w.model
+    partner = int(m.body(w.parts.partner.body).id)
+    renamed = [g for g in range(m.ngeom) if m.body_rootid[m.geom_bodyid[g]] == partner
+               and soft.PAIR_SUFFIX in (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or "")]
+    assert renamed      # every colliding geom of the priority body, all unnamed in the stock chassis
+    names = w.contact_names()
+    assert not [n for n in names if soft.PAIR_SUFFIX in n]
+    assert m.body(int(m.geom_bodyid[renamed[0]])).name in names
+    # the robot touching that geom: one contact, robot geom 0's body against the renamed geom
+    robot_geom = next(g for g in range(m.ngeom) if m.body_rootid[m.geom_bodyid[g]] == m.body_rootid[w.robot_body])
+    import scrimmage.flexcontact as fc
+    monkeypatch.setattr(fc, "contact_ids", lambda model, data: np.array([[robot_geom, renamed[0]]]))
+    touching = w.robot_contacts()
+    assert touching and not [n for n in touching if soft.PAIR_SUFFIX in n], touching
