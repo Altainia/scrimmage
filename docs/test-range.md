@@ -576,15 +576,16 @@ so no load a mechanism makes squashes it flat. Between two 2 in rollers, at the 
 | 0.4 | 80 % | 494.3 |
 
 Where it stiffens is an estimate until someone measures a real NOTE at a deep squeeze
-([measuring.md](measuring.md#note-squeeze)). It means a nip tighter than about 0.4 in jams the NOTE: it stops on the
-roller instead of going through. Put a tight roller on a sprung arm, as the
-[note-intake example](../examples/blocks/note-intake/README.md) does.
+([measuring.md](measuring.md#note-squeeze)). In the
+[note-intake example](../examples/blocks/note-intake/README.md)'s grids, run while this stiffening was being built, a
+nip near 0.3 in (an 85 % squeeze) stopped the NOTE on a fixed front roller. The example's front roller is on a sprung
+arm, which a tight nip lifts, and it passes those cases.
 
 **What it can't do.** These are checked by the tests, at 1000, 2000 and 20000 N/m (the softest NOTE, the preset and
 the stiffest):
 
 - go through a part, even a 1/8 in or 6 mm plate. Pressed onto one by a 2 in roller at up to 200 N, held or dragged
-  at 3.4 m/s, it squashes less than 21 mm (its tube is 25 mm thick), and no part of it ends up below the plate's top.
+  at 3.4 m/s, it squashes less than 21 mm (its tube's radius is 25 mm), and no part of it ends up below the plate's top.
   Slid flat into a wall at up to 8 m/s, it sinks less than 24 mm and never comes out the far side;
 - pass through itself. Folded flat between two plates, its two halves overlap less than 20 mm;
 - be run over by a slab 2 mm over the carpet, even while something pulls it under at 20 N. At most 2 of its 16
@@ -592,9 +593,9 @@ the stiffest):
 
 **A part with `priority` still meets the squash.** A geom's [`priority`](parts.md#geoms) sets its friction against
 the NOTE, as it does against anything. Its contact would also replace the NOTE's own softer one, so the world gives
-each robot geom with a priority above 0 its own contact with each of the soft rings' segments (a contact *pair*),
-which keeps the NOTE's squash and MuJoCo's own friction rule. That is 32 pairs per such geom (2 rings of 16
-segments): the note-intake example has 8 priority geoms, so 256 pairs. They cost about 0.006 ms of computer time a
+each colliding geom of a robot body that has a priority geom its own contact with each of the soft rings' segments (a
+contact *pair*), which keeps the NOTE's squash and MuJoCo's own friction rule. That is 32 pairs per such geom (2
+rings of 16 segments): the note-intake example's two such bodies have 8 colliding geoms, so 256 pairs. They cost about 0.006 ms of computer time a
 step, about 1 % of that example's step, with both rings parked under the floor (measured 2026-11-13). The field's
 CHAINS are the exception: they keep their own stiff contact.
 

@@ -409,8 +409,8 @@ size = [0.2, 0.8, 0.8]
 `examples/bench/note_intake_flex.toml` is a floor intake: the nip of
 [the note-intake example](../examples/blocks/note-intake/README.md), fed by a carpet plate moving at 1 m/s (the
 robot's approach speed). On a flat moving plate the flex NOTE comes up to the plate's speed from rest in under
-0.4 s (about 0.3 s at 1 m/s). Its front roller is fixed: the example's is on a sprung arm, which a bench wheel can't be, so the bench shows
-the nip at its 1.4 in gap, not how the arm opens.
+0.4 s (about 0.3 s at 1 m/s). Its front roller is fixed: the example's is on a sprung arm, which a bench wheel can't
+be, so the bench shows the nip at its 1.4 in gap, not how the arm opens.
 
 - **It is opt-in.** Without `flex = true` nothing changes: the NOTE is the rigid stand-in, as fast as before. The
   test range's own soft NOTE (near a robot) doesn't change the bench.

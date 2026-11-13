@@ -82,8 +82,8 @@ size = [0.9, 0.8, 0.01]
 material = "polycarbonate"
 surface_speed = 1.0              # choice: the example's approach speed (its drive at 3.1 V is about 1 m/s)
 
-# source: the example's part.toml: the bin's floor slab, back stop, lid and the ceiling over the rollers, the side
-# walls round them, in bench coordinates
+# source: the example's part.toml, in bench coordinates: the bin's floor slab and back stop (to within 1 mm and
+# 7 mm of width), and its lid and ceiling (below)
 [[plate]]
 name = "bin_floor"
 center = [0.2578, 0.0, 0.0268]
@@ -94,11 +94,15 @@ name = "back_stop"
 center = [0.5123, 0.0, 0.064]
 size = [0.05, 0.5, 0.12]
 
+# the lid and the ceiling over the rollers as one plate: its underside 2.1 in over the floor, from the back stop to
+# 3 cm past the front roller's center (the part's lid and guide ceiling, robot x 0 to 0.6119)
 [[plate]]
 name = "ceiling"
-center = [0.19, 0.0, 0.1378]
-size = [0.62, 0.5, 0.05]
+center = [0.19406, 0.0, 0.13014]
+size = [0.6119, 0.5064, 0.05]
 
+# choice: one side wall each side for the part's bin walls and roller guides together, 0.66 m long and 0.15 m tall
+# (the part's are 0.12 and 0.13 m tall), 16 in apart inside as the part's are
 [[plate]]
 name = "wall_left"
 center = [0.17, 0.2282, 0.075]

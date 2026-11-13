@@ -892,7 +892,7 @@ absolute path. **`test_spread`** runs the floor spread. The agent writes the `.t
 
 ## The examples
 
-Thirteen worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
+Fourteen worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
 
 - **`examples/blocks/intake`**, a roller and bin that take a ball off the carpet. Run it and it finishes at 3.3 s
   with the ball in the bin. The README has a sweep of the roller's voltage.

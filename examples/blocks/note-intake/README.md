@@ -55,6 +55,7 @@ It passes at 3.3 s:
 ```
 1 of 1 made it in (100%)
   passed: a note reaches intake.hopper at 3.3 s (block 6)
+  note: soft NOTE: its stiffness (2000 N/m) and restitution (0.3) are UNCALIBRATED estimates; measure them (docs/measuring.md)
   pieces:
     #  kind  from   fired s  exit m/s  outcome  where
     2  note  floor  -        -         in       in intake.hopper
@@ -118,7 +119,7 @@ These rules made the difference between an intake that passes once and one that 
   over a lip passed or failed with 1 cm of lip position.
 - **The front roller is on a sprung arm.** The arm pivots on a hinge 3 in behind and 1.4 in above the roller. A spring
   holds it down on a stop with about 15 N at the roller, about what the NOTE pushes back with in the 1.4 in nip. A NOTE
-  pushed into a tighter nip lifts the roller (up to 25 degrees) instead of jamming. Real over-under intakes have this.
+  pushed into a tighter nip lifts the roller (up to 25 degrees) instead of jamming on it.
 
   Why the arm ships: before the soft NOTE's contact fixes were finished (measured while they were being built; the
   plan's "Task 1's record" in docs/superpowers/plans/2026-11-12-soft-note-robustness.md), the same intake with a
