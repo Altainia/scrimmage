@@ -35,6 +35,10 @@ by up to f^2 and the static one by f^2 (1 - SOFT_DMIN) / (1 - dmax). dmax is cap
 contact's frequency per unit mass stays at W_RING (and never below SOFT_DMIN). It keeps a roller or a hard hit from pushing the ring through a
 thin plate.
 
+A geom with `priority` would set the contact's solref and solimp too, so a priority part would meet the ring with
+its own stiff contact. pair_rings gives each robot body with a priority geom explicit pairs with the rings instead,
+with the ring's squash and MuJoCo's own friction rule (K6-R2; parts/assemble.py calls it before compiling).
+
 A range with a soft kind builds POOL_SIZE rings per soft kind, `soft.<k>`, parked under the floor with PARKED_BITS
 (build.add_range); a parked ring is held in place (ParkedRings) and may sleep.
 """
@@ -49,6 +53,7 @@ import mujoco
 import numpy as np
 
 from .. import i18n
+from ..flexcontact import PAIR_SUFFIX
 from .build import BALL_BITS, BALL_FRICTION, PARKED_BITS, RIGID_SOLMIX
 from .pieces import SOFT_SEGMENTS, PieceKind, piece_color, ring_basis, ring_diameters
 
@@ -190,6 +195,60 @@ def add_ring(spec: mujoco.MjSpec, name: str, kind: PieceKind, pos, bits: dict) -
     eq.data[:3] = [d.half, 0.0, 0.0]
     eq.solref = list(CLOSE_SOLREF)
     spec.add_exclude(bodyname1=f"{name}.s{n - 1}", bodyname2=f"{name}.s0")
+
+
+# ------------------------------------------------------------------------------------------- priority parts (K6-R2)
+
+
+def _colliding(body: mujoco.MjsBody) -> list:
+    return [g for g in body.geoms if g.contype or g.conaffinity]
+
+
+def priority_bodies(roots: list[mujoco.MjsBody]) -> list[mujoco.MjsBody]:
+    """The bodies in each root's subtree, the root included, with a colliding geom (contype or conaffinity nonzero)
+    of priority above 0, each once."""
+    out, seen = [], set()
+    for root in roots:
+        for body in [root, *root.find_all(mujoco.mjtObj.mjOBJ_BODY)]:
+            if body.name not in seen and any(g.priority > 0 for g in _colliding(body)):
+                seen.add(body.name)
+                out.append(body)
+    return out
+
+
+def _mix(geom, cap) -> tuple[list[float], int]:
+    """MuJoCo's own rule for a contact's friction and condim: the higher priority's, or the larger of each at equal
+    priority."""
+    if geom.priority != cap.priority:
+        g = geom if geom.priority > cap.priority else cap
+        return [float(x) for x in g.friction], int(g.condim)
+    return [float(max(a, b)) for a, b in zip(geom.friction, cap.friction)], int(max(geom.condim, cap.condim))
+
+
+def pair_rings(spec: mujoco.MjSpec, rings: list[str], bodies: list[mujoco.MjsBody]) -> int:
+    """K6-R2: each ring meets each of `bodies` (priority_bodies) through explicit pairs, so a priority part meets the
+    NOTE with the ring's squash (its capsules' solref and solimp, ring_contact) rather than its own. Each ring segment
+    is excluded from each body, dropping MuJoCo's own contact between them, and each colliding geom of the body gets a
+    pair with each capsule, with MuJoCo's friction and condim rule (_mix) and the larger margin and gap. An unnamed
+    geom is named "<body>#soft-pair-<k>" first. Returns the pairs added."""
+    added = 0
+    for body in bodies:
+        geoms = _colliding(body)
+        for k, g in enumerate(geoms):
+            if not g.name:
+                g.name = f"{body.name}{PAIR_SUFFIX}{k}"
+        for ring in rings:
+            for j in range(RING_SEGMENTS):
+                spec.add_exclude(bodyname1=f"{ring}.s{j}", bodyname2=body.name)
+                cap = spec.geom(f"{ring}.g{j}")
+                for g in geoms:
+                    mu, condim = _mix(g, cap)
+                    spec.add_pair(geomname1=cap.name, geomname2=g.name, condim=condim,
+                                  friction=[mu[0], mu[0], mu[1], mu[2], mu[2]], solref=list(cap.solref),
+                                  solimp=list(cap.solimp), margin=max(g.margin, cap.margin),
+                                  gap=max(g.gap, cap.gap))
+                    added += 1
+    return added
 
 
 # ------------------------------------------------------------------------------------------- the ring's state

@@ -606,6 +606,10 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
         partner = add_partner(spec, cfg, elements)
         check_start(partner, pose, elements,
                     floor_pieces(section.range) if section is not None and section.floor_balls else ())
+    if layout is not None and layout.soft:     # K6-R2: a priority part meets a soft NOTE with the ring's squash
+        from ..testrange.soft import pair_rings, priority_bodies
+        roots = [spec.body(f"{root.name}.{root.part.bodies[0].name}")] + ([spec.body(partner.body)] if partner else [])
+        pair_rings(spec, layout.soft, priority_bodies(roots))
     try:
         model = spec.compile()
     except ValueError as e:

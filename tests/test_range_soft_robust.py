@@ -9,15 +9,24 @@ lands shows up as an XPASS until its entry is removed."""
 from __future__ import annotations
 
 import math
+import os
 import sys
+import time
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 
+import mujoco
+import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import soft_helpers as sh  # noqa: E402
+from scrimmage.flexcontact import id_name  # noqa: E402
+from scrimmage.parts import partner as partner_mod  # noqa: E402
+from scrimmage.parts.assemble import assemble  # noqa: E402
+from scrimmage.testrange import soft  # noqa: E402
 from scrimmage.testrange.pieces import kind_preset  # noqa: E402
 
 NOTE = kind_preset("2024-note")
@@ -51,20 +60,9 @@ SQUEEZE_GAPS = (1.5, 1.0, 0.6, 0.4)  # source: K6-R1's table: 25 %, 50 %, 70 % a
 SQUEEZE_STIFFNESSES = (1000.0, 2000.0, 6000.0, 20000.0)  # source: K6-R1's table, the range and the spike's 6000
 SQUEEZE_DEPTH = 0.25 * IN  # source: soft_scenes.SQUEEZE_GAP: each side of the 2 in NOTE squeezed 0.25 in at 1.5 in
 CALIBRATION_TOL = 0.02  # choice: K6-R11
-# today's failing cases and the K6 task that fixes each (the value is the xfail's reason). Task 5 (K6-R2's pairs) owns
-# every priority-1 case: the scene calls soft.pair_rings, which Task 5 adds. Task 3's ramp (K6-R1) passed every other
-# case, with Task 3's two rulings (SQUASH_MAX and LAUNCH_GAIN_SLACK).
-TASK5_GAIN = ("K6 Task 5: soft.pair_rings (AttributeError until then); once pairs exist, LAUNCH_GAIN_SLACK (8 %) "
-              "applies here as at priority 0; Task 5 removes this entry")
-TASK5_SLAB = ("K6 Task 5: 1 segment still under at the end with the spike's patch; if still red after pair_rings, "
-              "Task 5 strengthens the fix, don't loosen under_end")
-TASK5 = "K6 Task 5"
-FIXED_BY: dict[str, str] = {
-    **{f"{t * 1000:g}mm-{v}mps-prio1-{s:g}": TASK5 for t in WALLS for v in SPEEDS for s in STIFFNESSES},
-    **{f"prio1-{pull}N-{s:g}": TASK5 for pull in PULLS for s in STIFFNESSES},
-    **{f"{t * 1000:g}mm-8mps-prio1-20000": TASK5_GAIN for t in WALLS},
-    "prio1-20N-2000": TASK5_SLAB,
-}
+# today's failing cases and the K6 task that fixes each (the value is the xfail's reason). Task 3's ramp (K6-R1, with
+# its two rulings, SQUASH_MAX and LAUNCH_GAIN_SLACK) and Task 5's pairs (K6-R2) passed every case.
+FIXED_BY: dict[str, str] = {}
 
 
 def _at(stiffness: float):
@@ -157,3 +155,111 @@ def test_the_squeeze_stiffens_and_keeps_its_calibration(stiffness):
         assert forces[1] == pytest.approx(31.5, rel=0.10), forces
         assert forces[2] == pytest.approx(133.5, rel=0.10), forces
         assert forces[3] == pytest.approx(494.3, rel=0.10), forces
+
+
+# ------------------------------------------------------------------------------------------- K6-R2's pairs
+
+EXAMPLES = Path(__file__).resolve().parent.parent / "examples" / "blocks"
+SPEAKER = EXAMPLES / "speaker" / "note-shooter-standin.toml"
+INTAKE = EXAMPLES / "note-intake" / "note-intake-standin.toml"
+INTAKE_FRICTION = 0.4   # source: examples/blocks/note-intake/parts/intake/part.toml: the bin's priority geoms
+PARTNER_AT = "\n[partner]\nstart = [4, 4, 0]\n"  # choice: tests/test_partner.py's start, clear of the robot
+BUILD_COST_MAX = 1.2    # choice: K6-R11 and K6-P6: pairs make a build at most 20 % slower
+
+
+def _build(config: Path, extra: str = "", pairs: bool = True):
+    cfg = tomllib.loads(config.read_text() + extra)
+    if pairs:
+        return assemble(cfg, config.parent)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(soft, "pair_rings", lambda spec, rings, bodies: 0)
+        return assemble(cfg, config.parent)
+
+
+def _priority_counts(m: mujoco.MjModel, roots: list[int]) -> tuple[list[int], list[int]]:
+    """The compiled model's priority bodies under `roots` (body ids) and their colliding geoms."""
+    colliding = (m.geom_contype != 0) | (m.geom_conaffinity != 0)
+    under = np.isin(m.body_rootid[m.geom_bodyid], roots)
+    bodies = sorted({int(b) for b in m.geom_bodyid[colliding & under & (m.geom_priority > 0)]})
+    geoms = [int(g) for g in np.flatnonzero(colliding & np.isin(m.geom_bodyid, bodies))]
+    return bodies, geoms
+
+
+@pytest.mark.parametrize("config", [SPEAKER, INTAKE], ids=["speaker", "intake"])
+def test_the_pairs_cover_every_priority_body(config):
+    """Every colliding geom of every robot body with a priority geom meets every ring capsule through a pair with the
+    capsule's own solref, and each such body is excluded from each ring segment (K6-R2)."""
+    built = _build(config)
+    m = built.model
+    bodies, geoms = _priority_counts(m, [int(m.body(built.robot_body).id)])
+    n_r = soft.RING_SEGMENTS * len(built.layout.soft)
+    assert m.npair == n_r * len(geoms)
+    assert m.nexclude - _build(config, pairs=False).model.nexclude == n_r * len(bodies)
+    rings = set(np.flatnonzero(np.isin(m.geom_bodyid, [m.body(f"{r}.s{j}").id for r in built.layout.soft
+                                                      for j in range(soft.RING_SEGMENTS)])).tolist())
+    for p in range(m.npair):
+        a, b = int(m.pair_geom1[p]), int(m.pair_geom2[p])    # MuJoCo may put either side first
+        assert (a in rings) != (b in rings)
+        cap = a if a in rings else b
+        np.testing.assert_array_equal(m.pair_solref[p], m.geom_solref[cap])
+        np.testing.assert_array_equal(m.pair_solimp[p], m.geom_solimp[cap])
+    if config == INTAKE:
+        assert m.npair > 0
+        np.testing.assert_allclose(m.pair_friction[:, 0], INTAKE_FRICTION)
+
+
+def _priority_partner(monkeypatch) -> None:
+    """The partner's chassis with its first colliding geom at priority 1."""
+    real = partner_mod._parts
+
+    def parts(p):
+        chassis, drive = real(p)
+        body = chassis.part.bodies[0]
+        i = next(i for i, g in enumerate(body.geoms) if g.collide)
+        geoms = [replace(g, priority=1) if k == i else g for k, g in enumerate(body.geoms)]
+        part = replace(chassis.part, bodies=[replace(body, geoms=geoms), *chassis.part.bodies[1:]])
+        return replace(chassis, part=part), drive
+    monkeypatch.setattr(partner_mod, "_parts", parts)
+
+
+def test_a_partners_priority_geoms_are_paired(monkeypatch):
+    """The partner robot, added after the range, is paired too (K6-R2)."""
+    _priority_partner(monkeypatch)
+    built = _build(INTAKE, PARTNER_AT)
+    m = built.model
+    partner = int(m.body(built.partner.body).id)
+    mine = [g for g in range(m.ngeom) if m.body_rootid[m.geom_bodyid[g]] == partner and m.geom_priority[g] > 0]
+    assert len(mine) == 1
+    assert mine[0] in set(m.pair_geom1.tolist()) | set(m.pair_geom2.tolist())
+
+
+def test_no_priority_geom_no_pairs():
+    """A robot with no priority geom gets no pairs, and its model is the one built without pair_rings."""
+    m, m0 = _build(SPEAKER).model, _build(SPEAKER, pairs=False).model
+    assert m.npair == 0
+    assert (m.nbody, m.ngeom, m.nexclude) == (m0.nbody, m0.ngeom, m0.nexclude)
+
+
+def test_a_paired_geom_keeps_its_contact_name():
+    """A geom named only for its pairs (K6-P11) still reads as its body in contact reports."""
+    m = _build(INTAKE).model
+    renamed = [g for g in range(m.ngeom) if soft.PAIR_SUFFIX in (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g)
+                                                                    or "")]
+    assert renamed
+    for g in renamed:
+        assert id_name(m, g) == m.body(int(m.geom_bodyid[g])).name
+
+
+@pytest.mark.skipif(os.environ.get("SCRIMMAGE_TIMING") != "1", reason="timed locally only: set SCRIMMAGE_TIMING=1")
+def test_pairs_cost_little_to_build():
+    """K6-R11: the intake's build with its pairs is under BUILD_COST_MAX times the build without."""
+    def best(pairs: bool) -> float:
+        times = []
+        for _ in range(3):
+            t0 = time.perf_counter()
+            _build(INTAKE, pairs=pairs)
+            times.append(time.perf_counter() - t0)
+        return min(times)
+    without, with_pairs = best(False), best(True)
+    print(f"intake build: {without:.3f} s without pairs, {with_pairs:.3f} s with")
+    assert with_pairs < BUILD_COST_MAX * without
