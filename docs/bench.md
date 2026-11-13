@@ -525,7 +525,8 @@ Pieces start feeding once every speed-controlled shaft is within 2% of its targe
 
 ### `[[plate]]`
 
-A flat box, fixed.
+A flat box, fixed. With `surface_speed` its surface moves while the box stays put, as a conveyor belt does, so a
+piece lying on it is carried along: a moving carpet, as a robot driving onto a NOTE feels it.
 
 | Key | Meaning | Default |
 |---|---|---|
@@ -533,6 +534,10 @@ A flat box, fixed.
 | `size` | `[x, y, z]` full lengths, m | required |
 | `rot_deg` | turns about x, then y, then z, degrees (right-hand; `[0, -20, 0]` lifts the +x end) | `[0, 0, 0]` |
 | `material` | see [Materials](#materials) | `polycarbonate` |
+| `surface_speed` | how fast its surface moves, m/s, along the plate's own x (turned with `rot_deg`, so a ramp carries along its slope); negative runs back. A piece on it comes up to this speed through friction. Works with `flex = true` too | `0` |
+
+An `[[inlet]]`'s `velocity` sets how a piece starts; a moving plate keeps it moving. Every face of the box moves
+(MuJoCo's surface velocity covers the whole box), so a piece touching its side or underside is pushed along x too.
 
 ### `[[bar]]`
 

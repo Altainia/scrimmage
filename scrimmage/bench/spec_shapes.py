@@ -82,7 +82,8 @@ def _parse_wheel(name, raw) -> Wheel:
 def _parse_plate(name, raw) -> Plate:
     t = _Table("plate", f"[[plate]] '{name}'", raw, name)
     return Plate(name=name, center=t.vec("center", length=True), size=t.vec("size", length=True, positive=True),
-                 rot_deg=t.vec("rot_deg", 3, (0.0, 0.0, 0.0)), material=_material(t))
+                 rot_deg=t.vec("rot_deg", 3, (0.0, 0.0, 0.0)), material=_material(t),
+                 surface_speed=t.num("surface_speed", 0.0))
 
 
 def _parse_bar(name, raw) -> Bar:

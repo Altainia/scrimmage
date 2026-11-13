@@ -118,6 +118,9 @@ class Plate:
     size: Vec
     rot_deg: Vec  # rotations about x, then y, then z
     material: str
+    # m/s, signed, along the plate's own x: its surface moves as a conveyor's does (MuJoCo's geom surfacevel), the
+    # plate itself still (K6-R14)
+    surface_speed: float = 0.0
 
 
 @dataclass(**_frozen)
@@ -259,7 +262,7 @@ _SECTIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "shaft": (("motor", "count", "gearing", "wheel_inertia", "added_inertia", "control", "target_rps", "voltage",
                "kP", "kS", "kV", "stator_limit", "supply_limit", "coupled_to", "ratio"), ()),
     "wheel": (("name", "shaft", "center", "axis", "diameter", "width", "tread"), ("center", "diameter", "width")),
-    "plate": (("name", "center", "size", "rot_deg", "material"), ("center", "size")),
+    "plate": (("name", "center", "size", "rot_deg", "material", "surface_speed"), ("center", "size")),
     "bar": (("name", "a", "b", "center", "axis", "length", "diameter", "material", "spring", "travel",
              "spring_axis"), ("a", "b", "center", "length", "diameter", "travel")),
     "curve": (("name", "center", "axis", "zero_dir", "radius", "radius_start", "radius_end", "start_deg", "end_deg",

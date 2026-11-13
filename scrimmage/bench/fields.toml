@@ -189,6 +189,11 @@ help = "what it is made of, which sets how grippy it is"
 choices = "materials"
 default = "polycarbonate"
 
+[plate.surface_speed]
+unit = "m/s"
+help = "how fast its top moves along its own x, as a conveyor or a robot driving onto a piece; negative runs back"
+default = 0.0
+
 [bar.name]
 help = "the bar's name"
 
