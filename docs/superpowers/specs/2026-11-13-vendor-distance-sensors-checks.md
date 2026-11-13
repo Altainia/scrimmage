@@ -74,6 +74,10 @@ LASERCAN_STATUS_NO_TARGET   = 2     # WEAK_SIGNAL; a documented-meaning choice, 
   Ruling (a choice, *guess* about hardware): `LASERCAN_STATUS_NO_TARGET = 2` (WEAK_SIGNAL), with `distance_mm` =
   the mode's reach in mm. Cost: robot code that tests `status == 4` for "out of range" sees "valid-looking absence"
   differently from hardware; code that tests `status != 0` (Grapple's own example) behaves the same.
+  Controller's note: the firmware sends the ranging chip's own status unchanged (`status: result.status as u8`,
+  GrappleRobotics/LaserCAN `lasercan-firmware/src/main.rs` line 80, read 2026-11-13), so the value is the ST VL53L1X
+  driver's range status. In ST's driver, 2 is "signal fail", the status for a target too far or too dark (from my
+  knowledge of ST's driver documentation, not re-read here). That supports 2; it is still not seen on hardware.
 - Also from the library: `Measurement` fields (Java) are `status, distance_mm, ambient, is_long, budget_ms, roi`;
   the real native getter returns null until the first frame and again when the last frame is older than 500 ms
   (`grapplefrcdriver/src/lasercan.rs` lines 27-48).
