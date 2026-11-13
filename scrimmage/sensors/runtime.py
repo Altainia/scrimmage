@@ -51,7 +51,7 @@ from ..bindings import Update
 from ..checks import Said
 from ..protocol import HalState
 from .colors import nearest_color
-from .spec import COLOR_MAX_RANGE, I2C_PORTS, SensorError, SensorSpec, color_device
+from .spec import COLOR_MAX_RANGE, I2C_PORTS, SensorError, SensorSpec, color_device, device_key
 
 END_SLOP = 0.001    # m: a beam reaches this far past each end, so a piece resting exactly on an end reads broken on
                     # every step (a resting piece settles by far less than this) and never flickers
@@ -64,7 +64,24 @@ MAX_CASTS = 32      # a sensor's most casts in one step (robot surfaces in the w
 # getColor() divides each by their sum, so it reads the piece's color whatever the scale.
 FULL_SCALE = 2047
 MAX_VOLTS = 5.0     # an AnalogInput reads 0 to 5 V
+# A LaserCAN's status: libgrapplefrc's LaserCanInterface status constants. The firmware passes the ST VL53L1X range
+# status through unchanged (GrappleRobotics/LaserCAN lasercan-firmware/src/main.rs line 80); 2 is signal fail (no
+# target), not seen on hardware. The robot-side helpers (sensors/grapple.py, the Java agent) mirror these.
+LASERCAN_STATUS_VALID = 0
+LASERCAN_STATUS_NO_TARGET = 2
+CAN_SUPPLY_VOLTS = 12.0     # a CANrange's supplyVoltage: the battery, as the simulated robot's is nominal
 PORT_WORDS = {"onboard": "onboard", "mxp": "MXP"}
+
+
+def _missing_device_words(name: str, device: str, device_id: int):
+    """missing_devices' warning for people, worded when it is shown (not on the bridge's thread)."""
+    p = dict(sensor_table="[[sensor]]", name=name, device=device, device_id=device_id)
+    if device == "CANrange":
+        return lambda: i18n.t('{sensor_table} "{name}" is a {device}, but the robot program never created {device} '
+                              "{device_id}; check the id the robot code gives CANrange and the sensor's ctre", **p)
+    return lambda: i18n.t('{sensor_table} "{name}" is a {device}, but the robot program never created {device} '
+                          "{device_id}; check the id the robot code gives it, and the scrimmage helper for "
+                          "{device} may not be loaded in the robot program", **p)
 
 
 def _missing_color_words(name: str, port: str, after: float, other: str | None):
@@ -166,6 +183,7 @@ class SensorRuntime:
         self._pnt = np.zeros(3)
         self.casts = 0                                  # mj_ray calls so far (a cost check)
         self._out_of_casts: set[str] = set()            # the sensors already warned about running out of casts
+        self._said_missing: set[str] = set()            # the CANrange and LaserCAN sensors missing_devices has said
         # Nothing seen until the first reading: World.reset reads them (data has no kinematics before mj_forward).
         self._readings = {s.name: self._read(s, None) for s in self._rays}
 
@@ -264,7 +282,8 @@ class SensorRuntime:
     def sensor_updates(self) -> list[Update]:
         """The HAL inputs for the robot program: a DigitalInput per `dio` (on, inverted when active-low: a beam broken
         or a distance closer than its threshold), an AnalogInput per `analog` (volts_per_m times the distance, 0 to
-        5 V) and a REV Color Sensor V3's SimDevice per `i2c` (color_values)."""
+        5 V), a REV Color Sensor V3's SimDevice per `i2c` (color_values), and a CANrange's or LaserCAN's per `ctre` or
+        `grapple` (the distance, with a miss reading max_range)."""
         ups: list[Update] = []
         for s in self._rays:        # a camera gives the robot program nothing (spec D7)
             got = self._readings[s.name]
@@ -274,11 +293,37 @@ class SensorRuntime:
                 ups.append(("DIO", str(s.dio), {"<>value": (not got.on) if s.active_low else got.on}))
             if s.i2c is not None:
                 ups.append((*color_device(s.i2c), {f">{k}": v for k, v in color_values(got).items()}))
+            if s.device == "CANrange":
+                ups.append((*device_key(s), {">distance": got.distance, ">supplyVoltage": CAN_SUPPLY_VOLTS}))
+            elif s.device == "LaserCAN":    # raw: the robot-side helper applies the short-mode cap (Tasks 4 and 5)
+                seen = got.distance < s.length
+                ups.append((*device_key(s), {">distance_mm": round(got.distance * 1000),
+                                             ">status": LASERCAN_STATUS_VALID if seen else LASERCAN_STATUS_NO_TARGET}))
         return ups
 
     def color_sensors(self) -> dict[tuple[str, str], SensorSpec]:
         """The color sensors the robot program reads, by their SimDevice's (type, device)."""
         return {color_device(s.i2c): s for s in self.specs if s.i2c is not None}
+
+    def missing_devices(self, hal: HalState, after: float) -> list[str]:
+        """What to say, `after` s from connecting, about each CANrange or LaserCAN the robot program hasn't created
+        (once per sensor, so a second call says nothing; put in the world's warnings too, so run reports show it)."""
+        out = []
+        for s in self.specs:
+            key = device_key(s)
+            if key is None or key in hal.devices or s.name in self._said_missing:
+                continue
+            self._said_missing.add(s.name)
+            what = f"{s.device} {s.device_id}"
+            text = (f'[[sensor]] "{s.name}" is a {s.device}, but the robot program never created {what}; check the id '
+                    + ("the robot code gives CANrange and the sensor's ctre" if s.device == "CANrange" else
+                       f"the robot code gives it, and the scrimmage helper for {s.device} may not be loaded in the "
+                       "robot program"))
+            msg = Said(text, _missing_device_words(s.name, s.device, s.device_id))
+            out.append(msg)
+            if msg not in self.world.warnings:
+                self.world.warnings.append(msg)
+        return out
 
     def missing_color_sensors(self, hal: HalState, after: float) -> list[str]:
         """What to say, `after` s from connecting (time for the robot to create its devices), about each color sensor

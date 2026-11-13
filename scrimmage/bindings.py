@@ -131,11 +131,11 @@ def _one_of(cfg: dict, keys: tuple[str, ...], what: str) -> None:
 # [robot_program] not_modeled: what this config leaves out on purpose. A device the robot code makes for a mechanism
 # the config doesn't model gets no "nothing in the config binds it" warning or note; a part's slot left unbound
 # ("elevator.encoder": the robot reads the motor's own sensor) gets no "has no device ID" warning. Devices take the
-# ids' short forms: "SimMotor:<name>" (and SimEncoder, SimGyro), "TalonFX:<id>" (and CANcoder, Pigeon2),
+# ids' short forms: "SimMotor:<name>" (and SimEncoder, SimGyro), "TalonFX:<id>" (and CANcoder, Pigeon2, CANrange),
 # "SparkMax:<id>", "SparkFlex:<id>"; a slot is "<part>.<slot>".
 _NOT_MODELED_SIM = {"SimMotor": "ScrimmageMotor", "SimEncoder": "ScrimmageEncoder", "SimGyro": "ScrimmageGyro"}
-_NOT_MODELED_CAN = {"TalonFX": "TalonFX", "CANcoder": "CANcoder", "Pigeon2": "Pigeon2", "SparkMax": "SPARK MAX",
-                    "SparkFlex": "SPARK Flex"}
+_NOT_MODELED_CAN = {"TalonFX": "TalonFX", "CANcoder": "CANcoder", "Pigeon2": "Pigeon2", "CANrange": "CANrange",
+                    "SparkMax": "SPARK MAX", "SparkFlex": "SPARK Flex"}
 _SLOT = re.compile(r"[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+")
 
 

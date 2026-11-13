@@ -172,7 +172,8 @@ class _Table:
         return v
 
     def device(self) -> tuple[str, int] | None:
-        """The (device, id) of a `ctre = "CANrange:<id>"` or `grapple = "LaserCAN:<id>"` key; None if neither is given."""
+        """The (device, id) of a `ctre = "CANrange:<id>"` or `grapple = "LaserCAN:<id>"` key; None if neither is
+        given."""
         if "pwf" in self.t:
             raise self.err(i18n.t("pwf: the Playing With Fusion Time of Flight is not supported yet; wire an analog "
                                   "output ({analog_setting}) instead", analog_setting="analog = <channel>"))

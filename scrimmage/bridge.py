@@ -791,6 +791,7 @@ class Bridge:
                 msgs += self.world.pneumatics.warn_missing_hubs(self.hal)   # in the run's notes too
             if self.world.sensors is not None:
                 msgs += self.world.sensors.missing_color_sensors(self.hal, MISSING_AFTER)   # in the run's notes too
+                msgs += self.world.sensors.missing_devices(self.hal, MISSING_AFTER)
             for msg in msgs:
                 log.warning("%s", msg)
         if (not self._fast_phoenix_warned and now >= MISSING_AFTER - 1e-6
