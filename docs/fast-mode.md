@@ -272,6 +272,8 @@ tuned close to its limits can pass in one mode and fail in the other. When it ma
   acceleration 0 holds the profile where it is.
 - Continuous wrap takes the shortest way round one mechanism rotation.
 
+**No CANrange stand-in yet.** A `ctre = "CANrange:<id>"` distance sensor ([sensors.md](sensors.md#can-distance-sensors)) works in Phoenix mode only; fast mode has no CANrange class to read it.
+
 **Not modeled at all:** Phoenix Pro features (TorqueCurrentFOC requests, Motion Magic Expo, Dynamic Motion Magic,
 FOC commutation, fused or synced CANcoder behavior beyond the above), slots 1 and 2, limit switches, the
 Pigeon's pitch and roll, CANcoder quantization (1/4096 rotation), CANivore timing, device faults and brownout

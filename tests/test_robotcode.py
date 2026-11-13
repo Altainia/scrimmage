@@ -196,3 +196,8 @@ def test_install_lockstep_missing_folder_runs_nothing(tmp_path, monkeypatch):
     info = ProjectInfo(tmp_path, "robotpy", [], False, Path("/x/python"), "")
     r = run_fix("install_lockstep", info, lambda s: None)
     assert r.ok is False and "pip install" in r.message and "lockstep folder" in r.message
+
+
+def test_a_robotpy_project_with_libgrapplefrc_py_lists_the_laser_can(tmp_path):
+    (tmp_path / "pyproject.toml").write_text('[tool.robotpy]\nrequires = ["libgrapplefrc-py>=2026", "phoenix6"]\n')
+    assert robotcode._robotpy_vendors(tmp_path) == ["Grapple LaserCAN", "Phoenix 6"]
