@@ -1,6 +1,7 @@
 import hashlib
 import io
 import os
+import re
 import subprocess
 import sys
 import zipfile
@@ -317,3 +318,17 @@ def test_build_fastmode_publishes_the_library(tmp_path, monkeypatch):
         names = z.namelist()
     assert "scrimmage/sim/ScrimmageKraken.class" in names
     assert not any("ctre" in n.lower() or "phoenix" in n.lower() for n in names)
+
+
+def test_grapple_helper_constants_match_the_runtime():
+    """The Java helper's status values are the ones scrimmage writes (scrimmage/sensors/runtime.py), and its reaches
+    the checks file's LaserCAN reaches (the long one is a LaserCAN sensor's default max_range)."""
+    from scrimmage.sensors import runtime
+    from scrimmage.sensors.spec import DEVICE_MAX_RANGE
+    src = (Path(java_tools.__file__).parent / "java" / "agent" / "src" / "scrimmage" / "agent"
+           / "ScrimmageGrapple.java").read_text()
+    consts = {k: int(v) for k, v in re.findall(r"static final int (\w+) = (\d+);", src)}
+    assert consts["STATUS_VALID"] == runtime.LASERCAN_STATUS_VALID
+    assert consts["STATUS_NO_TARGET"] == runtime.LASERCAN_STATUS_NO_TARGET
+    assert consts["SHORT_REACH_MM"] == 1300
+    assert consts["LONG_REACH_MM"] == round(DEVICE_MAX_RANGE["LaserCAN"] * 1000) == 4000

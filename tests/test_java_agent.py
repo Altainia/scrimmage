@@ -481,3 +481,175 @@ public class Main {
     assert "REV helper failed" not in out and "unavailable" not in out, out
     assert "built SparkMaxSim 1 NEO" in out and "after NEO built=1" in out, out
     assert "built SparkMaxSim 2 NEO550" in out and "after NEO550 built=2" in out, out
+
+
+# Stand-in libgrapplefrc, shaped as 2026.0.0's: LaserCan's setters fail as the real ones do in simulation (a CAN
+# request that times out), and getMeasurement() has no frames to give. HAL keeps the callback for Main to run; a
+# SimInt input reads SimInt.VALUES["<device>.<name>"], else its initial value; a second SimDevice of one name is null.
+FAKE_GRAPPLE = {
+    "au/grapplerobotics/ConfigurationFailedException.java": """package au.grapplerobotics;
+public class ConfigurationFailedException extends Exception {
+  public ConfigurationFailedException(String m) { super(m); }
+}""",
+    "au/grapplerobotics/interfaces/LaserCanInterface.java": """package au.grapplerobotics.interfaces;
+import au.grapplerobotics.ConfigurationFailedException;
+public interface LaserCanInterface {
+  class RegionOfInterest {
+    public int x, y, w, h;
+    public RegionOfInterest(int x, int y, int w, int h) { this.x = x; this.y = y; this.w = w; this.h = h; }
+  }
+  class Measurement {
+    public int status, distance_mm, ambient, budget_ms;
+    public boolean is_long;
+    public RegionOfInterest roi;
+    public Measurement(int status, int distance_mm, int ambient, boolean is_long, int budget_ms, RegionOfInterest roi) {
+      this.status = status; this.distance_mm = distance_mm; this.ambient = ambient; this.is_long = is_long;
+      this.budget_ms = budget_ms; this.roi = roi;
+    }
+    public String toString() {
+      return "status=" + status + " mm=" + distance_mm + " long=" + is_long + " budget=" + budget_ms
+          + " roi=" + roi.x + "," + roi.y + "," + roi.w + "," + roi.h;
+    }
+  }
+  enum RangingMode { LONG, SHORT }
+  enum TimingBudget {
+    TIMING_BUDGET_20MS, TIMING_BUDGET_33MS, TIMING_BUDGET_50MS, TIMING_BUDGET_100MS;
+    public int asMilliseconds() { return new int[] {20, 33, 50, 100}[ordinal()]; }
+  }
+  Measurement getMeasurement();
+  void setRangingMode(RangingMode mode) throws ConfigurationFailedException;
+  void setTimingBudget(TimingBudget budget) throws ConfigurationFailedException;
+  void setRegionOfInterest(RegionOfInterest roi) throws ConfigurationFailedException;
+}""",
+    "au/grapplerobotics/LaserCan.java": """package au.grapplerobotics;
+import au.grapplerobotics.interfaces.LaserCanInterface;
+public class LaserCan implements LaserCanInterface {
+  public LaserCan(int can_id) { System.out.println("fake LaserCan " + can_id); }
+  public Measurement getMeasurement() { return null; }
+  public void setRangingMode(RangingMode mode) throws ConfigurationFailedException { timedOut(); }
+  public void setTimingBudget(TimingBudget budget) throws ConfigurationFailedException { timedOut(); }
+  public void setRegionOfInterest(RegionOfInterest roi) throws ConfigurationFailedException { timedOut(); }
+  void timedOut() throws ConfigurationFailedException { throw new ConfigurationFailedException("timed out"); }
+}""",
+    "edu/wpi/first/hal/SimDevice.java": """package edu.wpi.first.hal;
+public class SimDevice {
+  public enum Direction { kInput, kOutput }
+  static final java.util.Set<String> NAMES = new java.util.HashSet<>();
+  final String name;
+  SimDevice(String name) { this.name = name; }
+  public static SimDevice create(String name) { return NAMES.add(name) ? new SimDevice(name) : null; }
+  public SimInt createInt(String n, Direction d, int v) { return new SimInt(name + "." + n, v); }
+}""",
+    "edu/wpi/first/hal/SimInt.java": """package edu.wpi.first.hal;
+public class SimInt {
+  public static final java.util.Map<String, Integer> VALUES = new java.util.HashMap<>();
+  final String key;
+  final int initial;
+  SimInt(String key, int initial) { this.key = key; this.initial = initial; }
+  public int get() { return VALUES.getOrDefault(key, initial); }
+}""",
+    "edu/wpi/first/hal/HAL.java": """package edu.wpi.first.hal;
+public class HAL {
+  public static Runnable loop;
+  public static Object registerSimPeriodicBeforeCallback(Runnable r) { loop = r; return new Object(); }
+}""",
+    "Early.java": """public class Early {
+  static final au.grapplerobotics.LaserCan LASER = new au.grapplerobotics.LaserCan(9);  // a static initializer
+}""",
+    "Main.java": """import au.grapplerobotics.LaserCan;
+import au.grapplerobotics.interfaces.LaserCanInterface.*;
+import edu.wpi.first.hal.HAL;
+import edu.wpi.first.hal.SimInt;
+public class Main {
+  static void put(int id, int mm, int status) {
+    SimInt.VALUES.put("ScrimmageGrapple:LaserCAN[" + id + "].distance_mm", mm);
+    SimInt.VALUES.put("ScrimmageGrapple:LaserCAN[" + id + "].status", status);
+  }
+  static void config(String what, LaserCan c, Object arg) {
+    try {
+      if (arg instanceof RangingMode) c.setRangingMode((RangingMode) arg);
+      if (arg instanceof TimingBudget) c.setTimingBudget((TimingBudget) arg);
+      if (arg instanceof RegionOfInterest) c.setRegionOfInterest((RegionOfInterest) arg);
+      System.out.println(what + " ok");
+    } catch (Exception e) {
+      System.out.println(what + " threw " + e.getMessage());
+    }
+  }
+  public static void main(String[] a) throws Exception {
+    LaserCan seven = new LaserCan(7);
+    LaserCan eight = new LaserCan(8);
+    LaserCan twin = new LaserCan(7);
+    System.out.println("before loop: " + seven.getMeasurement());
+    HAL.loop.run();
+    SimInt.VALUES.put("ScrimmageGrapple:LaserCAN[7].distance_mm", 400);
+    HAL.loop.run();
+    System.out.println("one written: " + seven.getMeasurement());
+    put(7, 400, 0);
+    put(8, 2000, 0);
+    put(9, 4000, 2);
+    System.out.println("not yet read: " + seven.getMeasurement());
+    HAL.loop.run();
+    System.out.println("seven: " + seven.getMeasurement());
+    System.out.println("eight short: " + eight.getMeasurement());
+    System.out.println("nine: " + Early.LASER.getMeasurement());
+    HAL.loop.run();
+    System.out.println("nine after a loop: " + Early.LASER.getMeasurement());
+    System.out.println("twin: " + twin.getMeasurement());
+    config("long", eight, RangingMode.LONG);
+    config("budget", eight, TimingBudget.TIMING_BUDGET_50MS);
+    config("roi", eight, new RegionOfInterest(4, 4, 8, 8));
+    System.out.println("eight long: " + eight.getMeasurement());
+    put(8, 4200, 0);
+    HAL.loop.run();
+    System.out.println("eight past long: " + eight.getMeasurement());
+    config("short", eight, RangingMode.SHORT);
+    put(8, 1000, 0);
+    HAL.loop.run();
+    System.out.println("eight short again: " + eight.getMeasurement());
+  }
+}""",
+}
+LASERCAN_DEFAULTS = "long=false budget=33 roi=8,8,16,16"
+
+
+def test_grapple_helper_feeds_lasercans(tmp_path):
+    """Against stand-in Grapple and WPILib classes: each LaserCan (one made in a static initializer too) reads its own
+    device's values once scrimmage has written both and a robot loop has taken them; short ranging (the firmware's
+    default) turns a target past 1.3 m into no target at 1300 mm, long ranging reaches 4 m; the setters don't throw and
+    their values show in the Measurement; a second LaserCan with one id isn't fed."""
+    out = run_fake_rev(tmp_path, FAKE_GRAPPLE)
+    assert out.count("scrimmage grapple helper: loaded") == 1, out
+    assert "unavailable" not in out, out
+    assert out.index("fake LaserCan 7") < out.index("scrimmage grapple helper: loaded"), out
+    assert "before loop: null" in out and "one written: null" in out and "not yet read: null" in out, out
+    assert f"seven: status=0 mm=400 {LASERCAN_DEFAULTS}" in out, out
+    assert f"eight short: status=2 mm=1300 {LASERCAN_DEFAULTS}" in out, out
+    # LaserCAN 9's device appears on the first loop after its static initializer ran: fed from the next one
+    assert "nine: null" in out and f"nine after a loop: status=2 mm=1300 {LASERCAN_DEFAULTS}" in out, out
+    assert "LaserCAN 7 is not simulated: can't create its scrimmage device ScrimmageGrapple:LaserCAN[7]" in out, out
+    assert "twin: null" in out, out
+    assert "long ok" in out and "budget ok" in out and "roi ok" in out, out
+    assert "eight long: status=0 mm=2000 long=true budget=50 roi=4,4,8,8" in out, out
+    assert "eight past long: status=2 mm=4000 long=true" in out, out
+    assert "short ok" in out and "eight short again: status=0 mm=1000 long=false" in out, out
+
+
+def test_grapple_helper_unavailable_leaves_lasercan_alone(tmp_path):
+    """No WPILib HAL classes: one unavailable line naming what is missing, and every LaserCan keeps its original
+    behavior (its setters throw, getMeasurement() gives null)."""
+    files = {k: v for k, v in FAKE_GRAPPLE.items() if not k.startswith("edu/")}
+    files["Main.java"] = """import au.grapplerobotics.LaserCan;
+import au.grapplerobotics.interfaces.LaserCanInterface.RangingMode;
+public class Main {
+  public static void main(String[] a) throws Exception {
+    LaserCan one = new LaserCan(1);
+    new LaserCan(2);
+    try { one.setRangingMode(RangingMode.LONG); } catch (Exception e) { System.out.println("threw " + e.getMessage()); }
+    System.out.println("measurement=" + one.getMeasurement());
+  }
+}"""
+    out = run_fake_rev(tmp_path, files)
+    lines = re.findall(r"scrimmage grapple helper: .*", out)
+    assert lines == ["scrimmage grapple helper: unavailable: no class edu.wpi.first.hal.SimDevice"], out
+    assert "threw timed out" in out and "measurement=null" in out, out
+
