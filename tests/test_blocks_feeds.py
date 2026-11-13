@@ -160,7 +160,7 @@ def test_test_run_prints_each_stuck_piece(tmp_path, capsys, monkeypatch):
 
 def test_a_station_test_doesnt_count_the_floor_piece_ahead(tmp_path):
     """A test that feeds from a station counts the pieces the station fed, not a floor piece that lies ahead of the
-    start untouched (K6-R12 tracks the floor piece only in a hopper test that feeds from no station)."""
+    start untouched (in a station test the floor piece counts only once the robot touches it)."""
     field = station_file(tmp_path, (1.183, 4.0, 1.0), extra="stock = 1\n")     # choice: over the bin's middle
     with open(field, "a", encoding="utf-8") as f:
         f.write("\n[[floor_balls]]\nat = [[0.3, 4.3]]\n")   # choice: 0.9 m ahead of the start, 19 deg off its heading
@@ -170,6 +170,17 @@ def test_a_station_test_doesnt_count_the_floor_piece_ahead(tmp_path):
     assert r.passed and r.outcome == "1 of 1 made it in (100%)"
     assert [f["source"] for f in r.feeds] == ["feeder"]
 
+
+
+def test_a_station_test_counts_the_floor_piece_the_robot_touches(tmp_path):
+    """The same station test, with the robot driving into the floor piece ahead: once the robot has touched it, it
+    counts too, so a test that intakes from the floor and feeds from a station counts both."""
+    field = station_file(tmp_path, (1.183, 4.0, 1.0), extra="stock = 1\n")     # choice: over the bin's middle
+    with open(field, "a", encoding="utf-8") as f:
+        f.write("\n[[floor_balls]]\nat = [[0.15, 4.0]]\n")   # choice: 0.7 m straight ahead of the start
+    r = run(write(tmp_path, FEED_ONE + '\n[[block]]\ndo = "drive"\ndistance = 0.6\n', field))
+    assert sorted(f["source"] for f in r.feeds) == ["feeder", "floor"], r.feeds
+    assert r.counts["fed"] == 2, r.outcome
 
 def test_a_piece_on_the_standins_own_body_is_not_stuck(tmp_path):
     field = station_file(tmp_path, (1.523, 4.0, 1.0), extra="stock = 1\n")
