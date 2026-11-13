@@ -308,6 +308,8 @@ def sentence(rows: list[dict], hopper: bool = True) -> str:
     c = counts(rows)
     placed = c.get("placed", 0)
     parts = []
+    if placed and placed == c["fed"] and hopper:     # all placed: that is the success, not "0 of N made it in"
+        return i18n.tn("{count} placed {where}", "{count} placed {where}", placed, where=_placed_words(rows))
     if placed and not hopper:
         parts.append(i18n.t("{placed} of {fed} placed {where}", placed=placed, fed=c["fed"], where=_placed_words(rows)))
         if c["in"]:

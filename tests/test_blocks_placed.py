@@ -341,7 +341,7 @@ def test_with_a_hopper_too_the_placed_pieces_follow_the_ones_in(tmp_path):
     (tmp_path / "grab.toml").write_text(PEG_RANGE, encoding="utf-8")
     r = TestRun(world_for(load(path)), load(path)).run()
     assert r.status == "finished", r.outcome
-    assert r.outcome == "0 of 1 made it in (0%); 1 placed on peg"
+    assert r.outcome == "1 placed on peg"       # every piece placed: that is the success, so no "made it in" fraction
 
 
 def test_a_piece_on_an_element_no_condition_names_is_missed(tmp_path):

@@ -317,6 +317,14 @@ def test_a_timed_out_made_it_in_wait_reads_naturally(tmp_path):
     assert r.outcome.startswith("waiting for at least 80% to have made it in timed out at "), r.outcome
 
 
+def test_a_run_whose_pieces_were_all_placed_says_where():
+    on = [{"outcome": "placed", "why": "branch_l2"}]
+    assert sentence(on) == "1 placed on branch_l2" and sentence(on * 2) == "2 placed on branch_l2"
+    # a mixed run keeps the fraction; with no hopper the older wording stays
+    assert sentence(on + rows(1, 0, 0, 0)) == "1 of 2 made it in (50%); 1 placed on branch_l2"
+    assert sentence(on, hopper=False) == "1 of 1 placed on branch_l2"
+
+
 def rows(n_in, stuck, bounced, moving, floor=0):
     out = [{"outcome": "in", "why": ""}] * n_in + [{"outcome": "stuck", "why": ""}] * stuck
     out += [{"outcome": "missed", "why": "bounced out"}] * bounced
