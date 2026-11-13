@@ -664,7 +664,7 @@ estimates until someone measures them, and a soft kind needs both:
     rule, not a fit when the world is built. Its damping scale is a table over stiffness, fitted once so that 0.3
     comes back as 0.3 at 1000, 2000, 6000 and 20000 N/m. Dropped from 1 m, the ring lands within 10 % of the asked
     restitution from 0.27 to 0.45 at every stiffness. Outside that, `range check` warns that the simulated bounce may
-    be off by more. The weakest stretch is between table rows, near 11000 N/m. The error in percent:
+    be off by more. The weakest stretch is between table rows, near 12000 N/m (−9.6 % at 0.45). The error in percent:
 
     | stiffness, N/m | 0.25 | 0.27 | 0.3 | 0.35 | 0.45 | 0.5 | 0.55 |
     |---|---|---|---|---|---|---|---|
@@ -672,7 +672,7 @@ estimates until someone measures them, and a soft kind needs both:
     | 2000 | +5.2 | +2.8 | 0.0 | −3.1 | −6.0 | −6.6 | −7.7 |
     | 6000 | +6.8 | +3.7 | 0.0 | −3.3 | −7.5 | −8.5 | −10.3 |
     | 12000 | | +1.8 | | −5.4 | −9.6 | | |
-    | 20000 | +12.6 | +7.2 | 0.0 | −2.7 | −7.8 | −10.5 | −9.9 |
+    | 20000 | +12.6 | +7.2 | 0.0 | −2.7 | −7.8 | −10.5 | −10.0 |
 
   A ball or a disc is refused all three keys: its stiffness and bounce are its preset's.
 

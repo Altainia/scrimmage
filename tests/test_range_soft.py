@@ -199,7 +199,8 @@ def test_the_ring_is_stable_at_both_ends_of_its_range(stiffness):
     assert r["finite"]
     # choice: measured 19.3 mm at 1000 N/m (18.8 after K6-R6's refit); was 40 mm, more than the tube
     assert r["deepest"] < 0.021, r
-    assert r["energy_gain"] <= 1.001, r     # K6-P4
+    # choice: K6-P4: a drop never adds energy; 0.1 % is the integrator's rounding
+    assert r["energy_gain"] <= 1.001, r
     assert r["settle_s"] < 1.0, r
 
 

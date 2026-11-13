@@ -4,7 +4,7 @@ the shipped table. Refit after a change to the ring or its contact, and paste th
 
     PYTHONPATH=<repo> .venv/bin/python tests/fit_soft_damping.py
 
-tests/test_range_soft.py::test_the_shipped_damping_scales_are_the_fit reruns it (slow, opt-in).
+tests/test_range_soft.py::test_the_shipped_damping_scales_are_the_fit reruns it with the suite (about 16 s).
 """
 
 from __future__ import annotations
