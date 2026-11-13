@@ -362,3 +362,12 @@ def test_a_python_robot_gets_no_console_file(tmp_path):
         p.close()
     asyncio.run(main())
     assert [l.text for l in p.since(0)] == ["None"]
+
+
+def test_grapple_state_comes_from_the_lasercan_helpers_unavailable_line():
+    from scrimmage.robot_process import RobotProcess
+    r = RobotProcess(["true"], ".")
+    r._add(b"scrimmage grapple helper: loaded")
+    assert r.grapple_state is None and r.agent_state() == "missing", "the LaserCAN helper isn't the REV agent"
+    r._add(b"scrimmage grapple helper: unavailable: no libgrapplefrc.LaserCAN")
+    assert r.grapple_state == "unavailable: no libgrapplefrc.LaserCAN" and r.rev_state is None

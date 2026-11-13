@@ -24,7 +24,8 @@ ASM_SHA256 = "ed825d10ab1399c8c0cb669e688cf0c8c82629b4c8399b58352b68e92ca10fcb"
 # Bumped whenever the agent's behavior changes, so a jar built by an older scrimmage is rebuilt.
 # 2: the REV SPARK helper (ScrimmageRev).
 # 3: Phoenix classes are never modified (CTRE license); robot code's calls to their sim setters are rewritten instead.
-AGENT_VERSION = 3
+# 4: the Grapple LaserCAN helper (ScrimmageGrapple).
+AGENT_VERSION = 4
 # The fast-mode library (scrimmage/java/fastmode), published to a file Maven repository a vendordep points at.
 FASTMODE_VERSION = "0.3.1"
 FASTMODE_GROUP = "io.github.altainia.scrimmage"

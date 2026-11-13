@@ -48,10 +48,11 @@ import numpy as np
 
 from .. import i18n
 from ..bindings import Update
-from ..checks import Said
+from ..checks import Said, worded
 from ..protocol import HalState
 from .colors import nearest_color
-from .spec import COLOR_MAX_RANGE, I2C_PORTS, SensorError, SensorSpec, color_device
+from .spec import (COLOR_MAX_RANGE, I2C_PORTS, LASERCAN_DEVICE, LASERCAN_TYPE, SensorError, SensorSpec, color_device,
+                   device_key)
 
 END_SLOP = 0.001    # m: a beam reaches this far past each end, so a piece resting exactly on an end reads broken on
                     # every step (a resting piece settles by far less than this) and never flickers
@@ -64,7 +65,53 @@ MAX_CASTS = 32      # a sensor's most casts in one step (robot surfaces in the w
 # getColor() divides each by their sum, so it reads the piece's color whatever the scale.
 FULL_SCALE = 2047
 MAX_VOLTS = 5.0     # an AnalogInput reads 0 to 5 V
+# A LaserCAN's status: libgrapplefrc's LaserCanInterface status constants. The firmware passes the ST VL53L1X range
+# status through unchanged (GrappleRobotics/LaserCAN lasercan-firmware/src/main.rs line 80); 2 is signal fail (no
+# target), not seen on hardware. The robot-side helpers (sensors/grapple.py, the Java agent) mirror these.
+LASERCAN_STATUS_VALID = 0
+LASERCAN_STATUS_NO_TARGET = 2
+CAN_SUPPLY_VOLTS = 12.0     # a CANrange's supplyVoltage: the battery, as the simulated robot's is nominal
 PORT_WORDS = {"onboard": "onboard", "mxp": "MXP"}
+
+
+def _missing_device_words(name: str, device: str, device_id: int, after: float, made: list[int],
+                          language: str | None, grapple: str | None):
+    """missing_devices' warning about one CANrange or LaserCAN, built in the Language setting each time it is called
+    (worded() calls it once in English for the machine text). `made`: the ids of the LaserCANs the robot program did
+    create; `language`: "java" / "python" / None, per the robot program command; `grapple`: the LaserCAN helper's
+    "unavailable: <reason>" from the console, or None."""
+    p = dict(sensor_table="[[sensor]]", name=name, device=device, device_id=device_id, after=f"{after:g}")
+    if device == "CANrange":
+        return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but the robot program hasn\'t created it '
+                      "{after} s after connecting; check the id the robot code gives {device} and the sensor's "
+                      "{key}", key="ctre", **p)
+    if made:        # the helper is driving other LaserCANs: the id is wrong
+        return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but the robot program created {made} and '
+                      "no {device} {device_id}; check the id the robot code gives {device} and the sensor's {key}",
+                      key="grapple", made=", ".join(f"{device} {i}" for i in made), **p)
+    if grapple is not None and grapple.startswith("unavailable"):
+        return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but scrimmage\'s {device} helper is '
+                      "unavailable in the robot program ({reason}), so no {device} is fed",
+                      reason=grapple.removeprefix("unavailable:").strip(), **p)
+    fix = dict(java_path="scrimmage java path", java_build="scrimmage java build",
+               lockstep_flag="--scrimmage-lockstep", command_key="[robot_program] command",
+               lockstep_package="scrimmage-lockstep", pip_install="pip install ./lockstep")
+    if language == "java":
+        return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but the robot program hasn\'t created it '
+                      "{after} s after connecting; check that the robot code creates {device} {device_id}. If it "
+                      "does, scrimmage's Java agent isn't loaded or is out of date: run the robot program through "
+                      "scrimmage (its Gradle init script loads the agent; see {java_path}), after {java_build}",
+                      **fix, **p)
+    if language == "python":
+        return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but the robot program hasn\'t created it '
+                      "{after} s after connecting; check that the robot code creates {device} {device_id} (in "
+                      "robotInit or a constructor). If it does, scrimmage's {device} helper isn't loaded: add "
+                      "{lockstep_flag} to {command_key}, or update {lockstep_package} ({pip_install})", **fix, **p)
+    return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but the robot program hasn\'t created it {after} '
+                  "s after connecting; check that the robot code creates {device} {device_id}. If it does, "
+                  "scrimmage's {device} helper isn't loaded: a Java robot runs through scrimmage (see {java_path}) "
+                  "after {java_build}; a RobotPy robot adds {lockstep_flag} to {command_key} and installs "
+                  "{lockstep_package} ({pip_install})", **fix, **p)
 
 
 def _missing_color_words(name: str, port: str, after: float, other: str | None):
@@ -264,7 +311,8 @@ class SensorRuntime:
     def sensor_updates(self) -> list[Update]:
         """The HAL inputs for the robot program: a DigitalInput per `dio` (on, inverted when active-low: a beam broken
         or a distance closer than its threshold), an AnalogInput per `analog` (volts_per_m times the distance, 0 to
-        5 V) and a REV Color Sensor V3's SimDevice per `i2c` (color_values)."""
+        5 V), a REV Color Sensor V3's SimDevice per `i2c` (color_values), and a CANrange's or LaserCAN's per `ctre` or
+        `grapple` (the distance, with a miss reading max_range)."""
         ups: list[Update] = []
         for s in self._rays:        # a camera gives the robot program nothing (spec D7)
             got = self._readings[s.name]
@@ -274,11 +322,38 @@ class SensorRuntime:
                 ups.append(("DIO", str(s.dio), {"<>value": (not got.on) if s.active_low else got.on}))
             if s.i2c is not None:
                 ups.append((*color_device(s.i2c), {f">{k}": v for k, v in color_values(got).items()}))
+            if s.device == "CANrange":
+                ups.append((*device_key(s), {">distance": got.distance, ">supplyVoltage": CAN_SUPPLY_VOLTS}))
+            elif s.device == "LaserCAN":    # raw: the robot-side helper applies the short-mode cap (Tasks 4 and 5)
+                seen = got.distance < s.length
+                ups.append((*device_key(s), {">distance_mm": round(got.distance * 1000),
+                                             ">status": LASERCAN_STATUS_VALID if seen else LASERCAN_STATUS_NO_TARGET}))
         return ups
 
     def color_sensors(self) -> dict[tuple[str, str], SensorSpec]:
         """The color sensors the robot program reads, by their SimDevice's (type, device)."""
         return {color_device(s.i2c): s for s in self.specs if s.i2c is not None}
+
+    def missing_devices(self, hal: HalState, after: float, language: str | None = None,
+                        grapple: str | None = None) -> list[str]:
+        """What to say, `after` s from connecting (time for the robot to create its devices), about each CANrange or
+        LaserCAN the robot program hasn't created (put in the world's warnings too, once, so run reports show it).
+        For a LaserCAN it says what to do: the ids of the LaserCANs the robot did create (a wrong id), else the
+        helper's unavailable reason (`grapple`, from the console), else how to load the helper for `language`
+        ("java" / "python" / None for both)."""
+        made = sorted(int(m["id"]) for typ, dev in hal.devices
+                      if typ == LASERCAN_TYPE and (m := LASERCAN_DEVICE.fullmatch(dev)))
+        out = []
+        for s in self.specs:
+            key = device_key(s)
+            if key is None or key in hal.devices:
+                continue
+            p = (s.name, s.device, s.device_id, after, made, language, grapple)
+            msg = worded(lambda p=p: _missing_device_words(*p))
+            out.append(msg)
+            if msg not in self.world.warnings:
+                self.world.warnings.append(msg)
+        return out
 
     def missing_color_sensors(self, hal: HalState, after: float) -> list[str]:
         """What to say, `after` s from connecting (time for the robot to create its devices), about each color sensor

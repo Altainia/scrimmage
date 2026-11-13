@@ -1,4 +1,5 @@
-# tests/java_probe under scrimmage: the kitbot world, with Phoenix devices bound to the left wheel joint.
+# tests/java_probe under scrimmage: the kitbot world, with Phoenix devices bound to the left wheel joint, and the
+# probe's CANranges and LaserCANs looking ahead (this world has no pieces: they read their max_range).
 [model]
 mjcf = "../models/kitbot.xml"
 [robot]
@@ -30,3 +31,31 @@ joint = "left_center"
 [[gyro]]
 ctre = "Pigeon2:3"
 body = "chassis"
+[[sensor]]
+name = "cr5"
+kind = "distance"
+body = "chassis"
+at = [0.41, 0.45, 0.03]
+toward = [1, 0, 0]
+ctre = "CANrange:5"
+[[sensor]]
+name = "lc7"
+kind = "distance"
+body = "chassis"
+at = [0.41, 0.15, 0.03]
+toward = [1, 0, 0]
+grapple = "LaserCAN:7"
+[[sensor]]
+name = "cr8"
+kind = "distance"
+body = "chassis"
+at = [0.41, -0.15, 0.03]
+toward = [1, 0, 0]
+ctre = "CANrange:8"
+[[sensor]]
+name = "lc9"
+kind = "distance"
+body = "chassis"
+at = [0.41, -0.45, 0.03]
+toward = [1, 0, 0]
+grapple = "LaserCAN:9"

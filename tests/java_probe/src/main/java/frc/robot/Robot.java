@@ -1,11 +1,17 @@
 package frc.robot;
 
+// libgrapplefrc (vendordeps/libgrapplefrc2026.json) is Grapple Robotics' software under the Grapple Modified MIT
+// License; its copyright and permission notice is vendordeps/libgrapplefrc-LICENSE.txt.
+import au.grapplerobotics.ConfigurationFailedException;
+import au.grapplerobotics.LaserCan;
+import au.grapplerobotics.interfaces.LaserCanInterface;
 import com.ctre.phoenix6.StatusCode;
 import com.ctre.phoenix6.configs.CANcoderConfiguration;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.DutyCycleOut;
 import com.ctre.phoenix6.controls.MotionMagicVoltage;
 import com.ctre.phoenix6.hardware.CANcoder;
+import com.ctre.phoenix6.hardware.CANrange;
 import com.ctre.phoenix6.hardware.Pigeon2;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.InvertedValue;
@@ -18,12 +24,18 @@ import java.util.function.Supplier;
  *  "read"  - print positions each loop (default)
  *  "write" - also write sim state every loop, like a robot-side sim model
  *  "mm"    - TalonFX 1 runs Motion Magic to 20 rotations when enabled; prints every 100 ms of robot time
- *  "match" - in teleop, prints the game data and alliance once, and again when the game data changes */
+ *  "match" - in teleop, prints the game data and alliance once, and again when the game data changes
+ *  "range" - prints the CANranges' and LaserCANs' readings every 100 ms of robot time; LaserCAN 9 starts in long
+ *            ranging and switches to short when the robot is enabled */
 public class Robot extends TimedRobot {
   private final TalonFX motor = new TalonFX(1);
   private final TalonFX inverted = new TalonFX(4);
   private final CANcoder cancoder = new CANcoder(2);
   private final Pigeon2 pigeon = new Pigeon2(3);
+  private final CANrange range5 = new CANrange(5);
+  private final CANrange range8 = new CANrange(8);
+  private final LaserCan laser7 = new LaserCan(7);
+  private static final LaserCan LASER9 = new LaserCan(9);   // made in a static initializer, before the robot
   private final String mode = System.getenv().getOrDefault("PROBE_MODE", "read");
   private int loops = 0;
   private String gameData = null;   // "match": the game data last printed
@@ -47,6 +59,40 @@ public class Robot extends TimedRobot {
       mm.Slot0.kP = 2;
       mm.Slot0.kI = 0.5;
       apply("mm", () -> motor.getConfigurator().apply(mm));
+    }
+    if (mode.equals("range")) {
+      rangingMode(LASER9, LaserCanInterface.RangingMode.LONG);
+    }
+  }
+
+  /** Grapple's idiom: set the ranging mode, catching the failure. Prints "cfg lasercan <mode> ok" or the failure. */
+  private static void rangingMode(LaserCan laser, LaserCanInterface.RangingMode m) {
+    try {
+      laser.setRangingMode(m);
+      System.out.printf("cfg lasercan %s ok%n", m);
+    } catch (ConfigurationFailedException e) {
+      System.out.printf("cfg lasercan %s failed: %s%n", m, e.getMessage());
+    }
+  }
+
+  private static String reading(LaserCan laser) {
+    LaserCan.Measurement m = laser.getMeasurement();
+    return m == null ? "null" : m.status + "," + m.distance_mm + "," + (m.is_long ? "long" : "short");
+  }
+
+  private void rangePeriodic() {
+    if (++loops % 5 == 0) {   // every 100 ms of robot time
+      System.out.printf("range cr5=%.4f,%s cr8=%.4f,%s lc7=%s lc9=%s loop=%d%n",
+          range5.getDistance().getValueAsDouble(), range5.getIsDetected().getValue(),
+          range8.getDistance().getValueAsDouble(), range8.getIsDetected().getValue(),
+          reading(laser7), reading(LASER9), loops);
+    }
+  }
+
+  @Override
+  public void teleopInit() {
+    if (mode.equals("range")) {
+      rangingMode(LASER9, LaserCanInterface.RangingMode.SHORT);
     }
   }
 
@@ -94,6 +140,10 @@ public class Robot extends TimedRobot {
     }
     if (mode.equals("mm")) {
       motionMagicPeriodic();
+      return;
+    }
+    if (mode.equals("range")) {
+      rangePeriodic();
       return;
     }
     if (mode.equals("write")) {

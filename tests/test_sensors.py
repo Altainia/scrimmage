@@ -17,7 +17,8 @@ from scrimmage.protocol import HalState  # noqa: E402
 from scrimmage.sensors.colors import NAMED_COLORS, nearest_color  # noqa: E402
 from scrimmage.sensors import runtime  # noqa: E402
 from scrimmage.sensors.runtime import SensorRuntime, color_values  # noqa: E402
-from scrimmage.sensors.spec import SensorError, parse_sensors  # noqa: E402
+from scrimmage.sensors.spec import (CANRANGE_THRESHOLD, DEVICE_MAX_RANGE, SensorError, device_key,  # noqa: E402
+                                    parse_sensors)
 from scrimmage.testrange.build import BALL_BITS  # noqa: E402
 from scrimmage.testrange.pieces import ball_kind, piece_color  # noqa: E402
 from scrimmage.world import World  # noqa: E402
@@ -405,6 +406,84 @@ def test_two_sensors_with_one_name():
     t = {"name": "x", "kind": "beam", "body": "a.b", "from": [0, 0, 0], "to": [1, 0, 0]}
     with pytest.raises(SensorError, match='two sensors named "x"'):
         parse_sensors([t, dict(t)])
+
+
+def dist_table(**kw) -> dict:
+    return {"name": "d", "kind": "distance", "body": "a.b", "at": [0, 0, 0], "toward": [1, 0, 0], **kw}
+
+
+def test_ctre_canrange_key():
+    s, = parse_sensors([dist_table(ctre="CANrange:5")])
+    assert s.device == "CANrange" and s.device_id == 5 and s.length == DEVICE_MAX_RANGE["CANrange"]
+    assert device_key(s) == ("CAN", "CANrange (v6)[5]")
+
+
+def test_grapple_lasercan_key():
+    s, = parse_sensors([dist_table(grapple="LaserCAN:7")])
+    assert s.device == "LaserCAN" and s.device_id == 7 and s.length == DEVICE_MAX_RANGE["LaserCAN"]
+    assert device_key(s) == ("ScrimmageGrapple", "LaserCAN[7]")
+
+
+def test_device_key_with_analog():
+    s, = parse_sensors([dist_table(ctre="CANrange:5", analog=0)])
+    assert s.device_id == 5 and s.analog == 0
+    assert device_key(parse_sensors([dist_table(analog=0)])[0]) is None
+
+
+def test_explicit_max_range_wins():
+    s, = parse_sensors([dist_table(ctre="CANrange:5", max_range=1.0)])
+    assert s.length == 1.0
+
+
+@pytest.mark.parametrize("extra, words", [
+    ({"ctre": "TalonFX:5"}, 'ctre = "TalonFX:5"'),
+    ({"ctre": "CANrange:63"}, "CANrange:<id>"),
+    ({"ctre": "CANrange:x"}, "CANrange:<id>"),
+    ({"ctre": 5}, "CANrange:<id>"),
+    ({"ctre": "CANrange:\u00b2"}, "CANrange:<id>"),
+    ({"grapple": "LaserCan:7"}, 'grapple = "LaserCan:7"'),
+    ({"grapple": "LaserCAN:-1"}, "LaserCAN:<id>"),
+    ({"ctre": "CANrange:5", "grapple": "LaserCAN:7"}, "only one"),
+])
+def test_bad_device_keys(extra, words):
+    with pytest.raises(SensorError) as e:
+        parse_sensors([dist_table(**extra)])
+    assert "[[sensor]] \"d\"" in str(e.value) and words in str(e.value)
+
+
+def test_device_id_boundaries():
+    a, b = parse_sensors([dist_table(ctre="CANrange:0"), {**dist_table(grapple="LaserCAN:62"), "name": "e"}])
+    assert a.device_id == 0 and b.device_id == 62
+
+
+def test_device_key_on_other_kind():
+    t = {"name": "x", "kind": "beam", "body": "a.b", "from": [0, 0, 0], "to": [1, 0, 0], "ctre": "CANrange:5"}
+    with pytest.raises(SensorError, match="unknown key 'ctre' for a beam sensor"):
+        parse_sensors([t])
+
+
+def test_pwf_not_supported_yet():
+    with pytest.raises(SensorError) as e:
+        parse_sensors([dist_table(pwf="TimeOfFlight:6")])
+    assert "CAN sensor" in str(e.value) and "can't feed it yet" in str(e.value) and "analog stand-in" in str(e.value)
+
+
+def test_canrange_default_threshold_is_phoenix_default():
+    s, = parse_sensors([dist_table(ctre="CANrange:5")])
+    assert CANRANGE_THRESHOLD == 0.4 and s.threshold == CANRANGE_THRESHOLD     # not half of max_range (1.5 m)
+    assert parse_sensors([dist_table(ctre="CANrange:5", threshold=0.25)])[0].threshold == 0.25   # explicit wins
+    assert parse_sensors([dist_table(ctre="CANrange:5", max_range=0.3)])[0].threshold == 0.3     # capped at max_range
+    assert parse_sensors([dist_table(grapple="LaserCAN:7")])[0].threshold == DEVICE_MAX_RANGE["LaserCAN"] / 2
+    assert parse_sensors([dist_table()])[0].threshold == 1.0
+
+
+def test_same_device_twice():
+    a, b = dist_table(ctre="CANrange:5"), {**dist_table(ctre="CANrange:5"), "name": "e"}
+    with pytest.raises(SensorError) as e:
+        parse_sensors([a, b])
+    assert '"d"' in str(e.value) and '"e"' in str(e.value) and "CANrange 5" in str(e.value)
+    parse_sensors([a, {**b, "ctre": "CANrange:6"}])                     # another id is fine
+    parse_sensors([a, {**dist_table(grapple="LaserCAN:5"), "name": "e"}])   # another device kind is fine
 
 
 def test_defaults_and_inches():

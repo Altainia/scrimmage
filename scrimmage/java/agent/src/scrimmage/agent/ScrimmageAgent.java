@@ -25,6 +25,10 @@ import org.objectweb.asm.Type;
  * <p>REV: every SPARK the robot creates is handed to {@link ScrimmageRev} (a hook at the end of SparkBase's
  * constructor), which drives REV's SparkSim with scrimmage's physics; SparkSim.iterate called from anywhere else
  * is a counted no-op, and REV's simulated sensor noise is seeded with 0 so runs repeat.
+ *
+ * <p>Grapple: every LaserCan the robot creates is handed to {@link ScrimmageGrapple} (a hook at the end of its
+ * constructor, with its CAN id); its getMeasurement() returns the helper's Measurement once scrimmage has written one,
+ * and its ranging mode, timing budget and region-of-interest setters are recorded by the helper first.
  */
 public final class ScrimmageAgent implements ClassFileTransformer {
   private static final String PKG = "com/ctre/phoenix6/sim/";
@@ -42,6 +46,9 @@ public final class ScrimmageAgent implements ClassFileTransformer {
   private static final String SPARK_BASE = "com/revrobotics/spark/SparkBase";
   private static final String SPARK_SIM = "com/revrobotics/spark/SparkSim";
   private static final String NOISE = "com/revrobotics/sim/NoiseGenerator";
+  private static final String LASER_CAN = "au/grapplerobotics/LaserCan";
+  private static final String LCI = "au/grapplerobotics/interfaces/LaserCanInterface$";
+  private static final String GRAPPLE = "scrimmage/agent/ScrimmageGrapple";
 
   static final Map<String, AtomicLong> COUNTS = new ConcurrentHashMap<>();
   static final Map<String, String> FIRST_CALLER = new ConcurrentHashMap<>();
@@ -154,6 +161,7 @@ public final class ScrimmageAgent implements ClassFileTransformer {
       return patchRev(bytes, (n, desc) -> n.equals("iterate") && desc.equals("(DDD)V") ? Hook.GUARD_ITERATE : null);
     }
     if (name.equals(NOISE)) return patchRev(bytes, (n, desc) -> n.equals("<clinit>") ? Hook.SEED_NOISE : null);
+    if (name.equals(LASER_CAN)) return patchGrapple(bytes);
     for (String prefix : UNTOUCHED) {
       if (name.startsWith(prefix)) return null;
     }
@@ -290,6 +298,85 @@ public final class ScrimmageAgent implements ClassFileTransformer {
                 super.visitInsn(Opcodes.LCONST_0);
                 super.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/util/Random", "<init>", "(J)V", false);
                 super.visitFieldInsn(Opcodes.PUTSTATIC, NOISE, "m_rand", "Ljava/util/Random;");
+              }
+              super.visitInsn(op);
+            }
+          };
+        }
+      }, 0);
+      return cw.toByteArray();
+    } catch (Throwable t) {
+      t.printStackTrace();
+      return null;
+    }
+  }
+
+  /** The helper method (in ScrimmageGrapple) a LaserCan setter's entry calls with (this, its argument), or null. */
+  private static String grappleSetter(String n, String desc) {
+    if (n.equals("setRangingMode") && desc.equals("(L" + LCI + "RangingMode;)V")) return "rangingMode";
+    if (n.equals("setTimingBudget") && desc.equals("(L" + LCI + "TimingBudget;)V")) return "timingBudget";
+    if (n.equals("setRegionOfInterest") && desc.equals("(L" + LCI + "RegionOfInterest;)V")) return "regionOfInterest";
+    return null;
+  }
+
+  /** Patch Grapple's LaserCan: register each new one (with the id its constructor got), answer getMeasurement() from
+   * the helper when it has a Measurement, and let the helper take the config setters first.
+   *
+   * Frames: the code put before a hooked method's own first instruction ends with an F_SAME frame at that instruction
+   * (COMPUTE_MAXS computes none). That assumes the original first instruction is not a branch target, which would
+   * already carry a StackMapTable frame there (two frames at one offset fail verification). In libgrapplefrc 2026.0.0
+   * none is: getMeasurement and setRegionOfInterest have no frames, setRangingMode's first is at offset 12 and
+   * setTimingBudget's at 40 (javap -v). A later release that loops back to offset 0 would need COMPUTE_FRAMES. */
+  private static byte[] patchGrapple(byte[] bytes) {
+    try {
+      ClassReader cr = new ClassReader(bytes);
+      ClassWriter cw = new ClassWriter(cr, ClassWriter.COMPUTE_MAXS);
+      cr.accept(new ClassVisitor(Opcodes.ASM9, cw) {
+        @Override
+        public MethodVisitor visitMethod(int acc, String n, String desc, String sig, String[] ex) {
+          MethodVisitor mv = super.visitMethod(acc, n, desc, sig, ex);
+          if ((acc & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) return mv;
+          boolean init = n.equals("<init>") && desc.equals("(I)V");
+          boolean measure = n.equals("getMeasurement") && desc.equals("()L" + LCI + "Measurement;");
+          String setter = grappleSetter(n, desc);
+          if (!init && !measure && setter == null) return mv;
+          return new MethodVisitor(Opcodes.ASM9, mv) {
+            @Override
+            public void visitCode() {
+              super.visitCode();
+              if (init) return;
+              org.objectweb.asm.Label original = new org.objectweb.asm.Label();
+              super.visitVarInsn(Opcodes.ALOAD, 0);
+              if (measure) {
+                // Object m = ScrimmageGrapple.measurement(this); if (m != null) return (Measurement) m;
+                super.visitMethodInsn(Opcodes.INVOKESTATIC, GRAPPLE, "measurement",
+                    "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                super.visitInsn(Opcodes.DUP);
+                super.visitJumpInsn(Opcodes.IFNULL, original);
+                super.visitTypeInsn(Opcodes.CHECKCAST, LCI + "Measurement");
+                super.visitInsn(Opcodes.ARETURN);
+                super.visitLabel(original);
+                // the entry frame with the null on the stack, then the entry frame (COMPUTE_MAXS computes none)
+                super.visitFrame(Opcodes.F_SAME1, 0, null, 1, new Object[] {"java/lang/Object"});
+                super.visitInsn(Opcodes.POP);
+              } else {
+                // if (ScrimmageGrapple.<setter>(this, arg)) return;  (recorded; the CAN request would time out)
+                super.visitVarInsn(Opcodes.ALOAD, 1);
+                super.visitMethodInsn(Opcodes.INVOKESTATIC, GRAPPLE, setter,
+                    "(Ljava/lang/Object;Ljava/lang/Object;)Z", false);
+                super.visitJumpInsn(Opcodes.IFEQ, original);
+                super.visitInsn(Opcodes.RETURN);
+                super.visitLabel(original);
+              }
+              super.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
+            }
+
+            @Override
+            public void visitInsn(int op) {
+              if (op == Opcodes.RETURN && init) {
+                super.visitVarInsn(Opcodes.ALOAD, 0);
+                super.visitVarInsn(Opcodes.ILOAD, 1);
+                super.visitMethodInsn(Opcodes.INVOKESTATIC, GRAPPLE, "register", "(Ljava/lang/Object;I)V", false);
               }
               super.visitInsn(op);
             }

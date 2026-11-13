@@ -15,9 +15,10 @@ balls, discs and rigid pieces alike, and never the robot's own parts. The color 
 Java's color sensor hasn't been run yet: [Estimated or not yet checked](#estimated-or-not-yet-checked) lists both.
 
 `examples/blocks/beam` is a worked example: an intake that stops when its beam break sees a ball in the bin.
+`examples/blocks/canrange` is the same intake with a CTRE CANrange in the bin.
 
 Contents: [Adding a sensor](#adding-a-sensor), [The keys](#the-keys), [What the readings are](#what-the-readings-are),
-[A camera](#a-camera), [Piece colors](#piece-colors), [Robot code](#robot-code),
+[CAN distance sensors](#can-distance-sensors), [A camera](#a-camera), [Piece colors](#piece-colors), [Robot code](#robot-code),
 [Vision in robot code](#vision-in-robot-code), [In the Test tab](#in-the-test-tab),
 [In scenarios and MCP](#in-scenarios-and-mcp), [Estimated or not yet checked](#estimated-or-not-yet-checked),
 [What isn't simulated](#what-isnt-simulated), [Errors](#errors).
@@ -96,9 +97,12 @@ A distance sensor (`kind = "distance"`):
 | `sees` | `"pieces"` | `"pieces"`: game pieces only. `"anything"`: the first thing it hits that isn't the robot (a piece, a wall, the carpet) |
 | `analog` | none | an analog input channel: the robot code reads it as an `AnalogInput`, `volts_per_m` volts per meter of distance |
 | `volts_per_m` | 0.977 | volts per meter on the `analog` input (an estimate: a MaxBotix MB1013 ultrasonic sensor's 5 V over 5.12 m). The voltage stops at 5 V. It goes with `analog` |
+| `ctre` | none | `"CANrange:<id>"` (id 0 to 62): the sensor is also a CTRE CANrange the robot code reads. One device key per sensor, alone or beside `analog` and `dio`. `max_range` then defaults to 3.0 m. [CAN distance sensors](#can-distance-sensors) |
+| `grapple` | none | `"LaserCAN:<id>"` (id 0 to 62): the sensor is also a Grapple LaserCAN. One device key per sensor, alone or beside `analog` and `dio`. `max_range` then defaults to 4.0 m. [CAN distance sensors](#can-distance-sensors) |
+| `pwf` | none | not supported yet: it is an error (the Playing With Fusion Time of Flight is a CAN sensor scrimmage can't feed yet). In simulation, use an `analog` stand-in sensor |
 | `dio` | none | a DIO channel that switches at `threshold`, like an IR proximity switch: on while something is closer than `threshold` |
 | `active_low` | `true` | `true`: the `dio` reads `false` while it is on. It goes with `dio` |
-| `threshold` (or `threshold_in`) | half of `max_range` | the distance (m, or inches) it is on closer than: for its `dio`, and for the Test tab's **is on**. It can't be past `max_range` |
+| `threshold` (or `threshold_in`) | half of `max_range`; for a CANrange, 0.4 m (Phoenix's default) | the distance (m, or inches) it is on closer than: for its `dio`, and for the Test tab's **is on**. It can't be past `max_range` |
 
 A color sensor (`kind = "color"`):
 
@@ -174,6 +178,119 @@ proximity reading for how close it is.
 each count by the sum of the three, so it reads the same whatever the scale: the red piece above reads (0.818, 0.091,
 0.091). `ColorMatch` works on `getColor()`, so it works unchanged. Robot code that compares `getRawColor()` or
 `getIR()` with fixed numbers from a real sensor needs its own numbers here; compare `getColor()` instead.
+
+## CAN distance sensors
+
+A distance sensor can also be a CAN device the robot code reads with its vendor's own class: a **CTRE CANrange**
+(`ctre = "CANrange:<id>"`) or a **Grapple LaserCAN** (`grapple = "LaserCAN:<id>"`). The id is 0 to 62, the CAN id the
+robot code gives the device. The device key goes on a `kind = "distance"` sensor, alone or beside `analog` and `dio`.
+A sensor is one device, so it takes one of `ctre` and `grapple`, and two sensors can't name the same device.
+
+```toml
+[[part]]
+name = "drive"
+stock = "chassis"
+
+[[sensor]]
+name = "intake"
+kind = "distance"
+body = "drive.chassis"
+at = [0.33, 0.0, 0.10]
+toward = [1, 0, 0]
+ctre = "CANrange:2"               # max_range is then 3.0 m unless you give one
+
+[[sensor]]
+name = "shooter"
+kind = "distance"
+body = "drive.chassis"
+at = [-0.33, 0.0, 0.30]
+toward = [-1, 0, 0]
+grapple = "LaserCAN:5"            # max_range is then 4.0 m unless you give one
+dio = 6                           # and a DigitalInput 6 beside it
+```
+
+`examples/blocks/canrange` is a worked example.
+
+**The default `max_range`.** A CANrange sees 3.0 m (CTRE's long-range mode). A LaserCAN sees 4.0 m, but it starts in
+**short** mode (1.3 m, the firmware's default), as the real one does, until robot code calls `setRangingMode(LONG)`
+(Java) or `set_range(Long)` (RobotPy). Past the mode's reach it reads the no-target status below.
+
+**What the robot code reads.**
+
+| device | robot code | reads |
+|---|---|---|
+| CANrange | `getDistance()` | the distance in whole millimeters, as Phoenix keeps it |
+| CANrange | `getIsDetected()` | whether the distance is inside the CANrange's own configured threshold (`ProximityParams.ProximityThreshold`, 0.4 m unless robot code sets it). Scrimmage's `threshold` isn't used; it defaults to the same 0.4 m, so the Test tab's **is on** matches when neither is set |
+| LaserCAN | `getMeasurement()` (Java), `get_measurement()` (RobotPy) | null (`None`) until the first reading. Then status 0 with the distance, or status 2 with the mode's reach when nothing is in range |
+
+With nothing in range a CANrange reads `max_range` (3.0 m by default). A LaserCAN's status 2 is the "weak signal" status. Scrimmage uses it for nothing in range because the
+firmware passes the ST chip's status through; that hasn't been seen on hardware. Grapple's own example tests
+`status != 0`, which works.
+
+A CANrange whose `max_range` is at or under its ProximityThreshold plus hysteresis (0.4 m plus 0.01 m by default) reads
+"detected" with nothing in front, so set the threshold in robot code (and `threshold` in the config) below `max_range`.
+
+**A CANrange is a Phoenix 6 device.** A robot with one runs in real time, like every Phoenix robot: see
+[Simulation controls](drive.md#simulation-controls).
+
+**The LaserCAN needs scrimmage's helper**, loaded as REV's is ([rev.md](rev.md#setup)). Java robots load it through
+scrimmage's agent, with the usual Gradle init script; run `scrimmage java build` again after updating scrimmage.
+RobotPy robots load it through `--scrimmage-lockstep` in `[robot_program] command` and `pip install ./lockstep`
+(reinstall it after updating scrimmage), and install `libgrapplefrc-py`. Without the helper the run warns that the
+LaserCAN isn't being driven. On RobotPy (Linux), Grapple's real LaserCAN crashes the robot program in simulation before
+any warning, so load the helper (`--scrimmage-lockstep`).
+
+On RobotPy, scrimmage replaces libgrapplefrc's `LaserCAN` class with its own in simulation. Grapple's Python
+`LaserCAN` crashes in desktop simulation on Linux on its own. So build the `LaserCAN` in `robotInit` or in a
+constructor, not at import time (the helper loads after `robot.py` is imported). Code that subclasses the real class,
+or checks `isinstance` against it, keeps the real class. Setters (`set_range`, region of interest, timing budget) are
+recorded and don't reach hardware, because there is none.
+
+```python
+import wpilib
+from libgrapplefrc import LaserCAN, LaserCanRangingMode
+
+
+class MyRobot(wpilib.TimedRobot):
+    def robotInit(self):
+        self.laser = LaserCAN(5)                      # grapple = "LaserCAN:5"
+        self.laser.set_range(LaserCanRangingMode.Long)
+
+    def robotPeriodic(self):
+        m = self.laser.get_measurement()
+        has_piece = m is not None and m.status == 0 and m.distance_mm < 150
+```
+
+```java
+import au.grapplerobotics.LaserCan;
+import au.grapplerobotics.interfaces.LaserCanInterface;
+
+private final LaserCan laser = new LaserCan(5);                    // grapple = "LaserCAN:5"
+
+@Override
+public void robotInit() {
+  try {
+    laser.setRangingMode(LaserCanInterface.RangingMode.LONG);
+  } catch (Exception e) {
+    // a real LaserCan can fail to configure; the simulated one doesn't
+  }
+}
+
+@Override
+public void robotPeriodic() {
+  LaserCanInterface.Measurement m = laser.getMeasurement();
+  boolean hasPiece = m != null && m.status == LaserCanInterface.LASERCAN_STATUS_VALID_MEASUREMENT && m.distance_mm < 150;
+}
+```
+
+**Mistakes the run tells you about.** A device in the config that the robot never creates is one warning naming it.
+For a LaserCAN it says what to do: the LaserCANs the robot did create (a wrong id), the helper's reason when it says
+it's unavailable, or how to load the helper. A CANrange or LaserCAN the robot creates that no sensor names is listed as
+not modeled; put `not_modeled = ["CANrange:<id>"]` (or `"LaserCAN:<id>"`) in
+`[robot_program]` to hide it.
+
+**Playing With Fusion's Time of Flight sensor isn't supported yet:** it is a CAN sensor whose library has no simulation
+hook, so scrimmage can't feed it yet. A `pwf` key is an error. In simulation, use an `analog` stand-in sensor.
 
 ## A camera
 
@@ -558,8 +675,13 @@ what a real one adds).
 - **Noise, delay and mounting.** Every reading is exact, 1 ms behind the physics. A real beam is a few millimeters
   wide, a real distance sensor has a cone, not a line, and a real color sensor's numbers depend on its lighting and
   gain. Allow for them on the real robot.
-- **Other vendors' sensors.** The CTRE CANrange, Playing With Fusion's time-of-flight sensor and the LaserCAN each
-  need their own vendor binding; none is here yet. A distance sensor on an `analog` or `dio` input is the stand-in.
+- **A cone.** A distance sensor is one ray. A real CANrange or LaserCAN sees a cone or a region of interest, so it can
+  see a piece at the edge of its view that the ray misses, and the other way round.
+- **A CAN sensor's signal.** Signal strength, ambient light, noise and a LaserCAN's timing budget (its effect on speed
+  and accuracy) aren't simulated. The reading is the ray's distance, whole millimeters.
+- **CANrange in fast mode.** Fast mode has no CANrange stand-in yet ([fast-mode.md](fast-mode.md)).
+- **Playing With Fusion's Time of Flight.** Not supported yet; see [CAN distance sensors](#can-distance-sensors). A
+  distance sensor on an `analog` or `dio` input is the stand-in.
 - **A camera's image.** A camera is a yes-or-no rule per tag, not a real detector: no image, no motion blur, no
   lighting, no pixel noise and no pose ambiguity (a tag seen far away or nearly edge-on is as good as one up close).
   And it publishes no PhotonVision or Limelight results on NetworkTables: robot code simulates its own vision from the

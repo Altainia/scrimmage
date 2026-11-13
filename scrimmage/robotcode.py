@@ -34,7 +34,8 @@ _VENDOR_NAMES = {"CTRE-Phoenix (v6)": "Phoenix 6", "CTRE-Phoenix": "Phoenix 5", 
 _HIDDEN_VENDORS = ("WPILib", "Scrimmage")
 # pip package (in a RobotPy project's `requires`) -> team name
 _PIP_VENDORS = {"phoenix6": "Phoenix 6", "robotpy-rev": "REVLib", "robotpy-navx": "NavX", "photonlibpy": "PhotonVision",
-                "robotpy-commands-v2": "Commands v2", "pathplannerlib": "PathPlanner"}
+                "robotpy-commands-v2": "Commands v2", "pathplannerlib": "PathPlanner",
+                "libgrapplefrc-py": "Grapple LaserCAN"}
 
 
 @dataclass

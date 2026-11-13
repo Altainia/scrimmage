@@ -24,6 +24,7 @@ from .nt_reader import NetworkTablesLink, NTUnavailable
 from .pneumatics.runtime import PH_TYPE
 from .protocol import DeviceKey, HalState, OutboundCache, frame
 from .recorder import Recorder
+from .sensors.spec import LASERCAN_TYPE
 from .world import World
 
 log = logging.getLogger("scrimmage")
@@ -350,8 +351,11 @@ class Bridge:
         # The [[sensor]] color sensors' SimDevices (REV Color Sensor V3), and those seen this connection
         self._color_expected = set(world.sensors.color_sensors()) if world.sensors is not None else set()
         self._color_present: set[DeviceKey] = set()
+        self._grapple_present: set[DeviceKey] = set()   # ScrimmageGrapple devices (LaserCANs) seen this connection
         self._rev_checked = False        # REV sim availability reported for the current connection
         self.rev_state: Callable[[], str | None] = lambda: None  # "unavailable: <reason>" per the agent (console)
+        # "unavailable: <reason>" per the Grapple LaserCAN helper (Java agent or RobotPy lockstep), from the console
+        self.grapple_state: Callable[[], str | None] = lambda: None
         # (device, key) -> pending suspect: first value and time, latest value, how many
         self._suspects: dict[tuple[DeviceKey, str], dict] = {}
         self._initial: dict[tuple[DeviceKey, str], Any] = {}  # each watched input's value before scrimmage sent one
@@ -420,6 +424,10 @@ class Bridge:
                 if got[0][0] == PH_TYPE and got[0] not in self._ph_present:
                     # The extension creates it when the robot opens the hub, with no <init: resend the hub's inputs
                     self._ph_present.add(got[0])
+                    self.cache.forget(*got[0])
+                if got[0][0] == LASERCAN_TYPE and got[0] not in self._grapple_present:
+                    # The helper creates it with the robot's LaserCAN, with no <init: resend the LaserCAN's values
+                    self._grapple_present.add(got[0])
                     self.cache.forget(*got[0])
                 if got[0] in self._color_expected and got[0] not in self._color_present:
                     # REVLib creates it with the ColorSensorV3, with no <init: resend the color sensor's values
@@ -697,6 +705,7 @@ class Bridge:
         self._rev_present = set()
         self._ph_present = set()
         self._color_present = set()
+        self._grapple_present = set()
         self._rev_checked = False
         self._ticks = _Ticks()
         self.recorder.reset()
@@ -791,6 +800,8 @@ class Bridge:
                 msgs += self.world.pneumatics.warn_missing_hubs(self.hal)   # in the run's notes too
             if self.world.sensors is not None:
                 msgs += self.world.sensors.missing_color_sensors(self.hal, MISSING_AFTER)   # in the run's notes too
+                msgs += self.world.sensors.missing_devices(self.hal, MISSING_AFTER, self.robot_language,
+                                                           self.grapple_state())
             for msg in msgs:
                 log.warning("%s", msg)
         if (not self._fast_phoenix_warned and now >= MISSING_AFTER - 1e-6
