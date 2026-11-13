@@ -257,8 +257,9 @@ class Outcomes:
         return min(held, key=lambda by: self.watch.held.since(pc.ball, by)) if held else None
 
     def final(self) -> list[dict]:
-        """One row per tracked piece, in the order fed: ball, source, t, outcome ("in" | "placed" | "stuck" | "missed"),
-        why (a placed piece's: the rod or element), t_outcome, body (the robot body a stuck piece rests on, or the hopper body an "in" piece is in or held by; else None)."""
+        """One row per tracked piece, in the order fed: ball, source, t, outcome ("in" | "placed" | "stuck" |
+        "missed"), why (a placed piece's: the rod or element), t_outcome, body (the robot body a stuck piece rests on,
+        or the hopper body an "in" piece is in or held by; else None)."""
         m = self.model
         rows = []
         for pc in self.pieces:

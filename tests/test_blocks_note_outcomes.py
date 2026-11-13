@@ -9,11 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from scrimmage.blocks.conditions import Watch
-from scrimmage.blocks.program import load
+from scrimmage.blocks.conditions import Watch, _conds
+from scrimmage.blocks.program import Block, Cond, load
 from scrimmage.blocks.run import TestRun, world_for
 from scrimmage.blocks.run_notes import piece_lines
-from scrimmage.blocks.spread import spread_ball
 from scrimmage.scenario_runner import _ball_result
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "blocks" / "note-intake"
@@ -34,7 +33,7 @@ def _run(path: Path):
     prog = load(path)
     world = world_for(prog)
     watch = Watch(world, prog)
-    return prog, watch, TestRun(world, prog, placement={"angle_deg": 0.0, **spread_ball(world)[1]}).run()
+    return prog, watch, TestRun(world, prog).run()
 
 
 def _table(result) -> list[str]:
@@ -55,13 +54,13 @@ def test_no_hopper_and_no_piece_in_is_unchanged(tmp_path):
         return TAIL.sub(WAIT_4S, s.replace(HOPPER_LINE, ""))
     prog, watch, result = _run(_copy(tmp_path, edit))
     assert watch.hopper == []
-    assert "0 of 1 made it in (0%); 1 stuck in the robot" in result.outcome
+    assert result.outcome == "finished" and result.pieces[0]["feed"] is None
 
 
 def test_a_cleared_hopper_stays_none(tmp_path):
     prog, watch, result = _run(_copy(tmp_path, lambda s: s.replace(HOPPER_LINE, "hopper = []\n")))
     assert prog.hopper == [] and watch.hopper == []
-    assert "1 of 1 made it in" not in result.outcome and "1 stuck in the robot" in result.outcome
+    assert "1 of 1 made it in" not in result.outcome and result.outcome == "finished"
 
 
 @pytest.fixture(scope="module")
@@ -78,3 +77,24 @@ def test_the_scenario_ledger_table_is_unchanged(saved):
     p = saved.pieces[0]
     assert p["outcome"] == "on_field"
     assert "rest at" in _ball_result({**p, "last_pos": tuple(p["last_pos"])})
+
+
+def test_the_cli_run_says_the_note_made_it_in(tmp_path, capsys):
+    """`scrimmage test run` builds a bare TestRun: the NOTE is tracked there too."""
+    import argparse
+
+    from scrimmage.__main__ import _test
+
+    with pytest.raises(SystemExit) as e:
+        _test(argparse.Namespace(test_command="run", file=EXAMPLE / "intake.test.toml", out=tmp_path / "runs"))
+    out = capsys.readouterr().out
+    assert e.value.code == 0
+    assert "1 of 1 made it in" in out.splitlines()[0]
+    assert re.search(r"\bin\s+in intake\.hopper", out) and "on_field" not in out
+
+
+def test_a_nested_piece_in_counts_as_a_hopper_body():
+    inner = Cond("piece_in", {"body": "a.bin", "piece": "any"})
+    outer = Cond("all", {"of": [inner, Cond("tilt", {"above": 1})]})
+    blocks = [Block("repeat", {}, [Block("expect", {"that": outer})])]
+    assert _conds(blocks, "piece_in") == [inner]

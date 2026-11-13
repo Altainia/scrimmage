@@ -390,8 +390,8 @@ any it picks up, go out of the launcher, fly, and score or miss. Nothing about s
   where it went (the goal and time it scored, where it rests or left the field, what it hit first, and how high a
   missed shot got against the goal's rim). The run's `result.json` keeps them as `pieces`, and the MCP `test_run`
   returns them too (in meters and m/s). Two tables, two sets of words: this table's outcome column is the *feed*
-  outcome (`in`, `stuck`, `placed`, `missed`) for a piece the run tracked (a fed piece, or the NOTE placed ahead of
-  the robot), and its last column then says where (`in intake.hopper`, `in the robot`, `stuck on drive.chassis`). So a
+  outcome (`in`, `stuck`, `placed`, `missed`) for a piece the run tracked (a fed piece, or the floor piece ahead of the
+  robot: always in a spread, and in any run of a soft-NOTE test that has a hopper), and its last column then says where (`in intake.hopper`, `in the robot`, `stuck on drive.chassis`). So a
   NOTE lifted into the bin reads `in` here, where the scenario ledger (a `scrimmage run` scenario's ball table) says
   `on_field`, because it is still on the field. Pieces the run did not track keep the ledger's words.
 - **The replay** shows the balls in flight.

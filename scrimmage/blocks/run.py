@@ -139,7 +139,7 @@ from ..protocol import HalState, frame
 from ..testrange.build import BALL_BITS
 from .aim import TURN, aim_error, aim_target
 from .clearance import PREFIX, inches, named
-from .conditions import IN, Watch, _amount, _conds, phase_word
+from .conditions import IN, Watch, _amount, _conds, hopper_of, phase_word
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .grip_watch import SLIP_LOOKBACK_S
@@ -322,7 +322,12 @@ class TestRun(_FailureWords):
         self.feeder = world.test_range.feeder if world.test_range is not None else None
         self.standin = is_standin(Path(program.path).parent / program.robot)
         self.placement = placement
-        self._floor = spread_ball(world) if placement is not None else None
+        # the floor piece ahead of the start (the one a spread places) is tracked in a placed run, and in any run on
+        # a soft-NOTE field whose test has a hopper (it asks what ends up in a body), so its feed outcome reaches the
+        # result however the test is run. Other runs (a ball or coral test) keep their outcomes as they were
+        tr = world.test_range
+        soft = tr is not None and tr.soft is not None
+        self._floor = spread_ball(world) if placement is not None or (soft and hopper_of(program)) else None
         if placement is not None and self._floor is None:
             raise TestFileError(no_ball())
 
