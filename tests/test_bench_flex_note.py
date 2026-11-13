@@ -464,14 +464,14 @@ jam_time = 0.35
 
 def test_two_flex_notes_touching(monkeypatch):
     """One flex NOTE dropped flat onto another's rim (0.25 m off its center, so it slides off: a flat stack makes
-    hundreds of contacts a step and takes about 20 s): no NaN and no MuJoCo warning, both come to rest (jammed;
+    hundreds of contacts a step and takes longer): no NaN and no MuJoCo warning, both come to rest (jammed;
     `jam_time` outlasts the 0.25 s fall, so the lower one is still there when the upper lands), neither gains energy, and their contact reads the other flex's velocity (rigid_contacts' flex side)."""
     seen = []
     real = run_mod._Run._flex_velocity
 
-    def spy(self, c, side, f):
-        v = real(self, c, side, f)
-        seen.append((f, v.copy()))
+    def spy(self, rows, side, flexes):
+        v = real(self, rows, side, flexes)
+        seen.extend(zip(flexes.tolist(), v.copy()))
         return v
 
     monkeypatch.setattr(run_mod._Run, "_flex_velocity", spy)
@@ -482,3 +482,39 @@ def test_two_flex_notes_touching(monkeypatch):
     assert all(e.ok for e in res.energy), res.energy
     assert {f for f, _ in seen} == {0, 1}
     assert all(np.isfinite(v).all() for _, v in seen) and max(np.linalg.norm(v) for _, v in seen) > 0.5
+
+
+@pytest.mark.parametrize("case", ["two", "pinch"])
+def test_contact_readers_match_mujoco(monkeypatch, case):
+    """rigid_contacts reads contacts as arrays (two flat flex NOTEs make about 900 a step): its forces are
+    mj_contactForce's and its velocities mj_objectVelocity's, on flex-flex contacts and on spinning wheels."""
+    if case == "two":
+        bench = parse_bench(tomllib.loads(TWO.replace("duration = 1.0", "duration = 0.4")), Path("."))
+    else:
+        path = Path(__file__).parents[1] / "examples" / "bench" / "note_pinch_flex.toml"
+        bench = parse_bench(tomllib.loads(path.read_text()), path.parent)
+    real = run_mod._Run.rigid_contacts
+    checked = {"forces": 0, "bodies": 0}
+
+    def spy(self, *args):
+        m, d = self.m, self.d
+        if d.ncon and checked["forces"] < 400:
+            rows = np.arange(d.ncon)
+            f6, want = np.zeros(6), np.zeros((d.ncon, 3))
+            for c in rows:
+                mujoco.mj_contactForce(m, d, int(c), f6)
+                want[c] = f6[:3]
+            np.testing.assert_allclose(self._contact_forces(rows), want, rtol=1e-12, atol=1e-12)
+            checked["forces"] += d.ncon
+            bodies = np.unique(m.geom_bodyid[d.contact.geom[:d.ncon][d.contact.geom[:d.ncon] >= 0]])
+            points = d.xipos[bodies] + 0.01
+            v6 = np.zeros(6)
+            for b, p, v in zip(bodies, points, self._point_velocity(bodies, points)):
+                mujoco.mj_objectVelocity(m, d, mujoco.mjtObj.mjOBJ_BODY, int(b), v6, 0)
+                np.testing.assert_allclose(v, v6[3:6] + np.cross(v6[0:3], p - d.xipos[b]), rtol=1e-12, atol=1e-12)
+                checked["bodies"] += 1
+        return real(self, *args)
+
+    monkeypatch.setattr(run_mod._Run, "rigid_contacts", spy)
+    run_mod._Run(bench, 60.0).run()
+    assert checked["forces"] >= 400 and checked["bodies"] > 0, checked
