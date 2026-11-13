@@ -36,10 +36,10 @@ REV_LINE = re.compile(r"^\[\s*([\d.]+)\] rev loop=(\d+) (.*)$")  # a robot.log l
 
 def probe_config(tmp: Path, **env) -> Path:
     """tests/rev_probe_py.toml, run from `tmp` with extra [robot_program] env."""
-    text = (TESTS / "rev_probe_py.toml").read_text().replace('cwd = "rev_probe_py"', f'cwd = "{PROBE}"')
+    text = (TESTS / "rev_probe_py.toml").read_text().replace('cwd = "rev_probe_py"', f'cwd = "{PROBE.as_posix()}"')   # a Windows path's backslashes are TOML escapes
     if env:
         table = ", ".join(f'{k} = "{v}"' for k, v in env.items())
-        text = text.replace(f'cwd = "{PROBE}"\n', f'cwd = "{PROBE}"\nenv = {{ {table} }}\n')
+        text = text.replace(f'cwd = "{PROBE.as_posix()}"\n', f'cwd = "{PROBE.as_posix()}"\nenv = {{ {table} }}\n')
     p = tmp / "rev_probe_py.toml"
     p.write_text(text)
     return p
@@ -90,7 +90,7 @@ def parse_prints(log: str) -> list[dict]:
 def run_probe(tmp: Path, steps: list[str], **env) -> Run:
     """Run the probe through `steps` (scenario [[step]] tables) and record it."""
     cfg = probe_config(tmp, **env)
-    scenario = load_scenario_text(f'config = "{cfg}"\n' + "".join(steps), tmp / "probe_scenario.toml")
+    scenario = load_scenario_text(f'config = "{Path(cfg).as_posix()}"\n' + "".join(steps), tmp / "probe_scenario.toml")
     run = Run()
     clock: list[float] = []
 
