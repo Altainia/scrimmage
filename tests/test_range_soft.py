@@ -85,9 +85,10 @@ def test_the_rule_scales_from_the_fit():
     for p, s in ((base, 2000.0), (triple, 6000.0)):
         assert p.contact_b == pytest.approx(soft.damping_scale(s) * 2 * soft.damping_ratio_for(0.3)
                                             * math.sqrt(p.contact_k))
-    # the spike's own fitted damping (64.5 soft, 113 firm): within 2 % at the soft foam; the firm one's table row is
-    # this ring's own fit (its joint damping is R10's, not the spike's), 7 % above the spike's
-    assert base.contact_b == pytest.approx(64.45, rel=0.02) and triple.contact_b == pytest.approx(113.0, rel=0.10)
+    # the soft foam's damping, within 2 %: source: K6-R6's refit raised the 2000 N/m damping scale by 2.2 % (0.8536 ->
+    # 0.8722), so 66.10; K5's value was 64.45, the spike's own fit. The firm one (the spike's 113) is this ring's own
+    # fit (its joint damping is R10's, not the spike's), within 10 % of the spike's
+    assert base.contact_b == pytest.approx(66.10, rel=0.02) and triple.contact_b == pytest.approx(113.0, rel=0.10)
     # the contact stiffness is per unit mass in MuJoCo, so it is scaled by FIT_MASS / mass; the joints aren't
     heavy = soft.ring_params(replace(_at(2000.0), mass=2 * NOTE.mass))
     assert soft.FIT_MASS == 0.235 and heavy.contact_k == pytest.approx(11211.4 / 2)
@@ -160,18 +161,15 @@ def test_a_presets_soft_says_how_to_stay_rigid():
 
 
 SOFT_CORNERS = [(s, e) for s in SOFT_STIFFNESS_RANGE for e in SOFT_RESTITUTION_RANGE] + [
-    (math.sqrt(SOFT_STIFFNESS_RANGE[0] * SOFT_STIFFNESS_RANGE[1]), sum(SOFT_RESTITUTION_RANGE) / 2)]
-# K6-R1's ramp reaches the softest kind's drop, so its bounce rises until Task 4 refits the damping (K6-R6)
-TASK4 = "K6 Task 4: K6-R1's ramp moved the drop; the damping refit (K6-R6) brings it back"
-_TASK4_CORNERS = {(1000.0, 0.27)}  # source: measured with K6-R1: e 0.312 against 0.27
-SOFT_CORNER_CASES = [pytest.param(s, e, marks=pytest.mark.xfail(strict=True, reason=TASK4))
-                     if (s, e) in _TASK4_CORNERS else (s, e) for s, e in SOFT_CORNERS]
+    (math.sqrt(SOFT_STIFFNESS_RANGE[0] * SOFT_STIFFNESS_RANGE[1]), sum(SOFT_RESTITUTION_RANGE) / 2),
+    (12000.0, 0.45)]  # choice: Task 4's grid: the weakest stretch between rows, -9.0 to -9.6 % from 10000 to 14000
 
 
-@pytest.mark.parametrize(("stiffness", "e"), SOFT_CORNER_CASES)
+@pytest.mark.parametrize(("stiffness", "e"), SOFT_CORNERS)
 def test_the_rule_bounces_within_10_percent_across_the_range(stiffness, e):
-    """At each corner of SOFT_STIFFNESS_RANGE x SOFT_RESTITUTION_RANGE and at its middle (log stiffness), the 1 m
-    drop's e is within 10 % of the asked one (fix round 2: the damping scale follows the stiffness)."""
+    """At each corner of SOFT_STIFFNESS_RANGE x SOFT_RESTITUTION_RANGE, at its middle (log stiffness) and at 0.45
+    and 12000 N/m (the weakest stretch between table rows), the 1 m drop's e is within 10 % of the asked one (fix round
+    2: the damping scale follows the stiffness)."""
     assert soft_helpers.drop(_at(stiffness, e))["e"] == pytest.approx(e, rel=0.10)
 
 
@@ -184,7 +182,6 @@ def test_the_damping_scale_table():
     assert soft.damping_scale(mid) == pytest.approx((rows[1][1] + rows[2][1]) / 2)
 
 
-@pytest.mark.xfail(strict=True, reason=TASK4)
 def test_the_shipped_damping_scales_are_the_fit():
     """tests/fit_soft_damping.py refits each row (about 11 s): within 0.5 % of the shipped table, so a change to
     the ring or its contact that moves the fit fails here until the table is refit."""
@@ -195,11 +192,14 @@ def test_the_shipped_damping_scales_are_the_fit():
 
 @pytest.mark.parametrize("stiffness", SOFT_STIFFNESS_RANGE)
 def test_the_ring_is_stable_at_both_ends_of_its_range(stiffness):
-    """R14 (Review Focus 4): at each end of SOFT_STIFFNESS_RANGE the drop stays finite, its deepest contact is under
-    40 mm, and it is still within 1 s of its first touch."""
+    """R14 (Review Focus 4), tightened by K6-R11: at each end of SOFT_STIFFNESS_RANGE the drop stays finite, its
+    deepest contact is under 21 mm (K6-R1's ramp; under the 25 mm tube), its energy never rises above its start
+    (K6-P4), and it is still within 1 s of its first touch."""
     r = soft_helpers.drop(_at(stiffness))
     assert r["finite"]
-    assert r["deepest"] < 0.040, r
+    # choice: measured 19.3 mm at 1000 N/m (18.8 after K6-R6's refit); was 40 mm, more than the tube
+    assert r["deepest"] < 0.021, r
+    assert r["energy_gain"] <= 1.001, r     # K6-P4
     assert r["settle_s"] < 1.0, r
 
 

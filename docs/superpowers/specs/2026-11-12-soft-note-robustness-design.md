@@ -357,7 +357,7 @@ Each one gives what was decided, why, and its cost if wrong.
 
   | Golden (tests/test_range_soft.py unless named) | Expected change | Reason, if it changes |
   |---|---|---|
-  | `test_the_rule_scales_from_the_fit`: contact_k 11211.4, contact_b 64.45 | none: `RingParams` stays unscaled; the geom's solref carries K6-R1's f | — |
+  | `test_the_rule_scales_from_the_fit`: contact_k 11211.4, contact_b 64.45 | contact_k none: `RingParams` stays unscaled, and the geom's solref carries K6-R1's f; contact_b yes, re-recorded at 66.10 (2 % kept) | K6-R6: the refit raised the 2000 N/m damping scale by 2.2 % (0.8536 → 0.8722), and contact_b with it |
   | `test_the_ring_is_built_as_its_kind`: `solref == [-k, -b]`, `solimp == SOFT_SOLIMP` | yes | K6-R1: it now checks the scaled solref and the ramp solimp from the rule |
   | `FITTED`: squeeze 12.70 N and drop 0.295 at 2000; 38.10 N and 0.306 at 6000 | none: the targets stay, within 10% | — |
   | `test_the_shipped_damping_scales_are_the_fit`: the table | yes | K6-R6: the drop reaches the ramp |

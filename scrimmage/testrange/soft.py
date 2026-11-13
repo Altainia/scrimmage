@@ -68,8 +68,8 @@ FIT_MASS = 0.235  # source: soft-note spike: the fit's NOTE mass (the 2024-note 
 JOINT_ZETA = 0.3  # source: spike
 # The contact damping's scale on the closed form, by stiffness (N/m): what makes a 1 m drop at e = 0.3 come back at
 # 0.3, interpolated in log(stiffness) and held at the ends (damping_scale). Refit with tests/fit_soft_damping.py.
-DAMPING_SCALES = (  # source: fitted offline by tests/fit_soft_damping.py, 2026-11-11
-    (1000.0, 0.8241), (2000.0, 0.8536), (6000.0, 0.9110), (20000.0, 1.0749))
+DAMPING_SCALES = (  # source: fitted offline by tests/fit_soft_damping.py, 2026-11-12 (K6-R1's ramp)
+    (1000.0, 0.9173), (2000.0, 0.8722), (6000.0, 0.9112), (20000.0, 1.0750))
 CLOSE_SOLREF = (0.004, 1.0)  # source: spike's closing connect
 POOL_PREFIX = "soft"  # the pool's rings are soft.0, soft.1, ...
 
