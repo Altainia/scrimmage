@@ -330,3 +330,73 @@ def test_a_refused_trim_keeps_the_typed_boxes(scenario_page, tmp_path):
         assert "can't write the trimmed track" in page.inner_text("#step-editor")
     finally:
         track.chmod(0o755)
+
+
+def test_sensor_checks_open_as_forms_and_write_the_file(browser, tmp_path):
+    """A scenario's sensor checks open as forms with the robot's sensors and the named colors (the file untouched);
+    Add check -> Sensor, then name, sees, is, when and t, write the docs' TOML with the defaults left out; a cleared
+    t (with when = "by") is refused beside its box."""
+    from test_scenario_server import sensor_scenario
+    scn = sensor_scenario(tmp_path)
+    original = scn.read_text()
+    srv = Server(scn, cwd=tmp_path)
+    ctx = browser.new_context(viewport={"width": 1400, "height": 900})
+    logs = []
+    try:
+        page = ctx.new_page()
+        page.set_default_timeout(30000)
+        page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
+        page.goto(srv.url)
+        page.wait_for_selector(".step-row")
+        page.wait_for_function("__scrimmage.scenario && __scrimmage.scenario.signals && __scrimmage.scenario.signals.sensors")
+        page.click("#step-row-0")
+        page.wait_for_selector("#ck-0-2-when")
+        assert page.locator(".card-sensor").count() == 3 and page.locator("#step-editor pre.raw").count() == 0
+        names = page.eval_on_selector_all("#ck-0-0-name option", "os => os.map(o => o.value)")
+        assert names == ["bin", "eye"], names
+        assert page.input_value("#ck-0-0-name") == "bin" and page.input_value("#ck-0-0-is") == "on"
+        assert page.input_value("#ck-0-0-when") == "end"
+        assert page.locator("#ck-0-0-sees").count() == 0 and page.locator("#ck-0-0-t").count() == 0   # a beam break
+        assert page.input_value("#ck-0-1-name") == "eye" and page.input_value("#ck-0-1-sees") == "red"
+        assert page.input_value("#ck-0-1-when") == "by" and page.input_value("#ck-0-1-t") == "2"
+        colors = page.eval_on_selector_all("#ck-0-1-sees option", "os => os.map(o => o.value)")
+        assert colors[:3] == ["", "red", "blue"] and "gray" in colors
+        assert page.input_value("#ck-0-2-is") == "off" and page.input_value("#ck-0-2-when") == "always"
+        assert scn.read_text() == original
+
+        def edited(do, tail: str):
+            v = _version(page)
+            do()
+            _wait_edit(page, v)
+            assert scn.read_text().endswith(f"  [[step.check]]\n  sensor = {tail}\n"), scn.read_text()
+
+        edited(lambda: page.select_option("#ed-add-check", "sensor"), '{ name = "bin" }')
+        page.wait_for_selector("#ck-0-3-name")
+        edited(lambda: page.select_option("#ck-0-3-name", "eye"), '{ name = "eye" }')
+        edited(lambda: page.select_option("#ck-0-3-sees", "red"), '{ name = "eye", sees = "red" }')
+        edited(lambda: page.select_option("#ck-0-3-is", "off"), '{ name = "eye", is = "off", sees = "red" }')
+        edited(lambda: page.select_option("#ck-0-3-is", "on"), '{ name = "eye", sees = "red" }')
+        edited(lambda: page.select_option("#ck-0-3-when", "by"), '{ name = "eye", sees = "red", when = "by", t = 3 }')
+        page.wait_for_selector("#ck-0-3-t")
+
+        def type_t(text):
+            page.fill("#ck-0-3-t", text)
+            page.keyboard.press("Enter")
+        edited(lambda: type_t("1.5"), '{ name = "eye", sees = "red", when = "by", t = 1.5 }')
+
+        # by without t: refused beside the t box, the file kept
+        before = scn.read_text()
+        type_t("")
+        page.wait_for_selector("[data-fields~='step0/check3/sensor.t'].has-error")
+        assert "when = \"by\"" in page.inner_text("[data-fields~='step0/check3/sensor.t'] .field-msgs")
+        assert scn.read_text() == before
+
+        edited(lambda: page.select_option("#ck-0-3-when", "always"), '{ name = "eye", sees = "red", when = "always" }')
+        assert page.locator("#ck-0-3-t").count() == 0
+        # a beam break sees no color: choosing one drops sees
+        edited(lambda: page.select_option("#ck-0-3-name", "bin"), '{ name = "bin", when = "always" }')
+        page.wait_for_function("!document.querySelector('#ck-0-3-sees')")
+    finally:
+        close_context(ctx)
+        srv.stop()
+    assert not logs, logs

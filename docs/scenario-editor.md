@@ -49,8 +49,9 @@ The tabs only show when a scenario is open; a robot-only session shows just the 
 2. **Add step.** Choose its mode and duration. The start time of every later step updates.
 3. **Joystick inputs:** choose **Add port**, then **+ axis**, **+ button** or **+ POV** and set the values: a slider
    and number for an axis (-1 to 1), toggles for buttons (1 is the first button), a compass for a POV (-1 is released).
-4. **Add check** and pick a kind: pose, odometry error, signal at the end, signal throughout, must touch, never
-   touch or console output. Each has a form with the validator's message beside any field it rejects.
+4. **Add check** and pick a kind: pose, odometry error, signal at the end, signal throughout, signal by a time,
+   must touch, never touch, console output or sensor. Each has a form with the validator's message beside any field
+   it rejects.
 5. **Run.** Read the report, fix a check, run again.
 
 An edit that the loader or validator rejects is not written; the message appears at the field and the box
@@ -64,6 +65,9 @@ keeps what you typed so you can correct it.
 - **Signal picker (signal at the end / throughout).** A list of the robot's real signals: `battery`, `speed`,
   `motor.<name>.current` and `.command`, `joint.<name>.position` and `.velocity`. For anything else choose
   `hal:...` or `nt:/...` and type the rest. Then set `min`, `max`, `equals` or `approx` with a tolerance.
+- **Sensor picker (sensor).** A list of the robot's `[[sensor]]`s, with `is`, `sees` (a color sensor only: the
+  named colors) and `when` beside it; see [sensors.md](sensors.md#in-scenarios-and-mcp). A robot with no sensors
+  disables this check.
 - **Contact picker (must touch / never touch).** A list of the geoms and bodies the robot's world can report
   contacts for. A world with nothing to touch (or one that doesn't load) disables those two checks.
 - **Camera picker (screenshots).** A screenshot's view is `follow`, `top`, a free camera (position and look-at) or

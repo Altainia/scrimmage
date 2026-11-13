@@ -95,5 +95,9 @@
   "--within is a distance in meters, 0 or more.": "--within is a distance in metres, 0 or more.",
   "{name}  center {center} | {center_m}  size {size} | {size_m}  triangles {triangles}": "{name}  centre {center} | {center_m}  size {size} | {size_m}  triangles {triangles}",
   "{pieces} pieces in {lines} lines. Center and size in {units}, then in m (the file's own axes).": "{pieces} pieces in {lines} lines. Centre and size in {units}, then in m (the file's own axes).",
-  "{name} is a camera, which sees AprilTags, not colors; only a color sensor can see {sees}": "{name} is a camera, which sees AprilTags, not colours; only a colour sensor can see {sees}"
+  "{name} is a camera, which sees AprilTags, not colors; only a color sensor can see {sees}": "{name} is a camera, which sees AprilTags, not colours; only a colour sensor can see {sees}",
+  "One of the robot's sensors is on or off: a beam broken, something closer than a distance sensor's threshold, a color sensor seeing a piece (of a named color, with sees), a camera seeing a tag.": "One of the robot's sensors is on or off: a beam broken, something closer than a distance sensor's threshold, a colour sensor seeing a piece (of a named colour, with sees), a camera seeing a tag.",
+  "{name} (not a named color)": "{name} (not a named colour)",
+  "a color sensor only": "a colour sensor only",
+  "a named color": "a named colour"
 }

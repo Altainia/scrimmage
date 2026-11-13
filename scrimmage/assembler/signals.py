@@ -5,7 +5,7 @@ from __future__ import annotations
 import mujoco
 
 
-def signals(world) -> dict[str, list[str]]:
+def signals(world) -> dict[str, list]:
     """Pickable names. `motors` are `motor.<name>` and `joints` `joint.<name>`; the scenario signal is that plus
     `.current`/`.command` or `.position`/`.velocity`. `contacts` are geom/body names for never_touch/must_touch and
     `cameras` the model's camera names (a view is `camera:<name>`). `fixed` has the robot's terrain signals
@@ -15,7 +15,10 @@ def signals(world) -> dict[str, list[str]]:
     a range with a bar or a switch: climb.extension and climb.height in `fixed`, with climb.hook_load and
     climb.hook.<hook>.load per hook; climb.hanging, level, points, hold, harmony and swing in `range`, with a bar, a
     chain or a switch. (A scenario may use extension and height on any robot.) With a [partner], `fixed` has
-    partner.height, tilt and moved."""
+    partner.height, tilt and moved. `sensors` are the robot's [[sensor]]s ({"name", "kind"}) for a sensor check, and
+    `sensor_colors` the named colors its `sees` can name."""
+    from ..blocks.palette import sensors
+    from ..sensors.colors import NAMED_COLORS
     from ..terrain.climb import robot_hooks
     from ..terrain.monitor import ROBOT_SIGNALS, WHEEL_SIGNALS
     from ..testrange.elements import Platform, moving_units
@@ -38,7 +41,9 @@ def signals(world) -> dict[str, list[str]]:
            "motors": [f"motor.{b.name}" for b in world.motors],
            "joints": [f"joint.{j}" for j in sorted(world.joint_states())],
            "contacts": list(world.contact_names()),
-           "cameras": [c for c in cams if c]}
+           "cameras": [c for c in cams if c],
+           "sensors": sensors(world),
+           "sensor_colors": list(NAMED_COLORS)}
     rng = getattr(world, "test_range", None)
     if rng is not None:
         out["range"] = ["score", *(f"score.{g.name}" for g in rng.range.goals), "fired", "held", "on_field",
