@@ -173,11 +173,13 @@ you give `fov_deg`. 27 is what both vendors' defaults are:
 - CTRE's CANrange: `FovParamsConfigs` `FOVRangeX` and `FOVRangeY` (the full range of the field of view, in degrees)
   default to 27, with a minimum of 6.75 and a maximum of 27 (Phoenix 6 26.3.0's documentation), and the CANrange User's
   Guide (11/25/2024) lists "Field of View 6.75 min, 27 typ, 27 max". If robot code narrows the CANrange's field of
-  view, set `fov_deg` to match: scrimmage doesn't read that configuration.
+  view (`cfg.FovParams.FOVRangeX` and `FOVRangeY`, at least 6.75), set `fov_deg` to match: scrimmage doesn't read
+  that configuration.
 - Grapple's LaserCAN: an ST VL53L1X, whose region of interest defaults to its full 16x16 SPAD array (the firmware's
   default) and whose full field of view is 27 degrees by ST's datasheet (I didn't read the datasheet; Grapple's product
   page says the region of interest is a window of that array). A robot that sets a smaller region of interest sees a
-  narrower cone: set `fov_deg` to match.
+  narrower cone (set with `setRegionOfInterest` in Java, `set_roi` in RobotPy): set `fov_deg` to match; scrimmage
+  doesn't read it.
 
 **The gaps.** 17 rays are not a solid cone: a piece smaller than the gap between rays at its distance can slip through.
 At 27 degrees and 0.5 m the edge rays are about 9 cm apart, and at 1 m about 18 cm. A real sensor weights a
