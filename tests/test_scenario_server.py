@@ -296,6 +296,81 @@ def test_rejected_edits_give_field_errors_and_keep_the_file(served, repo_copy):
     assert c.post("/api/scenario/undo", {"version": None})[0] == 400
 
 
+SENSOR_ROBOT = """[[part]]
+name = "drive"
+stock = "chassis"
+
+[[sensor]]
+name = "bin"
+kind = "beam"
+body = "drive.chassis"
+from = [0.30, 0.20, 0.10]
+to = [0.30, -0.20, 0.10]
+
+[[sensor]]
+name = "eye"
+kind = "color"
+body = "drive.chassis"
+at = [0.30, 0.0, 0.20]
+toward = [0, 0, -1]
+"""
+
+SENSOR_CHECKS = """config = "robot.toml"
+
+[[step]]
+mode = "disabled"
+duration = 3.0
+  [[step.check]]
+  sensor = { name = "bin", is = "on" }
+  [[step.check]]
+  sensor = { name = "eye", sees = "red", when = "by", t = 2.0 }
+  [[step.check]]
+  sensor = { name = "bin", is = "off", when = "always" }
+"""
+
+
+def sensor_scenario(tmp_path) -> Path:
+    """tmp/robot.toml (a chassis with a beam break `bin` and a color sensor `eye`) and tmp/sensors.toml, a scenario
+    with the three sensor checks of docs/sensors.md."""
+    (tmp_path / "robot.toml").write_text(SENSOR_ROBOT)
+    p = tmp_path / "sensors.toml"
+    p.write_text(SENSOR_CHECKS)
+    return p
+
+
+def test_sensor_checks_round_trip(served, tmp_path):
+    """The sensor check: the signals list the robot's sensors and the named colors, a hand-written file's checks come
+    back as their tables, and add_check / set_check write the docs' TOML; bad ones are refused on their keys."""
+    path = sensor_scenario(tmp_path)
+    original = path.read_text()
+    c = served(path)
+    sig = c.get("/api/scenario/signals")[1]
+    assert sig["sensors"] == [{"name": "bin", "kind": "beam"}, {"name": "eye", "kind": "color"}]
+    assert sig["sensor_colors"][:2] == ["red", "blue"] and "gray" in sig["sensor_colors"]
+    s = c.get("/api/scenario/state")[1]
+    assert s["errors"] == [] and s["steps"][0]["checks"] == [
+        {"kind": "sensor", "spec": {"name": "bin", "is": "on"}},
+        {"kind": "sensor", "spec": {"name": "eye", "sees": "red", "when": "by", "t": 2.0}},
+        {"kind": "sensor", "spec": {"name": "bin", "is": "off", "when": "always"}}]
+
+    def edit(op, **fields):
+        return c.post("/api/scenario/edit", {"op": op, **fields})[1]
+
+    assert edit("add_check", step=0, kind="sensor", spec={"name": "bin"})["ok"]
+    assert path.read_text().endswith('  [[step.check]]\n  sensor = { name = "bin" }\n')
+    assert edit("set_check", step=0, check=3, spec={"sensor": {"name": "eye", "sees": "blue", "when": "by", "t": 1.5}})["ok"]
+    assert path.read_text().endswith('  sensor = { name = "eye", sees = "blue", when = "by", t = 1.5 }\n')
+    before = path.read_text()
+    for spec, field in [({"name": ""}, "sensor.name"), ({"name": "bin", "when": "by"}, "sensor.t"),
+                        ({"name": "bin", "t": 1}, "sensor.t"), ({"name": "bin", "is": "up"}, "sensor.is"),
+                        ({"name": "bin", "sees": "red"}, "sensor.signal"), ({"name": "nope"}, "sensor.signal"),
+                        ({"name": "eye", "sees": "pink"}, "sensor.signal")]:
+        r = edit("set_check", step=0, check=3, spec={"sensor": spec})
+        assert r["ok"] is False and r["errors"][0]["field"] == f"step0/check3/{field}", (spec, r)
+    assert path.read_text() == before
+    assert edit("delete_check", step=0, check=3)["ok"] and path.read_text() == original
+
+
 def test_stale_version_and_outside_change(served, repo_copy):
     path = repo_copy / "scenarios" / "kitbot_auto.toml"
     c = served(path)

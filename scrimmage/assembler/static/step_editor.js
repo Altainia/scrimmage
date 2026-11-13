@@ -313,11 +313,12 @@ function portCard(i, step, port) {
 }
 
 // -- checks ----------------------------------------------------------------------------------------------
-export const CHECK_KINDS = ["pose", "odometry_error", "at_end", "always", "by_time", "must_touch", "never_touch", "console"];
+export const CHECK_KINDS = ["pose", "odometry_error", "at_end", "always", "by_time", "must_touch", "never_touch", "console", "sensor"];
 // (functions: the words are in the language of the moment)
 const CHECK_LABEL = () => ({
   pose: t("Pose at the end"), odometry_error: t("Odometry error"), at_end: t("Signal at the end"), always: t("Signal throughout"),
   by_time: t("Signal by a time"), must_touch: t("Must touch"), never_touch: t("Never touch"), console: t("Console output"),
+  sensor: t("Sensor"),
 });
 const CHECK_DOC = () => ({
   pose: t("Where the robot is when the step ends (on the field, heading in degrees)."),
@@ -328,7 +329,13 @@ const CHECK_DOC = () => ({
   must_touch: t("The robot touches this geom or body at some point in the step."),
   never_touch: t("The robot never touches this geom or body in the step."),
   console: t("A line the robot program prints during the step (a regular expression)."),
+  sensor: t("One of the robot's sensors is on or off: a beam broken, something closer than a distance sensor's threshold, a color sensor seeing a piece (of a named color, with sees), a camera seeing a tag."),
 });
+
+// The robot's [[sensor]]s ({name, kind}) and the named colors a color sensor's sees can name, as
+// /api/scenario/signals lists them (null when it doesn't: the robot doesn't load).
+const robotSensors = () => (sc.signals && Array.isArray(sc.signals.sensors) ? sc.signals.sensors : null);
+const sensorColors = () => (sc.signals && Array.isArray(sc.signals.sensor_colors) ? sc.signals.sensor_colors : null);
 
 function defaultSpec(kind, step) {
   const contacts = (sc.signals && sc.signals.contacts) || [];
@@ -339,17 +346,23 @@ function defaultSpec(kind, step) {
     by_time: scored ? { signal: "score", min: 1, t: num(step.duration) ? step.duration : 1 }
       : { signal: "battery", min: 10, t: num(step.duration) ? step.duration : 1 }, must_touch: contacts[0] || "", never_touch: contacts[0] || "",
     console: { contains: "" },
+    sensor: { name: ((robotSensors() || [])[0] || {}).name || "" },
   }[kind];
 }
 
 function checksSection(i, step) {
   const noContacts = !((sc.signals && sc.signals.contacts) || []).length;
+  const noSensors = !(robotSensors() || []).length;
   const labels = CHECK_LABEL();
   const add = h("select", { id: "ed-add-check", class: "add-select", "aria-label": t("Add a check"), dataset: { key: "add-check" } },
     h("option", { value: "" }, t("Add check ▾")), ...CHECK_KINDS.map((k) => {
-      const off = noContacts && (k === "must_touch" || k === "never_touch");
-      return h("option", { value: k, disabled: off, title: off ? t("This robot's world has nothing to touch (or it doesn't load)") : null },
-        off ? t("{label} ({kind}) (nothing to touch)", { label: labels[k], kind: k }) : t("{label} ({kind})", { label: labels[k], kind: k }));
+      const offTouch = noContacts && (k === "must_touch" || k === "never_touch");
+      const offSensor = noSensors && k === "sensor";
+      const title = offTouch ? t("This robot's world has nothing to touch (or it doesn't load)")
+        : offSensor ? t("This robot has no sensors (or it doesn't load)") : null;
+      const text = offTouch ? t("{label} ({kind}) (nothing to touch)", { label: labels[k], kind: k })
+        : offSensor ? t("{label} ({kind}) (no sensors)", { label: labels[k], kind: k }) : t("{label} ({kind})", { label: labels[k], kind: k });
+      return h("option", { value: k, disabled: offTouch || offSensor, title }, text);
     }));
   add.addEventListener("change", () => {
     const k = add.value;
@@ -411,6 +424,8 @@ function checkCard(i, j, c) {
       field(fid("when"), id("when"), "when", when));
   } else if (kind === "at_end" || kind === "always" || kind === "by_time") {
     body = signalForm(kind, tableSpec, setKey, fid, id);
+  } else if (kind === "sensor") {
+    body = sensorForm(i, tableSpec, setSpec, fid, id);
   } else if (kind === "must_touch" || kind === "never_touch") {
     const value = typeof spec === "string" ? spec : "";
     const custom = hooks.contactInput ? hooks.contactInput({ value, id: id("target"), onValue: (v) => setSpec(v), kind }) : contactPicker(id("target"), value, (v) => setSpec(v));
@@ -430,6 +445,90 @@ function checkCard(i, j, c) {
     ...cardHead(CHECK_LABEL()[kind], kind, base, del, "check"),
     h("p", { class: "doc", text: CHECK_DOC()[kind] }),
     body);
+}
+
+// A sensor check: name, is (on, the default, or off), sees (a color sensor's named color), when (end, the
+// default; always; by, with t). The spec is written in that key order, with the defaults left out.
+const SENSOR_KEYS = ["name", "is", "sees", "when", "t"];
+
+function sensorForm(i, spec, setSpec, fid, id) {
+  const sensors = robotSensors();
+  const name = typeof spec.name === "string" ? spec.name : "";
+  const known = sensors ? sensors.find((s) => s.name === name) : null;
+  const sensorKind = known ? known.kind : null;    // null: not one of this robot's (or the robot doesn't load)
+  const put = (changes) => {
+    const next = { ...spec, ...changes };
+    const out = {};
+    for (const k of [...SENSOR_KEYS, ...Object.keys(next)]) {
+      if (k in out || next[k] === null || next[k] === undefined || next[k] === "") continue;
+      out[k] = next[k];
+    }
+    return setSpec(out);
+  };
+  // the sensor's own signal errors (an unknown sensor, a color it can't see) show on name, or on sees with one
+  const signalOnSees = spec.sees !== undefined && known;
+  const nameIds = signalOnSees ? fid("name") : `${fid("name")} ${fid("signal")}`;
+  let nameField;
+  if (sensors && sensors.length) {
+    const sel = h("select", { id: id("name"), class: "mono", dataset: { key: id("name") } },
+      !name ? h("option", { value: "", disabled: true }, t("(choose)")) : null,
+      name && !known ? h("option", { value: name }, t("{name} (not on this robot)", { name })) : null,
+      ...sensors.map((s) => h("option", { value: s.name }, `${s.name} (${s.kind})`)));
+    sel.value = name;
+    sel.addEventListener("change", () => {
+      if (!sel.value || sel.value === name) return;
+      const to = sensors.find((s) => s.name === sel.value);
+      put({ name: sel.value, ...(to && to.kind !== "color" ? { sees: null } : {}) });   // only a color sensor sees
+    });
+    nameField = field(nameIds, id("name"), t("Sensor"), sel);
+  } else {
+    nameField = textField(nameIds, id("name"), id("name"), t("Sensor"), name, (v) => put({ name: v }),
+      { placeholder: t("a sensor's name") });
+  }
+
+  const is = h("select", { id: id("is"), dataset: { key: id("is") } },
+    h("option", { value: "on" }, t("on")), h("option", { value: "off" }, t("off")));
+  is.value = spec.is === "off" ? "off" : "on";
+  is.addEventListener("change", () => put({ is: is.value === "on" ? null : is.value }));
+  const fields = [nameField, field(fid("is"), id("is"), "is", is)];
+
+  // sees: a color sensor's (or any, while the kind isn't known; and always when the file has one, to clear it)
+  if (sensorKind === "color" || sensorKind === null || spec.sees !== undefined) {
+    const sees = typeof spec.sees === "string" ? spec.sees : "";
+    const colors = sensorColors();
+    const seesIds = signalOnSees ? `${fid("sees")} ${fid("signal")}` : fid("sees");
+    if (colors) {
+      const sel = h("select", { id: id("sees"), class: "mono", dataset: { key: id("sees") } },
+        h("option", { value: "" }, t("any piece")),
+        sees && !colors.includes(sees) ? h("option", { value: sees }, t("{name} (not a named color)", { name: sees })) : null,
+        ...colors.map((c) => h("option", { value: c }, c)));
+      sel.value = sees;
+      sel.addEventListener("change", () => { if (sel.value !== sees) put({ sees: sel.value || null }); });
+      fields.push(field(seesIds, id("sees"), "sees", sel, { hint: t("a color sensor only") }));
+    } else {
+      fields.push(textField(seesIds, id("sees"), id("sees"), "sees", sees, (v) => put({ sees: v || null }),
+        { placeholder: t("a named color"), hint: t("a color sensor only") }));
+    }
+  }
+
+  const when = h("select", { id: id("when"), dataset: { key: id("when") } },
+    h("option", { value: "end" }, t("at the end of the step")), h("option", { value: "always" }, t("on every tick")),
+    h("option", { value: "by" }, t("by a time into the step")));
+  const w = spec.when === "always" || spec.when === "by" ? spec.when : "end";
+  when.value = w;
+  when.addEventListener("change", () => {
+    const v = when.value;
+    if (v === w) return;
+    const dur = sc.state.steps[i].duration;
+    // "by" goes with t (the step's duration to start with); the others with none
+    put({ when: v === "end" ? null : v, t: v === "by" ? (num(spec.t) ? spec.t : num(dur) ? dur : 1) : null });
+  });
+  fields.push(field(fid("when"), id("when"), "when", when));
+  if (w === "by" || spec.t !== undefined) {
+    fields.push(numField(fid("t"), id("t"), id("t"), t("by t"), spec.t, (v) => put({ t: v }),
+      { unit: "s", min: 0, hint: t("seconds into the step") }));
+  }
+  return h("div", { class: "form-grid" }, ...fields);
 }
 
 // The signal box with a picker beside it: the robot's signals grouped as /api/scenario/signals lists them, and

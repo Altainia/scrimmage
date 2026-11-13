@@ -405,8 +405,8 @@ Scenario (`/api/scenario/*`; 404 while no scenario is open, except /api/scenario
         "a drive session is live" (an outside edit of the file can't be refused: the robot document follows it).
   POST /api/scenario/undo, /api/scenario/redo -> as the robot's; refused like an edit when restoring would change
         config away from a live session's robot config.
-  GET  /api/scenario/signals       -> signals(world) for the robot ({fixed, motors, joints, contacts, cameras}), or
-        {} when the robot config doesn't load.
+  GET  /api/scenario/signals       -> signals(world) for the robot ({fixed, motors, joints, contacts, cameras, sensors,
+        sensor_colors}), or {} when the robot config doesn't load.
   GET  /api/scenario/configs       -> {configs: [path, ...]}: robot configs for the header's dropdown, each as the
         scenario's `config` value would name it (relative to the scenario's folder, "/"-separated; absolute when
         no relative path exists): the *.toml files in configs/ under the server's working directory, then those

@@ -675,7 +675,10 @@ And a camera's:
 An ID that isn't in the range's layout is an error that lists the layout's IDs, and a camera signal on a range with no
 tags is an error that names `[range] apriltags`.
 
-The Scenario tab shows a `sensor` check as one it can't edit yet: change it in a text editor.
+In the Scenario tab, choose **Add check**, then **Sensor (sensor)**. Pick the sensor from the robot's list, then
+`is` (on or off), `sees` (a color sensor's named color, or any piece; shown only for a color sensor), and `when` (at
+the end of the step, on every tick, or by a time into the step, which adds a `t` box set to the step's length to
+start with). The file gets the TOML above, with the defaults left out. A robot with no `[[sensor]]` can't add one.
 
 The MCP tool `get_state` has a `sensors` block on a robot with `[[sensor]]`s: each sensor's `kind`, `on`,
 `distance_m` (meters; `null` for a beam break and while a color sensor sees nothing) and `color` (the named color a
