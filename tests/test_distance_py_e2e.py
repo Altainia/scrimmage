@@ -111,7 +111,7 @@ def test_robotpy_reads_can_distance_sensors(tmp_path):
     from scrimmage.testrange.build import BALL_BITS
     (tmp_path / "four_cargo.toml").write_text(FOUR_CARGO)
     cfg = tmp_path / "range_probe_py.toml"
-    cfg.write_text(RANGE_CONFIG.format(probe=PROBE))
+    cfg.write_text(RANGE_CONFIG.format(probe=PROBE.as_posix()))   # a Windows path's backslashes are TOML escapes
     want = {"cr5": 0.25, "lc7": 0.40, "cr8": 0.60, "lc9": 2.0}   # m from each sensor to its cargo's near side
 
     async def main():

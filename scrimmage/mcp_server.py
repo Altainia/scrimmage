@@ -13,7 +13,6 @@ import functools
 import json
 import logging
 import math
-import os
 import signal
 import sys
 from pathlib import Path
@@ -816,8 +815,9 @@ def _kill_leftover_robot() -> None:
     s = _session
     proc = s.robot.proc if s is not None and s.robot is not None else None
     if proc is not None and proc.returncode is None:
+        from .robot_process import kill_tree
         try:
-            os.killpg(proc.pid, signal.SIGKILL)
+            kill_tree(proc.pid)
         except (ProcessLookupError, PermissionError, OSError):
             pass
 

@@ -28,7 +28,7 @@ the protocol lives below WPILib.
 # needs Python 3.11 or newer (and MuJoCo 4.0.1 or a newer 4.x, which pip installs)
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[robotpy,nt]"          # mujoco, websockets, plus RobotPy for the example
-pip install ./lockstep                  # Linux: lets scrimmage drive the robot's clock
+pip install ./lockstep                  # Linux: lets scrimmage drive the robot's clock; everywhere: RobotPy's REV and LaserCAN helpers
 ```
 
 Updating a checkout that has MuJoCo 3 installed: run `pip uninstall -y mujoco` first, then the `pip install -e`
@@ -1076,7 +1076,9 @@ The end-to-end tests launch the bridge and a RobotPy program and check four thin
 
 - **Lockstep is Linux only** for now. On Windows and macOS Scrimmage runs in real time: the robot
   program runs on the wall clock and physics keeps pace (about 0.5 ms of CPU per 20 ms robot loop for
-  the kitbot).
+  the kitbot). `pip install ./lockstep` works there too, without a C++ compiler: it installs the RobotPy REV SPARK
+  and LaserCAN helpers (which work everywhere, in real time) but not the lockstep extension, so a RobotPy command with
+  `--scrimmage-lockstep` loads the helpers and the robot runs in real time.
 - **Brownout is reported, not enforced.** Battery voltage reaches the robot code, but outputs are not
   disabled below 6.8 V the way a roboRIO would.
 - **One robot** per bridge, the same as Synthesis, and **one session per MCP server**.

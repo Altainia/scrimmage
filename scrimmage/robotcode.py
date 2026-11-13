@@ -196,8 +196,28 @@ def _check_gradle_built(info: ProjectInfo) -> Check:
     return Check("gradle_built", False, i18n.t("The robot code hasn't been built on this computer yet. The first build downloads the libraries, so it needs the internet and takes a few minutes."), fix="gradle_build")
 
 
+def _check_robotpy_helpers(info: ProjectInfo) -> Check:
+    """Off Linux: lockstep isn't built there, but a RobotPy robot still needs the package, for its REV SPARK and
+    LaserCAN helpers and because the RobotPy command (ROBOTPY_ARGS) carries --scrimmage-lockstep."""
+    have, _ = _lockstep_state(info.python)
+    from .session import LOCKSTEP_VERSION
+    need = ".".join(map(str, LOCKSTEP_VERSION))
+    if have is None:
+        return Check("lockstep", False, i18n.t("scrimmage's RobotPy add-on isn't installed for this robot's Python: install it. "
+                                               "On this computer it drives REV SPARKs and LaserCANs; the robot runs in real time.")
+                     if info.python else
+                     i18n.t("scrimmage's RobotPy add-on isn't installed: install it. On this computer it drives REV "
+                            "SPARKs and LaserCANs; the robot runs in real time."), fix="install_lockstep")
+    if _version_tuple(have) < LOCKSTEP_VERSION:
+        return Check("lockstep", False, i18n.t("scrimmage's RobotPy add-on is too old ({have}; this scrimmage needs {need} or newer): update it.",
+                                               have=have, need=need), fix="install_lockstep")
+    return Check("lockstep", True, i18n.t("scrimmage's RobotPy add-on is installed ({have})", have=have))
+
+
 def _check_lockstep(info: ProjectInfo) -> Check:
     if sys.platform != "linux":
+        if info.kind == "robotpy":
+            return _check_robotpy_helpers(info)
         return Check("lockstep", None, i18n.t("not available on this computer: the robot runs in real time"))
     have, imports = _lockstep_state(info.python)
     from .session import LOCKSTEP_VERSION
@@ -361,6 +381,10 @@ def run_fix(fix: str, info: ProjectInfo, out: Callable[[str], None], cancel: thr
             return Check("lockstep", False, i18n.t("scrimmage can't find its lockstep folder (it isn't running from its downloaded copy). From the scrimmage folder, run: {by_hand}",
                                                    by_hand=by_hand), fix=fix)
         code, tail = _stream([python, "-m", "pip", "install", str(LOCKSTEP_DIR)], None, None, out, **kw)
+        if code != 0 and sys.platform != "linux":   # pure Python there (no lockstep): no compiler needed
+            return _failed("lockstep", lambda: i18n.t("Installing scrimmage's RobotPy add-on didn't work."),
+                           lambda: i18n.t("It needs the internet the first time. To try by hand, run: {by_hand}",
+                                          by_hand=by_hand), tail, fix, code)
         if code != 0:
             return _failed("lockstep", lambda: i18n.t("Installing the fast-simulation add-on didn't work."),
                            lambda: i18n.t("It needs the internet and a C++ compiler the first time. To try by hand, "

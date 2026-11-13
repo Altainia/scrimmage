@@ -96,6 +96,15 @@ jobs:
           tests/test_range_rods.py tests/test_range_piece_world.py tests/test_part_grip.py
           tests/test_test_server.py tests/test_hal_drive.py
           tests/test_climb_hooks_any_body.py -v
+      # RobotPy LaserCAN on Windows: libgrapplefrc-py's win_amd64 wheel (no bundled HAL, unlike Linux's) through the
+      # lockstep helper's stand-in; the import check fails here instead of letting the tests skip themselves
+      - name: Install the lockstep extension
+        run: pip install ./lockstep
+      - name: Check RobotPy, phoenix6, libgrapplefrc and the lockstep extension are importable
+        run: python -c "import wpilib, halsim_ws, scrimmage_lockstep, phoenix6, libgrapplefrc"
+      - name: Test RobotPy CAN distance sensors
+        shell: bash
+        run: pytest tests/test_lockstep_grapple.py tests/test_distance_py_e2e.py -v -rs
 
   # Java robots (Phoenix 6, REVLib): needs a JDK 17; downloads WPILib and the vendor libraries (no ~/wpilib on CI)
   java:

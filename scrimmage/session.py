@@ -64,9 +64,12 @@ def lockstep_install(python: str | None = None) -> str:
     team's robot folder too and goes into the Python that needs it (`python`: the robot's; else scrimmage's own).
     Without the checkout (an installed wheel), the README's `pip install ./lockstep`."""
     import shlex
+    import subprocess
     folder = Path(__file__).resolve().parent.parent / "lockstep"
     if not (folder / "pyproject.toml").is_file():
         return "pip install ./lockstep"
+    if sys.platform == "win32":   # cmd.exe doesn't take shlex's single quotes
+        return subprocess.list2cmdline([python or sys.executable, "-m", "pip", "install", str(folder)])
     return f"{shlex.quote(python or sys.executable)} -m pip install {shlex.quote(str(folder))}"
 
 

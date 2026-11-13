@@ -57,12 +57,34 @@ def test_checklist_ids_and_realtime_note():
     assert "robotpy" not in c
 
 
-def test_checklist_lockstep_not_on_windows(monkeypatch):
+def test_checklist_lockstep_not_on_windows_for_java(monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
-    c = {x.id: x for x in checklist(detect(EXAMPLES / "robotpy_kitbot"))}
+    monkeypatch.setattr(robotcode, "_lockstep_state", lambda py: (_ for _ in ()).throw(AssertionError("not asked")))
+    c = {x.id: x for x in checklist(detect(EXAMPLES / "java_swerve"))}
     assert c["lockstep"].ok is None
     assert c["lockstep"].message == "not available on this computer: the robot runs in real time"
+
+
+def test_checklist_robotpy_off_linux_needs_the_package_for_its_helpers(monkeypatch):
+    """Off Linux the package is pure Python (no lockstep), but the RobotPy command carries --scrimmage-lockstep and
+    the REV and LaserCAN helpers live in it: missing or too old, it offers the install; installed, it's ready (no
+    compiled part is expected)."""
+    from scrimmage.session import LOCKSTEP_VERSION
+    monkeypatch.setattr(sys, "platform", "win32")
+    info = detect(EXAMPLES / "robotpy_kitbot")
+    monkeypatch.setattr(robotcode, "_lockstep_state", lambda py: (None, False))
+    c = {x.id: x for x in checklist(info)}
     assert "robotpy" in c
+    assert c["lockstep"].ok is False and c["lockstep"].fix == "install_lockstep"
+    assert "REV SPARKs and LaserCANs" in c["lockstep"].message and "real time" in c["lockstep"].message
+    monkeypatch.setattr(robotcode, "_lockstep_state", lambda py: ("0.1.0", False))
+    c = {x.id: x for x in checklist(info)}
+    assert c["lockstep"].ok is False and c["lockstep"].fix == "install_lockstep" and "too old" in c["lockstep"].message
+    have = ".".join(map(str, LOCKSTEP_VERSION))
+    monkeypatch.setattr(robotcode, "_lockstep_state", lambda py: (have, False))   # no library: expected off Linux
+    c = {x.id: x for x in checklist(info)}
+    assert c["lockstep"].ok is True and have in c["lockstep"].message
+    assert c["realtime"].ok is None and "real time" in c["realtime"].message
 
 
 def _fake_project(tmp_path, body):
@@ -187,6 +209,15 @@ def test_install_lockstep_failure_gives_command(tmp_path, monkeypatch):
     monkeypatch.setattr(robotcode, "_stream", lambda *a, **k: (1, ["boom"]))
     info = ProjectInfo(tmp_path, "robotpy", [], False, Path("/x/python"), "")
     r = run_fix("install_lockstep", info, lambda s: None)
+    assert f'/x/python -m pip install "{robotcode.LOCKSTEP_DIR}"' in r.message
+
+
+def test_install_lockstep_failure_off_linux_asks_for_no_compiler(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(robotcode, "_stream", lambda *a, **k: (1, ["boom"]))
+    info = ProjectInfo(tmp_path, "robotpy", [], False, Path("/x/python"), "")
+    r = run_fix("install_lockstep", info, lambda s: None)
+    assert "compiler" not in r.message and "RobotPy add-on" in r.message
     assert f'/x/python -m pip install "{robotcode.LOCKSTEP_DIR}"' in r.message
 
 

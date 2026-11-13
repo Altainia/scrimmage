@@ -921,3 +921,11 @@ def test_valves_on_a_pcm_keep_the_0_6_0_floor(tmp_path, monkeypatch, command):
     cfg = session_mod.load_config(fake_config(tmp_path, command, PH_VALVE.replace("PH:", "PCM:")))
     monkeypatch.setattr(metadata, "version", lambda name: "0.6.0")
     assert session_mod.lockstep_version_problem(cfg) is None
+
+
+def test_lockstep_install_command_quotes_for_cmd_on_windows(monkeypatch):
+    """The "isn't installed" errors send Windows users to this command: cmd.exe needs double quotes, not shlex's."""
+    monkeypatch.setattr(session_mod.sys, "platform", "win32")
+    cmd = session_mod.lockstep_install(r"C:\Program Files\Python313\python.exe")
+    assert cmd.startswith('"C:\\Program Files\\Python313\\python.exe" -m pip install ')
+    assert "'" not in cmd
