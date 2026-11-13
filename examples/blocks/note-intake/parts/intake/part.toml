@@ -6,11 +6,13 @@
 # Coordinates: x forward, y left, z up, m; the origin is on the carpet at the front bumper's face.
 # Every `color` below is a drawing choice (rgba), not physics.
 #
-# Simulator rules this design follows (docs: the spike's RESULTS.md):
-# - every surface the NOTE can be pushed into is thick (5 cm, or the 5 cm floor slab): the soft NOTE's squash is a
-#   soft contact that sinks 2 to 4 cm into a part under a hard push, which goes through a 1/8 in plate;
+# Design rules this intake follows (the example's README.md says why; docs/test-range.md, "The soft NOTE"):
+# - every surface the NOTE can be pushed into is thick (5 cm, or the 5 cm floor slab). The soft NOTE's squash
+#   stiffens sharply past about 60 %, so it no longer goes through a 1/8 in plate even on an 8 m/s hit, and a part
+#   with `priority` still meets its squash. Thick parts are still good practice: they leave room to spare;
 # - a ceiling 2.1 in over the floor runs from the back stop forward over every roller (the rollers poke through it:
-#   a robot's own parts don't touch each other), so the NOTE's tail can't buckle up between the rollers.
+#   a robot's own parts don't touch each other), so the NOTE's tail can't buckle up between the rollers;
+# - the front roller is on a sprung arm, so a NOTE pushed into a tight nip lifts it instead of jamming.
 
 [part]
 name = "intake"

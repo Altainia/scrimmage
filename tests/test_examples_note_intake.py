@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import math
+import os
+import subprocess
 import sys
+import time
 import tomllib
 from pathlib import Path
 
@@ -15,8 +18,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import intake_grid  # noqa: E402
 from intake_grid import IN, Case, corner_cases, oat_cases, random_cases, variant  # noqa: E402
-from scrimmage.blocks.program import load  # noqa: E402
+from scrimmage.blocks.conditions import Watch  # noqa: E402
+from scrimmage.blocks.program import load, loads  # noqa: E402
 from scrimmage.blocks.run import TestRun, world_for  # noqa: E402
+from scrimmage.blocks.run_notes import piece_lines  # noqa: E402
 
 EXAMPLE = intake_grid.EXAMPLE
 TEST = EXAMPLE / "intake.test.toml"
@@ -156,7 +161,8 @@ def test_the_arm_is_a_sprung_hinge():
 
 
 def test_the_example_passes_as_saved():
-    """It passes, and the NOTE lifts the front roller's arm off its stop on the way in; the soft guard never fires."""
+    """It passes, the NOTE made it in (the outcome and the piece table say so), it lifts the front roller's arm off
+    its stop on the way in, and the soft guard never fires."""
     prog = load(TEST)
     world = world_for(prog)
     q = world.model.jnt_qposadr[world.model.joint("intake.arm").id]
@@ -166,5 +172,76 @@ def test_the_example_passes_as_saved():
         lift[0] = max(lift[0], float(world.data.qpos[q]))
 
     result = TestRun(world, prog).run(on_sample=each)
-    assert result.passed and result.soft_resets == 0
+    assert result.passed and "1 of 1 made it in" in result.outcome
+    row = " ".join(piece_lines(result)[1].split())
+    assert row.endswith("in in intake.hopper"), row
+    assert result.soft_resets == 0
     assert math.degrees(lift[0]) > ARM_LIFT_DEG
+
+
+def test_the_example_fails_at_0_volts():
+    """The spike's control: with the rollers off, the robot pushes the NOTE ahead of it, and it never gets in."""
+    text = TEST.read_text(encoding="utf-8")
+    assert text.count("volts = 8.0") == 1           # the spin block's
+    prog = loads(text.replace("volts = 8.0", "volts = 0.0"), TEST)
+    world = world_for(prog)
+    result = TestRun(world, prog).run()
+    assert not result.passed
+    assert not Watch(world, prog).hopper_mask().any()
+
+
+BENCH = EXAMPLE.parent.parent / "bench" / "note_intake_flex.toml"
+
+
+def test_the_bench_flex_intake_passes():
+    """The example's nip on the bench (examples/bench/note_intake_flex.toml): the flex NOTE, carried in by a moving
+    carpet, goes through into the bin."""
+    from scrimmage.bench.report import headlines
+    from scrimmage.bench.run import run_bench
+    from scrimmage.bench.spec import load_bench
+
+    result = run_bench(load_bench(BENCH))
+    assert [(p.status, p.outlet) for p in result.pieces] == [("out", "bin")]
+    assert any(line.startswith("1 of 1 left through `bin`") for line in headlines(result)), headlines(result)
+
+
+RUN_WALL_MAX = 10.0  # choice: s; the spike measured 4.1 s for this run
+
+
+@pytest.mark.skipif(os.environ.get("SCRIMMAGE_TIMING") != "1", reason="timed locally only: set SCRIMMAGE_TIMING=1")
+def test_the_example_runs_in_under_10_s(tmp_path):
+    """`scrimmage test run` on the example, start to finish (K6-P6: timing never gates CI)."""
+    t0 = time.perf_counter()
+    done = subprocess.run([sys.executable, "-m", "scrimmage", "test", "run", str(TEST), "--out", str(tmp_path / "runs")],
+                          capture_output=True, text=True, timeout=120)
+    wall = time.perf_counter() - t0
+    print(f"the CLI run took {wall:.1f} s")
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert wall < RUN_WALL_MAX
+
+
+# source: the three grids on the shipped files (K6 Task 9, 2026-11-13; the README's tables): each grid's passes and
+# the cases that fail (label and settings). Task 1's record had 39 of 40 random draws, with
+# [-0.399, -0.273, 5.15, 1.81, 3.4, -2.8] still moving at the end; on the NOTE's refit damping (K6-R6) it passes.
+SHIPPED = {
+    "oat": (44, [("control_0V", 0)]),
+    "corners": (16, []),
+    "random": (40, []),
+}
+
+
+@pytest.mark.skipif(os.environ.get("SCRIMMAGE_INTAKE_GRID") != "1",
+                    reason="about 8 minutes: set SCRIMMAGE_INTAKE_GRID=1 (CI's intake-grid job does)")
+def test_the_intake_grids():
+    """The intake spike's three grids on the example's own files (K6-R10): the target is met, the soft guard never
+    fires, and each grid's count and failing cases are the shipped ones."""
+    got = {name: intake_grid.run_grid(name) for name in SHIPPED}
+    for name, rows in got.items():
+        print(f"== {name}")
+        print("\n".join(intake_grid.table(rows)))
+    assert intake_grid.meets_target(got["oat"], got["corners"])
+    for name, rows in got.items():
+        assert [r for r in rows if r["soft_resets"]] == [], name
+        passed, failing = SHIPPED[name]
+        assert sum(r["passed"] for r in rows) == passed, name
+        assert [(r["label"], r["x"]) for r in rows if not r["passed"]] == failing, name

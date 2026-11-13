@@ -950,6 +950,13 @@ Thirteen worked examples are in `examples/blocks/`. Each has a README with the s
   chain (Setup's partner, **Hangs on**) and scores 5 in the endgame: ONSTAGE's 3 and HARMONY's 2. The README says where
   the partner hangs and why: the STAGE's legs leave room for it only near the low point, and hooks don't slide along
   a chain.
+- **`examples/blocks/note-intake`**, the stand-in kitbot with an over-under floor intake (a part written by hand)
+  behind the built-in `2024` field's AMP-side blue WING NOTE. It drives at the NOTE at about 1 m/s with the rollers at
+  8 V and expects it in `intake.hopper`: `1 of 1 made it in`, and the piece table says `in intake.hopper`. Near the
+  robot the NOTE is a soft ring that squashes in the rollers' nip. At 0 V the robot pushes it ahead and the test
+  fails. The README has the robustness grids (`tests/intake_grid.py`: the test run 101 times with the intake built a
+  little off, the driver fast or crooked, the NOTE off center), which it passes, and why its front roller is on a
+  sprung arm.
 
 Open one with `scrimmage edit examples/blocks/intake/intake.test.toml`.
 

@@ -985,9 +985,11 @@ duration = 0.3
 @pytest.mark.skipif(os.environ.get("SCRIMMAGE_TIMING") != "1", reason="timed locally only: set SCRIMMAGE_TIMING=1")
 def test_what_a_soft_note_costs(tmp_path):
     """Review finding 3: wall seconds per simulated second on the wing world with two NOTEs, idle and pushed at 2 V,
-    with 0, 1 and 2 soft (the least of 3 runs of 1 s). Printed, not a gate (F13): the numbers in spec D8's cost and
-    docs/test-range.md. Opt-in, as test_bench_reference.py's test_turnaround is (final review Minor 7): run it with
-    SCRIMMAGE_TIMING=1 and -s to record the numbers."""
+    with 0, 1 and 2 soft (the least of 3 runs of 1 s), then what K6-R2's pairs cost (_what_pairs_cost). Printed, not
+    a gate (F13): the numbers in spec D8's cost and docs/test-range.md (rerun for K6 on 2026-11-13: 0.36, 0.77 and
+    1.13 s per simulated second pushed with 0, 1 and 2 soft, the same within 2 % as the K5 code on the same computer
+    that day; the pairs 0.006 ms a step). Opt-in, as test_bench_reference.py's test_turnaround is (final review
+    Minor 7): run it with SCRIMMAGE_TIMING=1 and -s to record the numbers."""
     x, y = WING_NOTE
     out = {}
     for volts, label in ((0.0, "idle"), (2.0, "pushed")):
@@ -1013,3 +1015,42 @@ def test_what_a_soft_note_costs(tmp_path):
                 best = min(best, time.perf_counter() - t0)
             out[f"{label} {n} soft"] = best
     print({k: round(v, 3) for k, v in out.items()})
+    print(_what_pairs_cost())
+
+
+PAIR_RUN_S = 2.0  # choice: the example's drive: the NOTE is soft in the rollers for the second half of it
+INTAKE_TEST = Path(__file__).resolve().parent.parent / "examples" / "blocks" / "note-intake" / "intake.test.toml"
+
+
+def _what_pairs_cost() -> dict:
+    """K6-R2's pairs on examples/blocks/note-intake (256 of them: 8 priority geoms x 2 rings x 16 capsules): wall
+    seconds per simulated second built with and without them, with the robot standing (both rings parked, every pair
+    still checked) and driving at its NOTE with the rollers on (a ring in use for about the second half), and the
+    pairs' cost per step (ms). The least of 3 runs of PAIR_RUN_S, each from the start."""
+    from scrimmage.blocks.program import load
+
+    out = {}
+    for pairs in (True, False):
+        with pytest.MonkeyPatch.context() as mp:
+            if not pairs:
+                mp.setattr(soft, "pair_rings", lambda spec, rings, bodies: 0)
+            w = world_for(load(INTAKE_TEST))
+        assert (w.model.npair > 0) == pairs
+        for label, volts in (("standing", 0.0), ("driving in", 3.1)):
+            best, steps = math.inf, 0
+            for _ in range(3):
+                w.reset()
+                hal = HalState()
+                drive(hal, volts)
+                hal.devices[("PWM", "2")] = {"<init": True, "<speed": (8.0 if volts else 0.0) / VOLTS}
+                t0, s0, n = time.perf_counter(), w.data.time, 0
+                while w.data.time - s0 < PAIR_RUN_S - 1e-9:
+                    w.step(hal)
+                    n += 1
+                best, steps = min(best, (time.perf_counter() - t0) / (w.data.time - s0)), n / PAIR_RUN_S
+            out[f"{label}, {'pairs' if pairs else 'no pairs'}"] = round(best, 3)
+            out[f"{label}, steps per s"] = steps
+    for label in ("standing", "driving in"):
+        out[f"{label}, the pairs' ms per step"] = round(
+            1000 * (out[f"{label}, pairs"] - out[f"{label}, no pairs"]) / out[f"{label}, steps per s"], 4)
+    return out

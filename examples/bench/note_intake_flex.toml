@@ -1,0 +1,133 @@
+# The over-under floor intake from examples/blocks/note-intake, on the bench with the soft flex NOTE. A top roller out
+# front drags the NOTE back into a low bottom roller, which lifts it onto a floor 2 in up; one more top roller over
+# the floor carries it in. Bench x is backward on the robot (the way the NOTE goes into the intake):
+# x_bench = 0.50 - x_robot, in m.
+#
+# The carpet is a moving plate (`surface_speed`): the robot driving at the NOTE at 1 m/s is the carpet carrying the
+# NOTE into the rollers at 1 m/s. On a flat moving plate the flex NOTE comes up to the carpet's speed from rest in
+# under 0.4 s (measured: about 0.3 s at 1 m/s), so the inlet starts it at that speed already.
+#
+# Not modeled here: the example's front roller hangs on a sprung arm that a NOTE in a tight nip lifts. A bench wheel
+# can't swing, so this front roller is fixed where the arm's stop holds it. The bench shows the nip at its nominal
+# 1.4 in gap, not how the arm opens.
+#
+#   scrimmage bench run examples/bench/note_intake_flex.toml
+
+[bench]
+name = "note intake flex"
+author = "Ava"
+idea = "the note-intake example's over-under nip: a top roller out front drags the NOTE into a low bottom roller that lifts it onto a floor"
+notes = "2 in 60A rollers, NEO 3:1 at 8 V; 1.4 in nip; floor 2.04 in up; the carpet moves at 1 m/s; the front roller is fixed (the example's is on a sprung arm)"
+
+[piece]
+preset = "2024-note"
+flex = true
+
+# source: the example's part.toml: one NEO at 3 to 1 drives every roller, at 8 V in its test
+[shaft.bottom]
+motor = "NEO"
+gearing = 3.0
+voltage = 8.0
+wheel_inertia = 0.0006           # choice: a 2 in roller with its sleeve and shaft
+
+[shaft.top]
+coupled_to = "bottom"
+ratio = 1.0                      # source: the example's couplings: every roller at the same surface speed
+wheel_inertia = 0.0006           # choice: as the bottom roller's
+
+[shaft.floor]
+coupled_to = "bottom"
+ratio = 1.0                      # source: the example's couplings
+wheel_inertia = 0.0006           # choice: as the bottom roller's
+
+# The bottom roller: 3 mm over the carpet, its top moving into the robot (+x here).
+# source: the example's part.toml (its `bottom` body), in bench coordinates
+[[wheel]]
+name = "bottom"
+shaft = "bottom"
+center = [0.0, 0.0, 0.0284]
+diameter_in = 2.0
+width = 0.40
+tread = "60A"
+
+# The front top roller: its bottom 1.2 in over the carpet, 1.4 in from the bottom roller's surface. Fixed here; in
+# the example it is on a sprung arm, on its stop at this place.
+# source: the example's part.toml (its `roller` body with the arm on its stop), in bench coordinates
+[[wheel]]
+name = "front_top"
+shaft = "top"
+center = [-0.0819, 0.0, 0.0559]
+axis = [0.0, -1.0, 0.0]
+diameter_in = 2.0
+width = 0.40
+tread = "60A"
+
+# The top roller over the bin's floor, 1.4 in above it.
+# source: the example's part.toml (its `top0` body), in bench coordinates
+[[wheel]]
+name = "floor_top"
+shaft = "floor"
+center = [0.02, 0.0, 0.1128]
+axis = [0.0, -1.0, 0.0]
+diameter_in = 2.0
+width = 0.40
+tread = "60A"
+
+# The carpet, moving into the robot as the robot drives at the NOTE.
+# choice: 0.9 m of carpet before the bottom roller, 1 cm thick, its top at z = 0
+[[plate]]
+name = "carpet"
+center = [-0.45, 0.0, -0.005]
+size = [0.9, 0.8, 0.01]
+material = "polycarbonate"
+surface_speed = 1.0              # choice: the example's approach speed (its drive at 3.1 V is about 1 m/s)
+
+# source: the example's part.toml: the bin's floor slab, back stop, lid and the ceiling over the rollers, the side
+# walls round them, in bench coordinates
+[[plate]]
+name = "bin_floor"
+center = [0.2578, 0.0, 0.0268]
+size = [0.459, 0.4064, 0.0496]
+
+[[plate]]
+name = "back_stop"
+center = [0.5123, 0.0, 0.064]
+size = [0.05, 0.5, 0.12]
+
+[[plate]]
+name = "ceiling"
+center = [0.19, 0.0, 0.1378]
+size = [0.62, 0.5, 0.05]
+
+[[plate]]
+name = "wall_left"
+center = [0.17, 0.2282, 0.075]
+size = [0.66, 0.05, 0.15]
+
+[[plate]]
+name = "wall_right"
+center = [0.17, -0.2282, 0.075]
+size = [0.66, 0.05, 0.15]
+
+# The NOTE starts flat on the carpet, moving at the carpet's speed, its front edge about 5 mm short of the front
+# roller. choice: its center 0.29 m before the bottom roller (its edge 7 in, 0.178 m, ahead of that) and 1 mm over
+# the carpet (the NOTE is 2 in thick)
+[[inlet]]
+name = "carpet"
+center = [-0.29, 0.0, 0.0264]
+size = [0.001, 0.001, 0.001]
+count = 1
+velocity = [1.0, 0.0, 0.0]       # choice: the carpet's speed
+
+# The NOTE is in when its center is over the bin's floor, under the lid.
+# choice: the bin's middle, behind the floor roller
+[[outlet]]
+name = "bin"
+center = [0.37, 0.0, 0.087]
+size = [0.24, 0.40, 0.06]
+
+[run]
+duration = 2.0                   # choice: room to spare; the NOTE reaches the bin in under 0.4 s
+
+[sweep]
+"shaft.bottom.voltage" = [5.0, 8.0, 11.0]   # choice: the ends of the example's grids' volts, and its 8 V

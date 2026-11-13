@@ -72,6 +72,7 @@ The examples in `examples/bench/` are each written as a student's idea:
 | `bounce_bar.toml` | Priya | shoot flat between two wheels, a springy bar bounces the ball up |
 | `curved_ramp.toml` | Diego | a roller pushes balls up a curved ramp, over the top into a hopper |
 | `hood_shapes/*.toml` | Sam, Aisha, Leo | three hood shapes on one launcher, for `bench compare` and `bench gallery` |
+| `note_intake_flex.toml` | Ava | the note-intake example's over-under nip, with the flex NOTE fed in on a moving carpet (`surface_speed`) |
 
 ## A first bench file
 
@@ -405,6 +406,11 @@ size = [0.2, 0.8, 0.8]
 ```
 
 `examples/bench/note_pinch_flex.toml` is a whole shooter: the NOTE squeezed a quarter between two 4 in wheels.
+`examples/bench/note_intake_flex.toml` is a floor intake: the nip of
+[the note-intake example](../examples/blocks/note-intake/README.md), fed by a carpet plate moving at 1 m/s (the
+robot's approach speed). On a flat moving plate the flex NOTE comes up to the plate's speed from rest in under
+0.4 s (about 0.3 s at 1 m/s). Its front roller is fixed: the example's is on a sprung arm, which a bench wheel can't be, so the bench shows
+the nip at its 1.4 in gap, not how the arm opens.
 
 - **It is opt-in.** Without `flex = true` nothing changes: the NOTE is the rigid stand-in, as fast as before. The
   test range's own soft NOTE (near a robot) doesn't change the bench.

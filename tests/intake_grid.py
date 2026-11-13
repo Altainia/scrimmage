@@ -261,7 +261,8 @@ def run_case(case: Case, example: Path = EXAMPLE) -> dict:
     finally:
         del w.step
     return {"grid": case.grid, "label": case.label, "x": case.x, "passed": bool(r.passed), "status": r.status,
-            "outcome": r.outcome, "vmax": round(vmax[0], 2), "wall": round(time.perf_counter() - t0, 1)}
+            "outcome": r.outcome, "vmax": round(vmax[0], 2), "soft_resets": int(r.soft_resets),
+            "wall": round(time.perf_counter() - t0, 1)}
 
 
 # ------------------------------------------------------------------------------------------------ the grids
@@ -288,7 +289,8 @@ def run_grid(name: str, example: Path = EXAMPLE, out: Path | None = None) -> lis
 
 def table(rows: list[dict]) -> list[str]:
     lines = [f"{r['label']:<11} {json.dumps(r['x']):<40} {'pass' if r['passed'] else 'FAIL'}  "
-             f"{r['vmax']:5.1f} m/s  {r['outcome']}" for r in rows]
+             f"{r['vmax']:5.1f} m/s  {r['outcome']}"
+             + (f"  ({r['soft_resets']} soft resets)" if r.get("soft_resets") else "") for r in rows]
     lines.append(f"{sum(r['passed'] for r in rows)} of {len(rows)} passed; "
                  f"fastest segment {max((r['vmax'] for r in rows), default=0.0):.1f} m/s")
     return lines
