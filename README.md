@@ -1055,6 +1055,9 @@ pip install -e ".[dev,nt,mcp]"
 pytest            # ~25 s: unit tests plus two end-to-end runs against real RobotPy robot programs
 ```
 
+The dev extra's `libgrapplefrc-py` (Grapple's LaserCAN) has wheels only for Linux with glibc 2.34 or newer
+(manylinux_2_34), Windows x64 and macOS on Apple silicon.
+
 The browser tests (assembler and scenario editor) need Chromium: `python -m playwright install chromium` (CI does this), or point
 `SCRIMMAGE_CHROMIUM` at an existing build; they skip themselves otherwise, and `SCRIMMAGE_SKIP_BROWSER=1` skips them
 on purpose (`pytest -m browser` runs only them). `SCRIMMAGE_REQUIRE_BROWSER=1` (set on CI) makes a missing browser a

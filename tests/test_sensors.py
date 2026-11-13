@@ -17,7 +17,8 @@ from scrimmage.protocol import HalState  # noqa: E402
 from scrimmage.sensors.colors import NAMED_COLORS, nearest_color  # noqa: E402
 from scrimmage.sensors import runtime  # noqa: E402
 from scrimmage.sensors.runtime import SensorRuntime, color_values  # noqa: E402
-from scrimmage.sensors.spec import DEVICE_MAX_RANGE, SensorError, device_key, parse_sensors  # noqa: E402
+from scrimmage.sensors.spec import (CANRANGE_THRESHOLD, DEVICE_MAX_RANGE, SensorError, device_key,  # noqa: E402
+                                    parse_sensors)
 from scrimmage.testrange.build import BALL_BITS  # noqa: E402
 from scrimmage.testrange.pieces import ball_kind, piece_color  # noqa: E402
 from scrimmage.world import World  # noqa: E402
@@ -464,7 +465,16 @@ def test_device_key_on_other_kind():
 def test_pwf_not_supported_yet():
     with pytest.raises(SensorError) as e:
         parse_sensors([dist_table(pwf="TimeOfFlight:6")])
-    assert "not supported yet" in str(e.value) and "analog" in str(e.value)
+    assert "CAN sensor" in str(e.value) and "can't feed it yet" in str(e.value) and "analog stand-in" in str(e.value)
+
+
+def test_canrange_default_threshold_is_phoenix_default():
+    s, = parse_sensors([dist_table(ctre="CANrange:5")])
+    assert CANRANGE_THRESHOLD == 0.4 and s.threshold == CANRANGE_THRESHOLD     # not half of max_range (1.5 m)
+    assert parse_sensors([dist_table(ctre="CANrange:5", threshold=0.25)])[0].threshold == 0.25   # explicit wins
+    assert parse_sensors([dist_table(ctre="CANrange:5", max_range=0.3)])[0].threshold == 0.3     # capped at max_range
+    assert parse_sensors([dist_table(grapple="LaserCAN:7")])[0].threshold == DEVICE_MAX_RANGE["LaserCAN"] / 2
+    assert parse_sensors([dist_table()])[0].threshold == 1.0
 
 
 def test_same_device_twice():

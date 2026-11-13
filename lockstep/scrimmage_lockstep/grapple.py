@@ -111,7 +111,7 @@ def _rebind(original, stand_in) -> None:
         if mod is sys.modules.get(__name__):
             continue
         try:
-            names = [k for k, v in vars(mod).items() if v is original]
+            names = [k for k, v in list(vars(mod).items()) if v is original]   # a copy: another thread may import
         except Exception:  # None (a blocked import) or a module without a plain namespace
             continue
         for k in names:

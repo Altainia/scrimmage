@@ -307,6 +307,7 @@ class Session:
             self.bridge.ds.set_game_data(game_data)
         self.bridge.agent_state = self.agent_state
         self.bridge.rev_state = self.rev_state
+        self.bridge.grapple_state = self.grapple_state
         self.bridge.robot_language = self.robot_language()
         self._task = asyncio.create_task(self.bridge.run())
         try:
@@ -794,6 +795,11 @@ class Session:
     def rev_state(self) -> str | None:
         """"unavailable: <reason>" once the Java agent or RobotPy REV helper says it can't simulate REV SPARKs."""
         return self.robot.rev_state if self.robot is not None else None
+
+    def grapple_state(self) -> str | None:
+        """"unavailable: <reason>" once the Grapple LaserCAN helper (Java agent or RobotPy lockstep) says it can't feed
+        LaserCANs."""
+        return self.robot.grapple_state if self.robot is not None else None
 
     def rev_problem(self) -> str | None:
         """The error to show when the config binds REV SPARKs but the agent can't simulate them (REVLib too old)."""

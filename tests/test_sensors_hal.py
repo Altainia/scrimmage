@@ -324,12 +324,108 @@ def test_unbound_canrange_is_listed_not_modeled():
     assert not [r for r in check_devices(w, hal, robot_time=5) if r.status == "extra"]
 
 
-def test_missing_device_warned_once():
+def test_missing_device_warned_and_said_again_on_reconnect():
     w = world(CANRANGE, LASERCAN)
     hal = HalState()
     (a, b) = w.sensors.missing_devices(hal, 2.0)
-    assert 'cr' in a and "CANrange 5" in a and "never created" in a
-    assert 'lc' in b and "LaserCAN 7" in b and "helper" in b
+    assert '"cr"' in a and "CANrange 5" in a and "hasn't created it 2 s after connecting" in a and "ctre" in a
+    assert '"lc"' in b and "LaserCAN 7" in b and "helper" in b
     hal.devices[CR_KEY] = {}
-    assert w.sensors.missing_devices(hal, 2.0) == [], "said once"
-    assert w.warnings.count(a) == 1 and w.warnings.count(b) == 1
+    assert w.sensors.missing_devices(hal, 2.0) == [b], "a robot reconnect says it again"
+    assert w.warnings.count(a) == 1 and w.warnings.count(b) == 1, "the run's notes have it once"
+
+
+def test_missing_lasercan_names_the_ones_the_robot_created():
+    w = world(LASERCAN)
+    hal = HalState()
+    hal.devices[("ScrimmageGrapple", "LaserCAN[8]")] = {}
+    hal.devices[("ScrimmageGrapple", "LaserCAN[12]")] = {}
+    (msg,) = w.sensors.missing_devices(hal, 2.0, "java", "unavailable: ignored when others exist")
+    assert "created LaserCAN 8, LaserCAN 12 and no LaserCAN 7" in msg and "grapple" in msg, msg
+
+
+def test_missing_lasercan_quotes_the_helpers_reason():
+    w = world(LASERCAN)
+    (msg,) = w.sensors.missing_devices(HalState(), 2.0, "python", "unavailable: libgrapplefrc has no LaserCAN")
+    assert "helper is unavailable in the robot program (libgrapplefrc has no LaserCAN)" in msg, msg
+
+
+@pytest.mark.parametrize("language, words", [
+    ("java", ["scrimmage java path", "scrimmage java build", "Java agent"]),
+    ("python", ["--scrimmage-lockstep", "[robot_program] command", "pip install ./lockstep", "robotInit"]),
+    (None, ["scrimmage java build", "--scrimmage-lockstep", "pip install ./lockstep"]),
+])
+def test_missing_lasercan_says_how_to_load_the_helper(language, words):
+    w = world(LASERCAN)
+    (msg,) = w.sensors.missing_devices(HalState(), 2.0, language, None)
+    assert all(word in msg for word in words), msg
+    if language == "java":
+        assert "--scrimmage-lockstep" not in msg
+    if language == "python":
+        assert "scrimmage java build" not in msg
+
+
+def test_a_lasercan_on_a_wrong_id_is_listed_as_made():
+    from scrimmage.devicecheck import check_devices
+    w = world(LASERCAN)
+    hal = HalState()
+    hal.devices[LC_KEY] = {}
+    hal.devices[("ScrimmageGrapple", "LaserCAN[8]")] = {}
+    extra = [r for r in check_devices(w, hal, robot_time=5) if r.status == "extra"]
+    assert [(r.kind, r.made) for r in extra] == [("LaserCAN", "LaserCAN 8")], "LaserCAN 7 is bound, 8 isn't"
+    from scrimmage.bindings import parse_not_modeled
+    w.not_modeled = parse_not_modeled(["LaserCAN:8"])[0]
+    assert not [r for r in check_devices(w, hal, robot_time=5) if r.status == "extra"]
+
+
+def test_a_lasercans_values_are_resent_when_its_simdevice_appears():
+    """The helper creates its SimDevice with the robot's LaserCAN, with no <init: scrimmage resends the LaserCAN's
+    values when it first appears, not up to FULL_REFRESH later."""
+    from fake_robot import FakeRobot, next_port, running, wait_until
+    from scrimmage.bridge import Bridge
+    from scrimmage.protocol import frame
+
+    def lc_frames(robot, start):
+        return [m["data"] for m in robot.frames[start:] if (m["type"], m["device"]) == LC_KEY]
+
+    async def main():
+        port = next_port()
+        cfg = range_cfg()
+        cfg["sensor"] = [copy.deepcopy(LASERCAN)]
+        bridge = Bridge(spares_world(cfg), "localhost", port, nt=False, speed=None, held=True)
+        async with running(bridge):
+            async with FakeRobot(port, lockstep=True) as robot:
+                await wait_until(lambda: bridge.driver is not None)
+                for _ in range(2):
+                    assert await bridge.driver.step_once() == "ok"
+                assert any(">distance_mm" in d for d in lc_frames(robot, 0))   # sent before the device existed: lost
+                await robot.ws.send(frame(*LC_KEY, {">status": 2}))
+                await wait_until(lambda: LC_KEY in bridge.hal.devices)
+                mark = len(robot.frames)
+                assert await bridge.driver.step_once() == "ok"
+                sent = {k: v for d in lc_frames(robot, mark) for k, v in d.items()}
+                assert {">distance_mm", ">status"} <= set(sent), sent
+                await robot.ws.send(frame(*LC_KEY, {">status": 2}))     # a value relayed back: not a first sight
+                await asyncio.sleep(0.05)
+                mark = len(robot.frames)
+                assert await bridge.driver.step_once() == "ok"
+                assert not lc_frames(robot, mark)
+    asyncio.run(main())
+
+
+def test_the_bridge_gives_the_missing_lasercan_warning_its_language_and_helper_state(caplog):
+    from scrimmage.bridge import Bridge
+    caplog.set_level(logging.WARNING, logger="scrimmage")
+    cfg = range_cfg()
+    cfg["sensor"] = [copy.deepcopy(LASERCAN)]
+    bridge = Bridge(spares_world(cfg), "localhost", 0, nt=False, speed=None, held=True)
+    bridge.robot_language = "python"
+    asyncio.run(bridge._on_tick(2.0))
+    (msg,) = [r.getMessage() for r in caplog.records if "LaserCAN 7" in r.getMessage()]
+    assert "--scrimmage-lockstep" in msg, msg
+    caplog.clear()
+    bridge._devices_checked = False     # as on a robot reconnect
+    bridge.grapple_state = lambda: "unavailable: boom"
+    asyncio.run(bridge._on_tick(2.0))
+    (msg,) = [r.getMessage() for r in caplog.records if "LaserCAN 7" in r.getMessage()]
+    assert "(boom)" in msg, msg

@@ -18,7 +18,7 @@
     sees = "pieces"                 # "pieces" (the default) or "anything": game pieces only, or anything but the robot
     analog = 0                      # an AnalogInput, volts_per_m (0.977) volts per meter of distance
     dio = 1                         # and/or a DigitalInput that is on while closer than threshold (m, or threshold_in;
-    threshold = 0.5                 #   default half of max_range)
+    threshold = 0.5                 #   default half of max_range; a CANrange's 0.4, Phoenix's default)
     ctre = "CANrange:5"             # and/or a CTRE CANrange, or grapple = "LaserCAN:7" (one of them; ids 0 to 62); the
                                     #   robot reads it as it would the real one, and max_range defaults to its reach
 
@@ -73,8 +73,13 @@ DEFAULT_VOLTS_PER_M = 0.977     # V/m: a MaxBotix MB1013's 5 V over 5.12 m (spec
 DEVICE_MAX_RANGE = {"CANrange": 3.0, "LaserCAN": 4.0}   # m, a distance sensor's default max_range per device:
 # CANrange 3.0 m is CTRE's CANrange User's Guide (11/25/2024) section 1.3, long range mode; LaserCAN 4.0 m is
 # libgrapplefrc's LaserCanInterface RangingMode javadoc, long mode (checks file, sections 1 and 2)
+CANRANGE_THRESHOLD = 0.4        # m: a CANrange's default threshold: Phoenix 6's default ProximityThreshold
+# (ProximityParams in phoenix6 26.3.0's CANrangeConfiguration, hysteresis 0.01 m; getIsDetected() is true closer than
+# it), so the Test tab's "is on" matches getIsDetected() when neither is configured; capped at max_range
 DEVICE_KEYS = {"ctre": "CANrange", "grapple": "LaserCAN"}   # the config key that names each device
 MAX_DEVICE_ID = 62              # a CAN id: 0 to 62
+LASERCAN_TYPE = "ScrimmageGrapple"      # the Grapple helper's SimDevice per LaserCAN: "ScrimmageGrapple:LaserCAN[<id>]"
+LASERCAN_DEVICE = re.compile(r"LaserCAN\[(?P<id>\d+)\]")
 _COMMON = ("name", "kind", "body")
 _LOOK = ("at", "at_in", "toward", "max_range", "max_range_in", "sees")
 KEYS = {
@@ -111,7 +116,8 @@ class SensorSpec:
     i2c: str | None = None
     active_low: bool = True
     volts_per_m: float = DEFAULT_VOLTS_PER_M
-    threshold: float | None = None          # m: a distance sensor's on distance (default length / 2); None otherwise
+    threshold: float | None = None          # m: a distance sensor's on distance (default length / 2, a CANrange's
+                                            #   CANRANGE_THRESHOLD); None otherwise
     hfov_deg: float | None = None           # a camera's: its fields of view (degrees), the most edge-on it detects a
     vfov_deg: float | None = None           #   tag at (degrees off the tag's normal) and its frames per second; None
     max_angle_deg: float | None = None      #   for every other kind
@@ -175,8 +181,9 @@ class _Table:
         """The (device, id) of a `ctre = "CANrange:<id>"` or `grapple = "LaserCAN:<id>"` key; None if neither is
         given."""
         if "pwf" in self.t:
-            raise self.err(i18n.t("pwf: the Playing With Fusion Time of Flight is not supported yet; wire an analog "
-                                  "output ({analog_setting}) instead", analog_setting="analog = <channel>"))
+            raise self.err(i18n.t("pwf: the Playing With Fusion Time of Flight is a CAN sensor, and scrimmage can't "
+                                  "feed it yet; in simulation, use an analog stand-in sensor ({analog_setting})",
+                                  analog_setting="analog = <channel>"))
         given = [k for k in DEVICE_KEYS if k in self.t]
         if len(given) > 1:
             raise self.err(i18n.t("has both {first} and {second}; a sensor is one device, so give only one",
@@ -322,7 +329,9 @@ def parse_sensor(table, index: int) -> SensorSpec:
             kw["volts_per_m"] = float(v)
         if device:
             kw["device"], kw["device_id"] = device
-        threshold = t.length("threshold", kw["length"] / 2.0)
+        default = (min(CANRANGE_THRESHOLD, kw["length"]) if kw.get("device") == "CANrange"     # Phoenix's default
+                   else kw["length"] / 2.0)
+        threshold = t.length("threshold", default)
         if threshold > kw["length"]:
             raise t.err(i18n.t("threshold ({threshold} m) is past max_range ({length} m); make it shorter",
                                threshold=f"{threshold:g}", length=f"{kw['length']:g}"))
@@ -357,7 +366,7 @@ def device_key(s: SensorSpec) -> tuple[str, str] | None:
     if s.device == "CANrange":      # CTRE's own SimDevice, as RobotPy's phoenix6 registers it too
         return "CAN", f"CANrange (v6)[{s.device_id}]"
     if s.device == "LaserCAN":      # ours: the Grapple helper and the Java agent register it (sensors/grapple.py)
-        return "ScrimmageGrapple", f"LaserCAN[{s.device_id}]"
+        return LASERCAN_TYPE, f"LaserCAN[{s.device_id}]"
     return None
 
 

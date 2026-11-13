@@ -590,6 +590,12 @@ def lasercan(field: str) -> tuple[int, int, str] | None:
     return int(status), int(mm), mode
 
 
+def lasercan_is(field: str, status: int, mm: int, mode: str | None = None) -> bool:
+    """Whether a printed LaserCAN reads `status` and `mm` (to 1 mm) and, if given, `mode`: a wait's predicate."""
+    got = lasercan(field)
+    return got is not None and got[0] == status and abs(got[1] - mm) <= 1 and mode in (None, got[2])
+
+
 def test_java_reads_can_distance_sensors(tmp_path):
     """Two CANranges (5, 8) and two LaserCANs (7, 9; 9 made in a static initializer) read scrimmage's physics through
     CTRE's and Grapple's own classes, each its own cargo: CANrange 5 0.25 m, LaserCAN 7 0.40 m, CANrange 8 0.60 m,
@@ -628,9 +634,11 @@ def test_java_reads_can_distance_sensors(tmp_path):
             for name, d in want.items():   # scrimmage's own reading, before the robot's
                 assert seen[name]["distance_m"] == pytest.approx(d, abs=0.001), (name, seen[name])
 
-            def all_seen(p) -> bool:
-                return (abs(float(p[0]) - 0.25) < CANRANGE_TOL and abs(float(p[2]) - 0.60) < CANRANGE_TOL
-                        and lasercan(p[4]) is not None and lasercan(p[5]) is not None)
+            def all_seen(p) -> bool:     # every value asserted below, so a print a step behind is waited past
+                return (abs(float(p[0]) - 0.25) < CANRANGE_TOL and p[1] == "true"
+                        and abs(float(p[2]) - 0.60) < CANRANGE_TOL
+                        and lasercan_is(p[4], LASERCAN_STATUS_VALID, 400, "short")
+                        and lasercan_is(p[5], LASERCAN_STATUS_VALID, 2000, "long"))
             p = await range_print(s, all_seen, "every device reading its cargo")
             text = "\n".join(l["text"] for l in s.console()["lines"])
             assert text.count("scrimmage grapple helper: loaded") == 1, text[-3000:]
@@ -643,14 +651,17 @@ def test_java_reads_can_distance_sensors(tmp_path):
             assert status == LASERCAN_STATUS_VALID and mm == pytest.approx(2000, abs=1) and mode == "long", p
 
             place(away=True)
-            p = await range_print(s, lambda p: p[1] == "false" and lasercan(p[4])[0] != LASERCAN_STATUS_VALID,
+            p = await range_print(s, lambda p: (p[1] == "false" and abs(float(p[0]) - 3.0) < CANRANGE_TOL
+                                                and lasercan(p[4]) == (LASERCAN_STATUS_NO_TARGET, 1300, "short")),
                                   "the cargo gone")
             assert lasercan(p[4]) == (LASERCAN_STATUS_NO_TARGET, 1300, "short"), p   # nothing: the short reach
             assert float(p[0]) == pytest.approx(3.0, abs=CANRANGE_TOL), p     # nothing: its max_range
 
             place(away=False)
             s.set_mode("teleop")
-            p = await range_print(s, lambda p: lasercan(p[5])[2] == "short", "LaserCAN 9 in short ranging")
+            p = await range_print(s, lambda p: (lasercan(p[5]) == (LASERCAN_STATUS_NO_TARGET, 1300, "short")
+                                                and lasercan_is(p[4], LASERCAN_STATUS_VALID, 400)),
+                                  "LaserCAN 9 in short ranging, past its reach")
             text = "\n".join(l["text"] for l in s.console()["lines"])
             assert "cfg lasercan SHORT ok" in text, text[-3000:]
             assert lasercan(p[5]) == (LASERCAN_STATUS_NO_TARGET, 1300, "short"), p

@@ -99,10 +99,10 @@ A distance sensor (`kind = "distance"`):
 | `volts_per_m` | 0.977 | volts per meter on the `analog` input (an estimate: a MaxBotix MB1013 ultrasonic sensor's 5 V over 5.12 m). The voltage stops at 5 V. It goes with `analog` |
 | `ctre` | none | `"CANrange:<id>"` (id 0 to 62): the sensor is also a CTRE CANrange the robot code reads. One device key per sensor, alone or beside `analog` and `dio`. `max_range` then defaults to 3.0 m. [CAN distance sensors](#can-distance-sensors) |
 | `grapple` | none | `"LaserCAN:<id>"` (id 0 to 62): the sensor is also a Grapple LaserCAN. One device key per sensor, alone or beside `analog` and `dio`. `max_range` then defaults to 4.0 m. [CAN distance sensors](#can-distance-sensors) |
-| `pwf` | none | not supported yet: it is an error that points you to `analog` (the Playing With Fusion Time of Flight) |
+| `pwf` | none | not supported yet: it is an error (the Playing With Fusion Time of Flight is a CAN sensor scrimmage can't feed yet). In simulation, use an `analog` stand-in sensor |
 | `dio` | none | a DIO channel that switches at `threshold`, like an IR proximity switch: on while something is closer than `threshold` |
 | `active_low` | `true` | `true`: the `dio` reads `false` while it is on. It goes with `dio` |
-| `threshold` (or `threshold_in`) | half of `max_range` | the distance (m, or inches) it is on closer than: for its `dio`, and for the Test tab's **is on**. It can't be past `max_range` |
+| `threshold` (or `threshold_in`) | half of `max_range`; for a CANrange, 0.4 m (Phoenix's default) | the distance (m, or inches) it is on closer than: for its `dio`, and for the Test tab's **is on**. It can't be past `max_range` |
 
 A color sensor (`kind = "color"`):
 
@@ -220,12 +220,15 @@ dio = 6                           # and a DigitalInput 6 beside it
 | device | robot code | reads |
 |---|---|---|
 | CANrange | `getDistance()` | the distance in whole millimeters, as Phoenix keeps it |
-| CANrange | `getIsDetected()` | whether the distance is inside the CANrange's own configured threshold. Scrimmage's `threshold` isn't used |
+| CANrange | `getIsDetected()` | whether the distance is inside the CANrange's own configured threshold (`ProximityParams.ProximityThreshold`, 0.4 m unless robot code sets it). Scrimmage's `threshold` isn't used; it defaults to the same 0.4 m, so the Test tab's **is on** matches when neither is set |
 | LaserCAN | `getMeasurement()` (Java), `get_measurement()` (RobotPy) | null (`None`) until the first reading. Then status 0 with the distance, or status 2 with the mode's reach when nothing is in range |
 
 With nothing in range a CANrange reads `max_range` (3.0 m by default). A LaserCAN's status 2 is the "weak signal" status. Scrimmage uses it for nothing in range because the
 firmware passes the ST chip's status through; that hasn't been seen on hardware. Grapple's own example tests
 `status != 0`, which works.
+
+A CANrange whose `max_range` is at or under its ProximityThreshold plus hysteresis (0.4 m plus 0.01 m by default) reads
+"detected" with nothing in front, so set the threshold in robot code (and `threshold` in the config) below `max_range`.
 
 **A CANrange is a Phoenix 6 device.** A robot with one runs in real time, like every Phoenix robot: see
 [Simulation controls](drive.md#simulation-controls).
@@ -234,7 +237,8 @@ firmware passes the ST chip's status through; that hasn't been seen on hardware.
 scrimmage's agent, with the usual Gradle init script; run `scrimmage java build` again after updating scrimmage.
 RobotPy robots load it through `--scrimmage-lockstep` in `[robot_program] command` and `pip install ./lockstep`
 (reinstall it after updating scrimmage), and install `libgrapplefrc-py`. Without the helper the run warns that the
-LaserCAN isn't being driven.
+LaserCAN isn't being driven. On RobotPy (Linux), Grapple's real LaserCAN crashes the robot program in simulation before
+any warning, so load the helper (`--scrimmage-lockstep`).
 
 On RobotPy, scrimmage replaces libgrapplefrc's `LaserCAN` class with its own in simulation. Grapple's Python
 `LaserCAN` crashes in desktop simulation on Linux on its own. So build the `LaserCAN` in `robotInit` or in a
@@ -279,12 +283,14 @@ public void robotPeriodic() {
 }
 ```
 
-**Mistakes the run tells you about.** A device in the config that the robot never creates is one warning naming it. A
-CANrange the robot creates that no sensor names is listed as not modeled; put `not_modeled = ["CANrange:<id>"]` in
+**Mistakes the run tells you about.** A device in the config that the robot never creates is one warning naming it.
+For a LaserCAN it says what to do: the LaserCANs the robot did create (a wrong id), the helper's reason when it says
+it's unavailable, or how to load the helper. A CANrange or LaserCAN the robot creates that no sensor names is listed as
+not modeled; put `not_modeled = ["CANrange:<id>"]` (or `"LaserCAN:<id>"`) in
 `[robot_program]` to hide it.
 
-**Playing With Fusion's Time of Flight sensor isn't supported yet:** its library has no simulation hook. A `pwf` key is
-an error. Wire an `analog` output on the sensor instead.
+**Playing With Fusion's Time of Flight sensor isn't supported yet:** it is a CAN sensor whose library has no simulation
+hook, so scrimmage can't feed it yet. A `pwf` key is an error. In simulation, use an `analog` stand-in sensor.
 
 ## A camera
 

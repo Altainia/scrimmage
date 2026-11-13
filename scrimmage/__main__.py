@@ -1075,6 +1075,7 @@ def _serve(args, ap) -> None:
         task = asyncio.create_task(bridge.run())
         bridge.agent_state = lambda: robot.agent_state() if robot is not None else None
         bridge.rev_state = lambda: robot.rev_state if robot is not None else None
+        bridge.grapple_state = lambda: robot.grapple_state if robot is not None else None
         if config.robot_program is not None:
             bridge.robot_language = robot_language(config.robot_program.command)
         try:

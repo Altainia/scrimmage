@@ -48,10 +48,11 @@ import numpy as np
 
 from .. import i18n
 from ..bindings import Update
-from ..checks import Said
+from ..checks import Said, worded
 from ..protocol import HalState
 from .colors import nearest_color
-from .spec import COLOR_MAX_RANGE, I2C_PORTS, SensorError, SensorSpec, color_device, device_key
+from .spec import (COLOR_MAX_RANGE, I2C_PORTS, LASERCAN_DEVICE, LASERCAN_TYPE, SensorError, SensorSpec, color_device,
+                   device_key)
 
 END_SLOP = 0.001    # m: a beam reaches this far past each end, so a piece resting exactly on an end reads broken on
                     # every step (a resting piece settles by far less than this) and never flickers
@@ -73,15 +74,44 @@ CAN_SUPPLY_VOLTS = 12.0     # a CANrange's supplyVoltage: the battery, as the si
 PORT_WORDS = {"onboard": "onboard", "mxp": "MXP"}
 
 
-def _missing_device_words(name: str, device: str, device_id: int):
-    """missing_devices' warning for people, worded when it is shown (not on the bridge's thread)."""
-    p = dict(sensor_table="[[sensor]]", name=name, device=device, device_id=device_id)
+def _missing_device_words(name: str, device: str, device_id: int, after: float, made: list[int],
+                          language: str | None, grapple: str | None):
+    """missing_devices' warning about one CANrange or LaserCAN, built in the Language setting each time it is called
+    (worded() calls it once in English for the machine text). `made`: the ids of the LaserCANs the robot program did
+    create; `language`: "java" / "python" / None, per the robot program command; `grapple`: the LaserCAN helper's
+    "unavailable: <reason>" from the console, or None."""
+    p = dict(sensor_table="[[sensor]]", name=name, device=device, device_id=device_id, after=f"{after:g}")
     if device == "CANrange":
-        return lambda: i18n.t('{sensor_table} "{name}" is a {device}, but the robot program never created {device} '
-                              "{device_id}; check the id the robot code gives CANrange and the sensor's ctre", **p)
-    return lambda: i18n.t('{sensor_table} "{name}" is a {device}, but the robot program never created {device} '
-                          "{device_id}; check the id the robot code gives it, and the scrimmage helper for "
-                          "{device} may not be loaded in the robot program", **p)
+        return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but the robot program hasn\'t created it '
+                      "{after} s after connecting; check the id the robot code gives {device} and the sensor's "
+                      "{key}", key="ctre", **p)
+    if made:        # the helper is driving other LaserCANs: the id is wrong
+        return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but the robot program created {made} and '
+                      "no {device} {device_id}; check the id the robot code gives {device} and the sensor's {key}",
+                      key="grapple", made=", ".join(f"{device} {i}" for i in made), **p)
+    if grapple is not None and grapple.startswith("unavailable"):
+        return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but scrimmage\'s {device} helper is '
+                      "unavailable in the robot program ({reason}), so no {device} is fed",
+                      reason=grapple.removeprefix("unavailable:").strip(), **p)
+    fix = dict(java_path="scrimmage java path", java_build="scrimmage java build",
+               lockstep_flag="--scrimmage-lockstep", command_key="[robot_program] command",
+               lockstep_package="scrimmage-lockstep", pip_install="pip install ./lockstep")
+    if language == "java":
+        return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but the robot program hasn\'t created it '
+                      "{after} s after connecting; check that the robot code creates {device} {device_id}. If it "
+                      "does, scrimmage's Java agent isn't loaded or is out of date: run the robot program through "
+                      "scrimmage (its Gradle init script loads the agent; see {java_path}), after {java_build}",
+                      **fix, **p)
+    if language == "python":
+        return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but the robot program hasn\'t created it '
+                      "{after} s after connecting; check that the robot code creates {device} {device_id} (in "
+                      "robotInit or a constructor). If it does, scrimmage's {device} helper isn't loaded: add "
+                      "{lockstep_flag} to {command_key}, or update {lockstep_package} ({pip_install})", **fix, **p)
+    return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but the robot program hasn\'t created it {after} '
+                  "s after connecting; check that the robot code creates {device} {device_id}. If it does, "
+                  "scrimmage's {device} helper isn't loaded: a Java robot runs through scrimmage (see {java_path}) "
+                  "after {java_build}; a RobotPy robot adds {lockstep_flag} to {command_key} and installs "
+                  "{lockstep_package} ({pip_install})", **fix, **p)
 
 
 def _missing_color_words(name: str, port: str, after: float, other: str | None):
@@ -183,7 +213,6 @@ class SensorRuntime:
         self._pnt = np.zeros(3)
         self.casts = 0                                  # mj_ray calls so far (a cost check)
         self._out_of_casts: set[str] = set()            # the sensors already warned about running out of casts
-        self._said_missing: set[str] = set()            # the CANrange and LaserCAN sensors missing_devices has said
         # Nothing seen until the first reading: World.reset reads them (data has no kinematics before mj_forward).
         self._readings = {s.name: self._read(s, None) for s in self._rays}
 
@@ -305,21 +334,22 @@ class SensorRuntime:
         """The color sensors the robot program reads, by their SimDevice's (type, device)."""
         return {color_device(s.i2c): s for s in self.specs if s.i2c is not None}
 
-    def missing_devices(self, hal: HalState, after: float) -> list[str]:
-        """What to say, `after` s from connecting, about each CANrange or LaserCAN the robot program hasn't created
-        (once per sensor, so a second call says nothing; put in the world's warnings too, so run reports show it)."""
+    def missing_devices(self, hal: HalState, after: float, language: str | None = None,
+                        grapple: str | None = None) -> list[str]:
+        """What to say, `after` s from connecting (time for the robot to create its devices), about each CANrange or
+        LaserCAN the robot program hasn't created (put in the world's warnings too, once, so run reports show it).
+        For a LaserCAN it says what to do: the ids of the LaserCANs the robot did create (a wrong id), else the
+        helper's unavailable reason (`grapple`, from the console), else how to load the helper for `language`
+        ("java" / "python" / None for both)."""
+        made = sorted(int(m["id"]) for typ, dev in hal.devices
+                      if typ == LASERCAN_TYPE and (m := LASERCAN_DEVICE.fullmatch(dev)))
         out = []
         for s in self.specs:
             key = device_key(s)
-            if key is None or key in hal.devices or s.name in self._said_missing:
+            if key is None or key in hal.devices:
                 continue
-            self._said_missing.add(s.name)
-            what = f"{s.device} {s.device_id}"
-            text = (f'[[sensor]] "{s.name}" is a {s.device}, but the robot program never created {what}; check the id '
-                    + ("the robot code gives CANrange and the sensor's ctre" if s.device == "CANrange" else
-                       f"the robot code gives it, and the scrimmage helper for {s.device} may not be loaded in the "
-                       "robot program"))
-            msg = Said(text, _missing_device_words(s.name, s.device, s.device_id))
+            p = (s.name, s.device, s.device_id, after, made, language, grapple)
+            msg = worded(lambda p=p: _missing_device_words(*p))
             out.append(msg)
             if msg not in self.world.warnings:
                 self.world.warnings.append(msg)

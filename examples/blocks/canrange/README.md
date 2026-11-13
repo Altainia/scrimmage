@@ -40,13 +40,17 @@ It finishes with the ball in the hopper and `bin` on, as `../beam`'s does.
 ## In robot code
 
 A CANrange is a Phoenix 6 device, so a robot that makes one runs in real time. The robot makes the device with the
-sensor's id, and reads it as usual:
+sensor's id, sets its proximity threshold to the config's `threshold` (25 cm), and reads it as usual:
 
 ```java
 CANrange bin = new CANrange(2);
-boolean ballIn = bin.getIsDetected().getValue();      // from the CANrange's own configured threshold
+CANrangeConfiguration cfg = new CANrangeConfiguration();
+cfg.ProximityParams.ProximityThreshold = 0.25;        // meters: the config's threshold
+bin.getConfigurator().apply(cfg);
+
+boolean ballIn = bin.getIsDetected().getValue();      // closer than the CANrange's threshold
 double meters = bin.getDistance().getValueAsDouble(); // whole millimeters, as Phoenix keeps it
 ```
 
-Set the CANrange's proximity threshold in its configuration (`ProximityParams.ProximityThreshold`); scrimmage's
-`threshold` is only for the Test tab and a `dio`.
+Set the threshold in robot code: Phoenix's default is 40 cm, and this sensor's `max_range` is 40 cm, so without it an
+empty bin reads detected. scrimmage's `threshold` is only for the Test tab and a `dio`; keep the two the same.

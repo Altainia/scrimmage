@@ -22,6 +22,8 @@ from . import i18n
 AGENT_PREFIX = "scrimmage agent: "  # the Java agent's console lines: loaded / disabled / ignored N ...
 HELPER_PREFIX = "scrimmage rev helper: "  # the RobotPy REV helper's lines: the same words after the prefix
 REV_UNAVAILABLE = "REV sim unavailable:"     # ... REV sim unavailable: <reason> (REVLib too old or missing)
+GRAPPLE_PREFIX = "scrimmage grapple helper: "   # the LaserCAN helper's lines (Java agent and RobotPy lockstep alike)
+GRAPPLE_UNAVAILABLE = "unavailable:"            # ... unavailable: <reason>
 MAX_LINE = 8192  # characters kept per console line; longer lines are cut, the rest discarded
 CONSOLE_POLL = 0.02  # s between reads of a Java robot's console file
 TRUNCATED = " [line truncated]"
@@ -203,6 +205,7 @@ class RobotProcess:
         self.agent_status: str | None = None   # "loaded" or "disabled" once the agent / helper says so
         self.agent_summary: str | None = None  # its latest "... ignored N robot-side sim writes ..." line
         self.rev_state: str | None = None      # "unavailable: <reason>" once it says REV can't be simulated
+        self.grapple_state: str | None = None  # "unavailable: <reason>" once the Grapple LaserCAN helper says so
         self.next_index = 0
         self.proc: asyncio.subprocess.Process | None = None  # None again once stop() has reaped it
         self._last_returncode: int | None = None
@@ -219,7 +222,7 @@ class RobotProcess:
         if self.running:
             raise RuntimeError("the robot program is already running")
         self._last_returncode = None
-        self.agent_status = self.agent_summary = self.rev_state = None
+        self.agent_status = self.agent_summary = self.rev_state = self.grapple_state = None
         env = {**os.environ, **self.env}
         env.setdefault("PYTHONUNBUFFERED", "1")
         env["HALSIMWS_HOST"] = "127.0.0.1"  # the bridge binds 127.0.0.1; "localhost" may also resolve to ::1
@@ -319,6 +322,11 @@ class RobotProcess:
                 pass
 
     def _note_agent(self, text: str) -> None:
+        if text.startswith(GRAPPLE_PREFIX):
+            rest = text[len(GRAPPLE_PREFIX):]
+            if rest.startswith(GRAPPLE_UNAVAILABLE):
+                self.grapple_state = "unavailable: " + rest[len(GRAPPLE_UNAVAILABLE):].strip()
+            return
         prefix = next((p for p in (AGENT_PREFIX, HELPER_PREFIX) if text.startswith(p)), None)
         if prefix is None:
             return

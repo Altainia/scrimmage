@@ -320,7 +320,13 @@ public final class ScrimmageAgent implements ClassFileTransformer {
   }
 
   /** Patch Grapple's LaserCan: register each new one (with the id its constructor got), answer getMeasurement() from
-   * the helper when it has a Measurement, and let the helper take the config setters first. */
+   * the helper when it has a Measurement, and let the helper take the config setters first.
+   *
+   * Frames: the code put before a hooked method's own first instruction ends with an F_SAME frame at that instruction
+   * (COMPUTE_MAXS computes none). That assumes the original first instruction is not a branch target, which would
+   * already carry a StackMapTable frame there (two frames at one offset fail verification). In libgrapplefrc 2026.0.0
+   * none is: getMeasurement and setRegionOfInterest have no frames, setRangingMode's first is at offset 12 and
+   * setTimingBudget's at 40 (javap -v). A later release that loops back to offset 0 would need COMPUTE_FRAMES. */
   private static byte[] patchGrapple(byte[] bytes) {
     try {
       ClassReader cr = new ClassReader(bytes);

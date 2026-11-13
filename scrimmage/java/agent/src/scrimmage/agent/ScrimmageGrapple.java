@@ -131,8 +131,8 @@ public final class ScrimmageGrapple {
   private static void start(ClassLoader loader) {
     try {
       Api a = new Api(loader);
+      api = a;    // before the callback is registered, so its first call finds the API
       callback = a.registerCallback.invoke(null, (Runnable) ScrimmageGrapple::loop);
-      api = a;
       System.out.println("scrimmage grapple helper: loaded");
     } catch (Missing m) {
       markUnavailable(m.getMessage());

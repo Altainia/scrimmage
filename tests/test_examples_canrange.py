@@ -23,6 +23,10 @@ def test_the_config_parses_with_a_canrange_sensor():
     assert raw["sensor"][0]["ctre"] == "CANrange:2"
     readme = (CANRANGE / "README.md").read_text(encoding="utf-8")
     assert 'toward = [0, -1, 0]\nmax_range = 0.40\nthreshold = 0.25\nctre = "CANrange:2"' in readme
+    assert raw["sensor"][0]["threshold"] == 0.25    # the robot code's threshold, in the README, is the config's
+    assert ("cfg.ProximityParams.ProximityThreshold = 0.25;" in readme
+            and "bin.getConfigurator().apply(cfg);" in readme
+            and readme.index("apply(cfg)") < readme.index("getIsDetected"))
 
 
 def test_the_test_passes_with_the_ball_in_the_bin():

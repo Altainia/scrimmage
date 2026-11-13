@@ -15,6 +15,7 @@ from .bindings import CTRE_DEVICES, resolve_device_key
 from .bridge import (MISSING_AFTER, PHOENIX_NAME, REV_LABEL, REV_NAME, REV_OWN_NAME, REV_TYPE, SCRIMMAGE_TYPES,
                      rev_unhelped)
 from .protocol import HalState
+from .sensors.spec import LASERCAN_DEVICE, LASERCAN_TYPE
 
 Status = Literal["ok", "waiting", "missing", "extra", "other_type", "not_checked"]
 CANRANGE_NAME = re.compile(r"CANrange \(v6\)\[(?P<id>\d+)\](?!/)")    # a [[sensor]] binds it (ctre = "CANrange:<id>")
@@ -53,6 +54,8 @@ def _made_devices(hal: HalState) -> dict[tuple[str, int], set[str]]:
             made.setdefault(("CANrange", int(m["id"])), set()).add("phoenix")
         elif typ == REV_TYPE and (m := REV_NAME.fullmatch(name)):
             made.setdefault((REV_LABEL[m["kind"]], int(m["id"])), set()).add("helper")
+        elif typ == LASERCAN_TYPE and (m := LASERCAN_DEVICE.fullmatch(name)):   # the Grapple helper's, per LaserCAN
+            made.setdefault(("LaserCAN", int(m["id"])), set()).add("helper")
         elif m := REV_OWN_NAME.fullmatch(name):
             made.setdefault((m["label"], int(m["id"])), set()).add("own")
     return made
@@ -77,8 +80,8 @@ def check_devices(world, hal: HalState, robot_time: float) -> list[DeviceRow]:
     made = _made_devices(hal)
     bound_can = {e for b, _ in bindings if (e := _expected_can(b.device_key))}
     sensors = getattr(world, "sensors", None)
-    bound_can |= {("CANrange", s.device_id) for s in (sensors.specs if sensors is not None else ())
-                  if s.device == "CANrange"}    # a distance sensor's CANrange: bound, so not "extra"
+    bound_can |= {(s.device, s.device_id) for s in (sensors.specs if sensors is not None else ())
+                  if s.device is not None}    # a distance sensor's CANrange or LaserCAN: bound, so not "extra"
     bound_keys = {b.device_key for b, _ in bindings}
     counters = {"motor": 0, "encoder": 0, "gyro": 0}
     rows: list[DeviceRow] = []
