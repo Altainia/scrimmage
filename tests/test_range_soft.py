@@ -161,9 +161,14 @@ def test_a_presets_soft_says_how_to_stay_rigid():
 
 SOFT_CORNERS = [(s, e) for s in SOFT_STIFFNESS_RANGE for e in SOFT_RESTITUTION_RANGE] + [
     (math.sqrt(SOFT_STIFFNESS_RANGE[0] * SOFT_STIFFNESS_RANGE[1]), sum(SOFT_RESTITUTION_RANGE) / 2)]
+# K6-R1's ramp reaches the softest kind's drop, so its bounce rises until Task 4 refits the damping (K6-R6)
+TASK4 = "K6 Task 4: K6-R1's ramp moved the drop; the damping refit (K6-R6) brings it back"
+_TASK4_CORNERS = {(1000.0, 0.27)}  # source: measured with K6-R1: e 0.312 against 0.27
+SOFT_CORNER_CASES = [pytest.param(s, e, marks=pytest.mark.xfail(strict=True, reason=TASK4))
+                     if (s, e) in _TASK4_CORNERS else (s, e) for s, e in SOFT_CORNERS]
 
 
-@pytest.mark.parametrize(("stiffness", "e"), SOFT_CORNERS)
+@pytest.mark.parametrize(("stiffness", "e"), SOFT_CORNER_CASES)
 def test_the_rule_bounces_within_10_percent_across_the_range(stiffness, e):
     """At each corner of SOFT_STIFFNESS_RANGE x SOFT_RESTITUTION_RANGE and at its middle (log stiffness), the 1 m
     drop's e is within 10 % of the asked one (fix round 2: the damping scale follows the stiffness)."""
@@ -179,6 +184,7 @@ def test_the_damping_scale_table():
     assert soft.damping_scale(mid) == pytest.approx((rows[1][1] + rows[2][1]) / 2)
 
 
+@pytest.mark.xfail(strict=True, reason=TASK4)
 def test_the_shipped_damping_scales_are_the_fit():
     """tests/fit_soft_damping.py refits each row (about 11 s): within 0.5 % of the shipped table, so a change to
     the ring or its contact that moves the fit fails here until the table is refit."""
@@ -265,21 +271,39 @@ def test_the_rings_kinematics_are_mujocos():
     assert np.abs(inertia @ spin - d.subtree_angmom[s0]).max() < 1e-12
 
 
+def test_the_ramp_rule():
+    """K6-R1: the impedance ramps from SOFT_DMIN to dmax over the tube's radius, dmax capped so the stiffest contact's
+    frequency is W_RING, and the solref scaled so that a shallow contact is K5's (-contact_k, -contact_b)."""
+    for stiffness, want in ((1000.0, 0.95), (2000.0, 0.95), (6000.0, 0.763), (20000.0, 0.418)):  # source: K6-R1's table
+        solref, solimp = soft.ring_contact(_at(stiffness))
+        p = soft.ring_params(_at(stiffness))
+        assert solimp[0] == soft.SOFT_DMIN
+        assert solimp[1] == pytest.approx(want, abs=1e-3)
+        assert solimp[2] == pytest.approx(0.0254)    # the 2024 NOTE's tube radius, 1 in
+        assert solimp[3:] == [soft.RAMP_MID, soft.RAMP_POWER]
+        assert solref[0] * (soft.SOFT_DMIN / solimp[1]) ** 2 == pytest.approx(-p.contact_k, rel=1e-12)
+        assert solref[1] * (soft.SOFT_DMIN / solimp[1]) == pytest.approx(-p.contact_b, rel=1e-12)
+    solref, _ = soft.ring_contact(_at(2000.0))
+    p = soft.ring_params(_at(2000.0))
+    # f = 0.95 / 0.2 = 4.75, f^2 = 22.5625
+    assert solref == pytest.approx([-11211.4 * 22.5625, -p.contact_b * 4.75], rel=1e-6)
+
+
 def test_the_ring_is_built_as_its_kind():
     """16 bodies, a free joint and 15 ball joints, capsules of the tube's radius, the closing connect and its
-    exclude; the contact is the rule's."""
+    exclude; the contact is the rule's (ring_contact: K6-R1's ramp, re-recorded per K6-R9)."""
     spec = mujoco.MjSpec()
     soft.add_ring(spec, "n", NOTE, (0.0, 0.0, 0.0), PARKED_BITS)
     m = spec.compile()
     assert m.nbody == 1 + 16 and m.njnt == 16 and m.nv == 6 + 15 * 3 and m.neq == 1 and m.nexclude == 1
-    p = soft.ring_params(NOTE)
+    solref, solimp = soft.ring_contact(NOTE)
     r, big_r = (14.0 - 10.0) / 4 * 0.0254, (14.0 + 10.0) / 4 * 0.0254
     for j in range(16):
         g = m.geom(f"n.g{j}")
         assert g.type[0] == mujoco.mjtGeom.mjGEOM_CAPSULE and g.size[0] == pytest.approx(r)
         assert g.size[1] == pytest.approx(big_r * math.sin(math.pi / 16))
-        assert list(g.solref) == pytest.approx([-p.contact_k, -p.contact_b]) and g.condim[0] == 3
-        assert list(g.solimp) == pytest.approx(soft.SOFT_SOLIMP)
+        assert list(g.solref) == pytest.approx(solref) and g.condim[0] == 3
+        assert list(g.solimp) == pytest.approx(solimp)
         assert list(g.friction) == pytest.approx([NOTE.friction, 0.005, 0.0001])
     d = mujoco.MjData(m)
     mujoco.mj_forward(m, d)

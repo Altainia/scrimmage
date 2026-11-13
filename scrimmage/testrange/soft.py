@@ -10,7 +10,8 @@ The ring:
 - The ring lies in the plane across the kind's axis through the kind's body origin (its center of mass), so a rigid
   slot's pose maps onto it: a ring built at `pos` is the rigid NOTE at `pos`, unturned.
 - Its squash across the tube is MuJoCo's soft contact: a negative solref (stiffness k, damping b, per unit of the
-  contact's effective mass) with impedance SOFT_SOLIMP. Its bending is the ball joints' springs.
+  contact's effective mass) with an impedance that ramps up with depth (ring_contact, K6-R1). Its bending is the ball
+  joints' springs.
 
 Its numbers follow a rule, not a fit at build time (R10). The spike fitted the ring once, at `stiffness` FIT_STIFFNESS
 and restitution 0.3 (FIT_CONTACT_K, FIT_JOINT_K). The world scales from there:
@@ -23,9 +24,16 @@ and restitution 0.3 (FIT_CONTACT_K, FIT_JOINT_K). The world scales from there:
 - the joint damping gives one segment swinging about its joint a damping ratio of JOINT_ZETA.
 
 MuJoCo's soft contact is not a plain spring: with impedance d a static load sees d / (1 - d) times the stiffness an
-impact does, so SOFT_SOLIMP's d = 0.2 keeps the squeeze and the drop within 1.25x of each other. That is also why the
-closed form alone gives too much damping, and why the scale was measured (R10). tests/test_range_soft.py checks the
-rule against both of the spike's fitted foams.
+impact does, so a shallow contact's d = SOFT_DMIN = 0.2 keeps the squeeze and the drop within 1.25x of each other.
+That is also why the closed form alone gives too much damping, and why the scale was measured (R10).
+tests/test_range_soft.py checks the rule against both of the spike's fitted foams.
+
+A real foam densifies past about 60 % of its squash, so the contact does too (K6-R1, ring_contact): the impedance
+ramps from SOFT_DMIN to dmax over RAMP_WIDTH tube radii of depth, and the solref is scaled by f = dmax / SOFT_DMIN
+(f^2 on the spring, f on the damping) so a shallow contact is exactly the one above. At depth the impact spring grows
+by up to f^2 and the static one by f^2 (1 - SOFT_DMIN) / (1 - dmax). dmax is capped by stiffness so the stiffest
+contact's frequency per unit mass stays at W_RING. It keeps a roller or a hard hit from pushing the ring through a
+thin plate.
 
 A range with a soft kind builds POOL_SIZE rings per soft kind, `soft.<k>`, parked under the floor with PARKED_BITS
 (build.add_range); a parked ring is held in place (ParkedRings) and may sleep.
@@ -48,7 +56,11 @@ RING_SEGMENTS = SOFT_SEGMENTS  # source: soft-note spike, candidate (b)
 POOL_SIZE = 2  # choice: spec D8
 SOFT_REACH = 0.25  # choice: spec D8
 SOFT_LINGER = 0.25  # choice: spec D8
-SOFT_SOLIMP = (0.2, 0.2, 0.001, 0.5, 2.0)  # source: spike: d = 0.2 keeps a static squeeze within 1.25x of an impact
+SOFT_DMIN = 0.2  # source: K5 spike (SOFT_SOLIMP's d): a static squeeze within 1.25x of an impact
+SOFT_DMAX = 0.95  # source: MuJoCo's default dmax (build.BALL_DMAX)
+RAMP_WIDTH = 1.0  # estimate: the ramp's width in tube radii; the foam densifies past about 60 % squeeze
+RAMP_MID, RAMP_POWER = 0.9, 6.0  # choice: flat to about half the width, hard by 0.9 of it
+W_RING = 700.0  # choice: rad/s, the stiffest contact's frequency per unit mass (stable at 700, not 1000)
 FIT_STIFFNESS = 2000.0  # source: soft-note spike, chain soft fit
 FIT_CONTACT_K = 11211.4  # source: soft-note spike, chain soft fit
 FIT_JOINT_K = 0.10276  # source: soft-note spike, chain soft fit
@@ -118,6 +130,16 @@ def ring_params(kind: PieceKind) -> RingParams:
                       joint_k=kj, joint_b=2.0 * JOINT_ZETA * math.sqrt(kj * i_joint))
 
 
+def ring_contact(kind: PieceKind) -> tuple[list[float], list[float]]:
+    """The ring's capsules' (solref, solimp) for the kind (K6-R1; see the module docstring). ring_params stays
+    unscaled: the scale f is the geom's alone (K6-R9)."""
+    p, r = ring_params(kind), _dims(kind).r
+    dmax = min(SOFT_DMAX, SOFT_DMIN * W_RING / math.sqrt(p.contact_k))
+    f = dmax / SOFT_DMIN
+    return ([-p.contact_k * f * f, -p.contact_b * f],
+            [SOFT_DMIN, dmax, RAMP_WIDTH * r, RAMP_MID, RAMP_POWER])
+
+
 def _quat_of(rot: np.ndarray) -> np.ndarray:
     q = np.zeros(4)
     mujoco.mju_mat2Quat(q, np.ascontiguousarray(rot, dtype=float).ravel())
@@ -143,8 +165,9 @@ def add_ring(spec: mujoco.MjSpec, name: str, kind: PieceKind, pos, bits: dict) -
     # condim 3 (choice): sliding friction only; a capsule segment's own rolling and twisting friction do nothing for
     # the ring (it bends at its joints), and condim 6 cost a pushed ring twice the solver rows. The squeeze, drop and
     # damping fits are the same at either (tests/test_range_soft.py)
-    contact = {"condim": 3, "friction": [kind.friction, *BALL_FRICTION[1:]], "solref": [-p.contact_k, -p.contact_b],
-               "solimp": list(SOFT_SOLIMP), "solmix": RIGID_SOLMIX}
+    solref, solimp = ring_contact(kind)
+    contact = {"condim": 3, "friction": [kind.friction, *BALL_FRICTION[1:]], "solref": solref, "solimp": solimp,
+               "solmix": RIGID_SOLMIX}
     rgba = [*piece_color(kind), 1.0]
     parent = spec.worldbody
     for j in range(n):

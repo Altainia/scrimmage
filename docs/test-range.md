@@ -570,6 +570,10 @@ simulated second with no soft NOTE, 0.54 with one pushed, 0.69 with two). Two NO
 faster than real time on the computer it was measured on, but a slower one, or a robot with Phoenix 6 devices (which runs in real
 time), may fall behind. To keep a NOTE rigid, set `soft = false` on its `[piece.<name>]`.
 
+**A limit.** A soft NOTE much stiffer than the preset (`stiffness` about 10 times the preset's or more) that slides
+along the carpet faster than about 7 m/s can hop a little and come back with slightly more energy than it had. This
+comes from how the physics engine handles friction on a fast slide. A rigid piece sliding that fast hops too.
+
 ### `[range] piece` and the piece presets
 
 `[range] piece = "<preset>"` makes the field's default kind that preset (a ball preset or a piece preset). The kind is
