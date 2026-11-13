@@ -224,7 +224,7 @@ def _raw(**overrides) -> dict:
 
 def test_flex_is_opt_in():
     """Without `flex`, note_pinch_flex.toml is the rigid NOTE on `implicitfast`, with no flex in the model; every
-    other example builds with none."""
+    other example without `flex = true` builds with none, and note_intake_flex.toml (which sets it) with one."""
     rigid = build_bench(parse_bench(_raw(**{"piece.flex": None}), EXAMPLE.parent))
     assert rigid.model.nflex == 0 and rigid.layout.flex_pieces == []
     assert rigid.model.opt.integrator == mujoco.mjtIntegrator.mjINT_IMPLICITFAST
@@ -232,7 +232,9 @@ def test_flex_is_opt_in():
     others = [p for p in sorted(EXAMPLE.parent.rglob("*.toml")) if p != EXAMPLE]
     assert len(others) >= 7
     for path in others:
-        assert build_bench(load_bench(path)).model.nflex == 0, path
+        bench = load_bench(path)
+        assert build_bench(bench).model.nflex == (1 if bench.piece.flex else 0), path
+    assert [p.name for p in others if load_bench(p).piece.flex] == ["note_intake_flex.toml"]
 
 
 def test_the_flex_takes_the_rigid_pieces_place():
