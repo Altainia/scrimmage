@@ -135,7 +135,12 @@ class Watch:
         self.piece_names: dict[str, str] = {}               # a piece's body name -> what a student reads ("coral 1")
         if tr is not None and not one_round_kind(tr.range.kinds):
             self.piece_names = {n: tr.balls.piece_name(i) for i, n in enumerate(self._ball_names)}
-        self.hopper = list(program.hopper or [])             # where a piece should end up (the test's hopper)
+        # where a piece should end up (the test's hopper): the file's list, [] included, else the bodies its piece_in
+        # checks name (K6-R12: a test that asks what is in a body wants it in)
+        if program.hopper is not None:
+            self.hopper = list(program.hopper)
+        else:
+            self.hopper = list(dict.fromkeys(c.args["body"] for c in _conds(program.blocks, "piece_in")))
         # (balls,) True for each ball or disc: only a rigid piece counts as in when a hopper body holds it (ruling
         # P26: a ball wedged on a hopper body outside its box is stuck, as always)
         self.round = np.array([tr.range.kinds[str(k)].form != "rigid" for k in tr.balls.kind], bool) \
@@ -346,6 +351,18 @@ class Watch:
                 lo, hi = np.minimum(lo, c - h), np.maximum(hi, c + h)
             self._boxes[name] = (b, lo, hi)
         return self._boxes[name]
+
+    def hopper_body(self, ball: int) -> str | None:
+        """The first hopper body whose box holds ball `ball`'s center now (as hopper_mask reads it), else None."""
+        if not self._balls or not self.hopper_mask()[ball]:
+            return None
+        d = self.data
+        for name in self.hopper:
+            b, lo, hi = self._box(name)
+            local = (d.xpos[self._balls[ball]] - d.xpos[b]) @ d.xmat[b].reshape(3, 3)
+            if np.all((local >= lo) & (local <= hi)):
+                return name
+        return None
 
     def hopper_mask(self) -> np.ndarray:
         """(balls,) True for each range ball whose center is inside a hopper body's box now, and off the carpet

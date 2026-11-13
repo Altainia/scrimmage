@@ -122,6 +122,9 @@ the blocks gain a **Station** group:
 Two conditions go with them. **\<station\> is empty** is true when the station has no balls left to feed. **At least
 (or at most) n pieces in the hopper** counts the balls inside the hopper right now.
 
+A test with no `hopper = [...]` line treats the bodies its **piece in** checks name as its hopper, so a passing
+**piece in intake.hopper** is also counted as "made it in". Write `hopper = []` to turn that off.
+
 **Where a piece should end up.** The test needs to know where a piece counts as "in". In Setup, **Where a piece should
 end up**, tick the bodies a piece lands in or is held by: a hopper, an intake, a claw. A piece is in when its center is
 inside one of those bodies' boxes (the box around the body's shapes, so the space inside a bin counts) and it is off
@@ -386,7 +389,11 @@ any it picks up, go out of the launcher, fly, and score or miss. Nothing about s
   piece that moved): its number and kind, where it came from, when it was fired and its exit speed, its outcome, and
   where it went (the goal and time it scored, where it rests or left the field, what it hit first, and how high a
   missed shot got against the goal's rim). The run's `result.json` keeps them as `pieces`, and the MCP `test_run`
-  returns them too (in meters and m/s).
+  returns them too (in meters and m/s). Two tables, two sets of words: this table's outcome column is the *feed*
+  outcome (`in`, `stuck`, `placed`, `missed`) for a piece the run tracked (a fed piece, or the NOTE placed ahead of
+  the robot), and its last column then says where (`in intake.hopper`, `in the robot`, `stuck on drive.chassis`). So a
+  NOTE lifted into the bin reads `in` here, where the scenario ledger (a `scrimmage run` scenario's ball table) says
+  `on_field`, because it is still on the field. Pieces the run did not track keep the ledger's words.
 - **The replay** shows the balls in flight.
 
 In the test file:

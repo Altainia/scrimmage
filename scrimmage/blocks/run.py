@@ -497,7 +497,7 @@ class TestRun(_FailureWords):
         def outcome() -> str:
             said = _v(ending)
             if rows:
-                told = sentence(rows, hopper=bool(self.program.hopper))
+                told = sentence(rows, hopper=bool(watch.hopper))
                 said = told if finished else i18n.t("{ending}; {counts}", ending=said, counts=told)
             return i18n.t("reached {bar}, then {ending}", bar=top, ending=said) if top else said
         result.outcome = _w(outcome)
@@ -517,6 +517,10 @@ class TestRun(_FailureWords):
             result.goals = dict(tr.counts()["goals"])
         if tr is not None:
             result.pieces = piece_log(tr)
+            by_ball = {r["ball"]: r for r in rows}
+            for piece in result.pieces:
+                r = by_ball.get(piece["id"])
+                piece["feed"] = None if r is None else {"outcome": r["outcome"], "body": r["body"], "why": r["why"]}
             result.soft_resets = tr.soft.resets if tr.soft is not None else 0
         if self.air is not None:
             result.air = dict(self.air.out)

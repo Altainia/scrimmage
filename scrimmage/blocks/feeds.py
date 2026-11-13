@@ -247,16 +247,26 @@ class Outcomes:
         """The counts now: fed, in, stuck, missed (and placed: `counts`)."""
         return counts(self.final())
 
+    def _in_body(self, pc: _Piece) -> str | None:
+        """The hopper body a piece that is in is in or held by; None when the robot's ball path took it."""
+        if self.balls.state[pc.ball] != BallState.FIELD:
+            return None
+        if pc.now_in:
+            return self.watch.hopper_body(pc.ball)
+        held = self.watch.held.holders(pc.ball) & self._hopper
+        return min(held, key=lambda by: self.watch.held.since(pc.ball, by)) if held else None
+
     def final(self) -> list[dict]:
         """One row per tracked piece, in the order fed: ball, source, t, outcome ("in" | "placed" | "stuck" | "missed"),
-        why (a placed piece's: the rod or element), t_outcome, body (the robot body a stuck piece rests on, else None)."""
+        why (a placed piece's: the rod or element), t_outcome, body (the robot body a stuck piece rests on, or the hopper body an "in" piece is in or held by; else None)."""
         m = self.model
         rows = []
         for pc in self.pieces:
             outcome, why, when = self._outcome(pc)
             rows.append({"ball": pc.ball, "source": pc.source, "t": pc.t, "outcome": outcome, "why": why,
                          "t_outcome": None if math.isnan(when) else float(when),
-                         "body": m.body(pc.body).name if outcome == "stuck" else None})
+                         "body": m.body(pc.body).name if outcome == "stuck" else
+                         self._in_body(pc) if outcome == "in" else None})
         return rows
 
 
