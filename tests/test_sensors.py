@@ -284,6 +284,24 @@ def test_a_sensor_that_runs_out_of_casts_warns_once_naming_it(monkeypatch):
                     "robot"], w.warnings
 
 
+def test_a_cone_with_several_rays_out_of_casts_warns_once(monkeypatch):
+    """A cone looking down through the chassis's plate from the rails: with one cast a step, most of its 17 rays run
+    out, and the world's warnings name the sensor once, not once a ray or a step."""
+    w = spares_world(range_cfg())
+    m = w.model
+    plate = next(g for g in range(m.ngeom) if m.geom_bodyid[g] == m.body("drive.chassis").id
+                 and int(m.geom_type[g]) == 6)
+    top = m.geom_pos[plate] + [0.0, 0.0, m.geom_size[plate][2] + 0.02]
+    attach(w, {"name": "cone", "kind": "distance", "body": "dt.rails", "fov_deg": 20.0,
+               "at": body_point(w, "dt.rails", world_point(w, "drive.chassis", top)),
+               "toward": body_dir(w, "dt.rails", [0.0, 0.0, -1.0])})
+    step(w, 3)
+    assert not any('"cone"' in x for x in w.warnings), "every ray recast within MAX_CASTS"
+    monkeypatch.setattr(runtime, "MAX_CASTS", 1)
+    step(w, 5)
+    assert len([x for x in w.warnings if '"cone"' in x]) == 1, w.warnings
+
+
 # -------------------------------------------------------------------------------------------------- color sensors
 
 TWO_COLORS = """

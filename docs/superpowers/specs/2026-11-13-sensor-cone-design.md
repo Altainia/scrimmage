@@ -11,8 +11,8 @@ CTRE's CANrange has a configurable field of view (up to 27°), Grapple's LaserCA
 ## The design
 - **Key `fov_deg`** on `kind = "distance"` sensors: the cone's full angle, in degrees, 0 < fov_deg <= 60. Absent: one
   ray, as today (Call C1 for the default).
-- **Call C1 (defaults).** A sensor with a CAN device key (`ctre`, `grapple`, `scrimmage`) defaults to 27°, the vendors'
-  defaults (CTRE's CANrange FOV maximum and default; LaserCAN's default 16x16 ROI; sources recorded beside the constant
+- **Call C1 (defaults).** A sensor with a CAN device key (`ctre`, `grapple`, and `scrimmage` once fast mode's CANrange
+  lands) defaults to 27°, the vendors' defaults (CTRE's CANrange FOV maximum and default; LaserCAN's default 16x16 ROI; sources recorded beside the constant
   as in spec.py's others; if a source says otherwise, use the source). Any other distance sensor stays one ray unless
   `fov_deg` is given. *Cost:* a CAN sensor that relied on the single ray (tests, configs written since PR #43) now sees
   wider; tests that place pieces on the axis are unaffected.
