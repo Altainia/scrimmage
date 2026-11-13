@@ -125,10 +125,10 @@ Two conditions go with them. **\<station\> is empty** is true when the station h
 A test with no `hopper = [...]` line treats the bodies its **piece in** checks name as its hopper, so a passing
 **piece in intake.hopper** is also counted as "made it in". Write `hopper = []` to turn that off.
 
-A test with a hopper that feeds from no station counts the floor piece ahead of the robot's start (the nearest one
-within 30° of its heading and 3 m of it) the same way, so a floor intake's test reads `1 of 1 made it in`. A test with
-a **start feeding** or **feed one from** block counts only the pieces its stations fed: a floor piece lying ahead isn't
-counted.
+A test with a hopper counts the floor piece ahead of the robot's start (the nearest one within 30° of its heading and
+3 m of it) the same way, so a floor intake's test reads `1 of 1 made it in`. In a test with a **start feeding** or
+**feed one from** block, the floor piece counts only once the robot touches it: a piece lying ahead untouched leaves
+the count to what the stations fed, and one the robot picks up (or tries to) counts beside them.
 
 **Where a piece should end up.** The test needs to know where a piece counts as "in". In Setup, **Where a piece should
 end up**, tick the bodies a piece lands in or is held by: a hopper, an intake, a claw. A piece is in when its center is
@@ -396,7 +396,8 @@ any it picks up, go out of the launcher, fly, and score or miss. Nothing about s
   missed shot got against the goal's rim). The run's `result.json` keeps them as `pieces`, and the MCP `test_run`
   returns them too (in meters and m/s). Two tables, two sets of words: this table's outcome column is the *feed*
   outcome (`in`, `stuck`, `placed`, `missed`) for a piece the run tracked (a fed piece, or the floor piece ahead of the
-  robot: always in a spread, and in a test that has a hopper and feeds from no station), and its last column then
+  robot: always in a spread, and in a test that has a hopper; in one that also feeds from a station, once the robot
+  touches it), and its last column then
   says where (`in intake.hopper`, `in the robot`, `stuck on drive.chassis`). So a NOTE lifted into the bin reads `in`
   here, where the scenario ledger (a `scrimmage run` scenario's ball table) says
   `on_field`, because it is still on the field. Pieces the run did not track keep the ledger's words.

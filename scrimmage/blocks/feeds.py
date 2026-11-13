@@ -1,7 +1,8 @@
 """One outcome for every fed piece: made it in, placed on the field, stuck in the robot, or missed.
 
-The runner tracks each piece a station feeds (and the floor piece ahead, in a spread or in a test with a hopper that
-feeds from no station) and updates the tracker every physics step. A piece's outcome is where it is when the run ends:
+The runner tracks each piece a station feeds (and the floor piece ahead, in a spread or in a test with a hopper; in a
+test that also feeds from a station, the floor piece counts only once the robot has touched it, so one lying ahead
+untouched doesn't change a station test's count) and updates the tracker every physics step. A piece's outcome is where it is when the run ends:
 
 - **in**: its center is inside a hopper body's box (Watch.hopper_mask), the robot's ball path took it in (its
   ledger state is `robot`), or, for a rigid piece (not a ball or disc), a hopper body holds it (grip_watch.py's
@@ -95,6 +96,7 @@ class _Piece:
     body: int | None = None     # the counting robot body it touches now
     off: int = 0                # steps in a row at rest touching no counting body
     t_gone: float = math.nan    # it left play (off the field, scored, taken in by the ball path)
+    touched: bool = True        # it counts: False for a floor piece in a station test until the robot touches it
 
 
 class Outcomes:
@@ -120,8 +122,13 @@ class Outcomes:
         self.pieces: list[_Piece] = []
         self._t: float | None = None
 
-    def track(self, ball: int, source: str, t: float) -> None:
-        self.pieces.append(_Piece(int(ball), source, float(t)))
+    def track(self, ball: int, source: str, t: float, once_touched: bool = False) -> None:
+        """Track a piece from time t. `once_touched`: it counts only from when the robot first touches it (or its
+        ball path takes it)."""
+        self.pieces.append(_Piece(int(ball), source, float(t), touched=not once_touched))
+
+    def _counted(self) -> list[_Piece]:
+        return [pc for pc in self.pieces if pc.touched]
 
     # ---- every physics step -----------------------------------------------------------------------------------------
 
@@ -158,6 +165,7 @@ class Outcomes:
         p_r, v_r, w_r = self._robot_motion()
         for pc in self.pieces:
             i = pc.ball
+            pc.touched |= bool(on_robot.get(i)) or b.state[i] == BallState.ROBOT
             if b.state[i] != BallState.FIELD:
                 if math.isnan(pc.t_gone):
                     pc.t_gone = t
@@ -195,7 +203,7 @@ class Outcomes:
 
     def settled(self) -> bool:
         """Every tracked piece out of play, or at rest (in the hopper or anywhere else) for STUCK_S."""
-        return all(self._settled(pc) for pc in self.pieces)
+        return all(self._settled(pc) for pc in self._counted())
 
     # ---- outcomes ---------------------------------------------------------------------------------------------------
 
@@ -257,12 +265,12 @@ class Outcomes:
         return min(held, key=lambda by: self.watch.held.since(pc.ball, by)) if held else None
 
     def final(self) -> list[dict]:
-        """One row per tracked piece, in the order fed: ball, source, t, outcome ("in" | "placed" | "stuck" |
+        """One row per tracked piece that counts, in the order fed: ball, source, t, outcome ("in" | "placed" | "stuck" |
         "missed"), why (a placed piece's: the rod or element), t_outcome, body (the robot body a stuck piece rests on,
         or the hopper body an "in" piece is in or held by; else None)."""
         m = self.model
         rows = []
-        for pc in self.pieces:
+        for pc in self._counted():
             outcome, why, when = self._outcome(pc)
             rows.append({"ball": pc.ball, "source": pc.source, "t": pc.t, "outcome": outcome, "why": why,
                          "t_outcome": None if math.isnan(when) else float(when),

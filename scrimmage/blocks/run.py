@@ -328,11 +328,13 @@ class TestRun(_FailureWords):
         self.standin = is_standin(Path(program.path).parent / program.robot)
         self.placement = placement
         # the floor piece ahead of the start (the one a spread places) is tracked in a placed run, and in a run whose
-        # test has a hopper (it asks whether a piece got in) and feeds from no station, so its feed outcome reaches
-        # the result however the test is run. A station test counts only what its stations fed, and a test with no
-        # hopper keeps its outcome as it was
-        floor = placement is not None or (hopper_of(program) and not _feeds_from_a_station(program.blocks))
+        # test has a hopper (it asks whether a piece got in), so its feed outcome reaches the result however the test
+        # is run. In a test that also feeds from a station it counts only once the robot touches it, so a station
+        # test with a piece lying ahead untouched counts what its stations fed. A test with no hopper keeps its
+        # outcome as it was
+        floor = placement is not None or hopper_of(program)
         self._floor = spread_ball(world) if floor else None
+        self._floor_once_touched = placement is None and _feeds_from_a_station(program.blocks)
         if placement is not None and self._floor is None:
             raise TestFileError(no_ball())
 
@@ -380,7 +382,7 @@ class TestRun(_FailureWords):
         self._final: dict | None = None                     # the final counts, once the run has ended
         self._fed_seen = 0                                  # the feeder's Feds tracked so far
         if self._floor is not None:
-            outcomes.track(self._floor[0], "floor", float(d.time))
+            outcomes.track(self._floor[0], "floor", float(d.time), once_touched=self._floor_once_touched)
         walk = WalkOff(dt) if watch.mon is not None else None
         view = model_view(w, include_world=True)
         ms = movers(w)

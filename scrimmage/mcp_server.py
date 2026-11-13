@@ -676,7 +676,7 @@ async def test_run(path: str) -> dict:
     (seconds), "checks" (one plain line each, with whether it passed), "hung" (the bars the robot hung from),
     "signals" (each measured signal's min, max and final value), "counts" (fed, in, stuck, missed, and placed when a
     piece was placed: on a field with a human player station, or for the floor piece ahead of the robot when the test
-    has a hopper and feeds from no station; else null), "feeds" (one row per fed or tracked piece: ball, source (a
+    has a hopper (in a test that also feeds from a station, once the robot touches it); else null), "feeds" (one row per fed or tracked piece: ball, source (a
     station, or floor), t, outcome "in", "placed" (on a rod or element a seated or rests on check names: why is its
     name), "stuck" or "missed", why, t_outcome, body (the hopper body an "in" piece is in or held by, the robot body
     a stuck piece touches; else null)), "seed" (the stations' seed, or null), "marks" (the moments the replay marks:
