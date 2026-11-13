@@ -5,7 +5,7 @@ project(scrimmage_lockstep LANGUAGES NONE)
 # Lockstep is Linux only for now: the two libraries are built and installed only there. Elsewhere the package is pure
 # Python (the REV and LaserCAN helpers, run in real time); pyproject.toml skips CMake there altogether, so this guard
 # only matters for a build that runs CMake anyway.
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)   # SPIKE: Windows lockstep
   enable_language(CXX)
   set(CMAKE_CXX_STANDARD 20)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,12 +31,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   target_include_directories(halsim_scrimmage_lockstep PRIVATE "${WPIHAL_DIR}/include" "${WPIUTIL_DIR}/include")
   # libwpiHal.so's SONAME is "libwpiHal.so", so this records NEEDED libwpiHal.so (no path): at runtime
   # it binds to the HAL the robot process already loaded.
-  target_link_libraries(halsim_scrimmage_lockstep PRIVATE "${WPIHAL_DIR}/lib/libwpiHal.so")
+  if(WIN32)   # SPIKE: the wheel ships wpiHal.lib (the import library) beside wpiHal.dll
+    target_link_libraries(halsim_scrimmage_lockstep PRIVATE "${WPIHAL_DIR}/lib/wpiHal.lib")
+    install(TARGETS halsim_scrimmage_lockstep RUNTIME DESTINATION scrimmage_lockstep/lib
+            LIBRARY DESTINATION scrimmage_lockstep/lib)
+  else()
+    target_link_libraries(halsim_scrimmage_lockstep PRIVATE "${WPIHAL_DIR}/lib/libwpiHal.so")
 
-  # Fixed std::random_device numbers, preloaded into RobotPy robots by scrimmage (see src/scrimmage_seed.cpp).
-  add_library(scrimmage_seed SHARED src/scrimmage_seed.cpp)
+    # Fixed std::random_device numbers, preloaded into RobotPy robots by scrimmage (see src/scrimmage_seed.cpp).
+    add_library(scrimmage_seed SHARED src/scrimmage_seed.cpp)
 
-  install(TARGETS halsim_scrimmage_lockstep scrimmage_seed LIBRARY DESTINATION scrimmage_lockstep/lib)
+    install(TARGETS halsim_scrimmage_lockstep scrimmage_seed LIBRARY DESTINATION scrimmage_lockstep/lib)
+  endif()
 else()
   message(STATUS "lockstep is Linux only for now: installing scrimmage_lockstep as pure Python")
 endif()

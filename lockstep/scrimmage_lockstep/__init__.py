@@ -13,7 +13,8 @@ logger = logging.getLogger("scrimmage_lockstep")
 
 
 def library_path() -> Path:
-    return Path(__file__).resolve().parent / "lib" / "libhalsim_scrimmage_lockstep.so"
+    name = "halsim_scrimmage_lockstep.dll" if sys.platform == "win32" else "libhalsim_scrimmage_lockstep.so"   # SPIKE
+    return Path(__file__).resolve().parent / "lib" / name
 
 
 def seed_library_path() -> Path:

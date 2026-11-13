@@ -1,0 +1,36 @@
+# SPIKE (throwaway): does the lockstep HALSim extension build and work on Windows?
+name: windows-lockstep-spike
+on:
+  push:
+    branches: [windows-lockstep-spike]
+  workflow_dispatch:
+
+jobs:
+  spike:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: pip install -e ".[dev,nt]"
+      - name: Build the lockstep extension
+        run: pip install -v ./lockstep
+      - name: Show what got installed
+        shell: bash
+        run: |
+          python -c "import scrimmage_lockstep as s; p = s.library_path(); print(p, p.exists())"
+          ls -la "$(python -c 'import scrimmage_lockstep, os; print(os.path.dirname(scrimmage_lockstep.__file__))')/lib" || true
+      - name: The extension itself (clock stepping, watchdog, engage/release)
+        shell: bash
+        run: pytest tests/test_lockstep_ext.py -v -rs
+      - name: A RobotPy REV robot in lockstep through a session
+        if: always()
+        shell: bash
+        run: pytest tests/test_rev_py_e2e.py -v -rs
