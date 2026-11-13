@@ -51,7 +51,8 @@ def id_body(model: mujoco.MjModel) -> np.ndarray:
 
 def id_name(model: mujoco.MjModel, i: int) -> str:
     """Contact id `i`'s name: a geom's, or a flex's (a chain's flex is `element.<name>`), or its body's for an
-    unnamed geom; "geom <i>" or "flex <f>" with none."""
+    unnamed geom; "geom <i>" or "flex <f>" with none. A geom named only for a soft pair (`<body>#soft-pair-<k>`,
+    soft.pair_rings, K6-P11) has the suffix stripped, so it reads as its body's name, as it did unnamed."""
     if i >= model.ngeom:
         f = i - model.ngeom
         return mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_FLEX, f) or f"flex {f}"

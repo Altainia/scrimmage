@@ -33,6 +33,7 @@ import math
 import mujoco
 import numpy as np
 
+from ..flexcontact import id_name
 from ..testrange.spec import _one_round_kind as one_round_kind
 
 HELD_CLEAR = 0.01       # m: the piece's lowest point above anything that isn't the robot (spec)
@@ -224,7 +225,7 @@ class HeldTracker:
         j = int(self.balls.ball_of_geom(g))
         if j >= 0:
             return self.watch.piece_names.get(self.watch._ball_names[j], self.watch._ball_names[j])
-        name = m.geom(g).name
+        name = id_name(m, g) if m.geom(g).name else ""     # id_name: no soft pair's geom suffix (K6-P11)
         if name.startswith("element."):
             return name.split(".")[1]
         b = int(m.geom_bodyid[g])

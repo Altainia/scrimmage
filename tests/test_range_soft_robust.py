@@ -143,7 +143,9 @@ def test_a_2mm_slab_doesnt_run_the_note_over(priority, pull, stiffness):
 def test_a_note_beside_the_slab_isnt_under_it():
     """Regression (Task 5): at 15 N and 2.0 m/s the NOTE rides up the slab's front and drops an edge onto the carpet
     past the slab's side. Counted without the slab's width, 2 segments were "under" it and 1 at the end; none is."""
-    r = sh.slab(_at(2000.0), 15, priority=1, pairs=True)
+    stiffness = 2000.0  # choice: the preset, where the near cases ended under without the width bound
+    pull = 15           # choice: Task 5's near case that failed without the bound (2 under, 1 at the end)
+    r = sh.slab(_at(stiffness), pull, priority=1, pairs=True)
     _sane(r)
     assert (r["under_max"], r["under_end"]) == (0, 0), r
 
@@ -212,6 +214,19 @@ def test_the_pairs_cover_every_priority_body(config):
         cap = a if a in rings else b
         np.testing.assert_array_equal(m.pair_solref[p], m.geom_solref[cap])
         np.testing.assert_array_equal(m.pair_solimp[p], m.geom_solimp[cap])
+        # MuJoCo's own rule for the rest: the higher priority's friction and condim, the larger of each at equal
+        # priority; the larger margin and gap
+        part = b if cap == a else a
+        if m.geom_priority[part] != m.geom_priority[cap]:
+            win = part if m.geom_priority[part] > m.geom_priority[cap] else cap
+            mu, condim = m.geom_friction[win], m.geom_condim[win]
+        else:
+            mu = np.maximum(m.geom_friction[part], m.geom_friction[cap])
+            condim = max(m.geom_condim[part], m.geom_condim[cap])
+        np.testing.assert_allclose(m.pair_friction[p], [mu[0], mu[0], mu[1], mu[2], mu[2]])
+        assert m.pair_dim[p] == condim
+        assert m.pair_margin[p] == max(m.geom_margin[part], m.geom_margin[cap])
+        assert m.pair_gap[p] == max(m.geom_gap[part], m.geom_gap[cap])
     if config == INTAKE:
         assert m.npair > 0
         np.testing.assert_allclose(m.pair_friction[:, 0], INTAKE_FRICTION)
