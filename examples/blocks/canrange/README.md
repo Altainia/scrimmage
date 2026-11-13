@@ -26,8 +26,8 @@ threshold = 0.25
 ctre = "CANrange:2"
 ```
 
-It looks across the bin from its right-hand wall. A ball in the bin is closer than the 34 cm between the walls, so the
-sensor is on (closer than `threshold`); with nothing in the bin it reads `max_range`.
+It looks across the bin from one side wall to the other, 34 cm. A ball in the bin reads closer than 25 cm (`threshold`:
+the sensor is on). An empty bin reads 40 cm (`max_range`: it sees no piece).
 
 Run the test with no robot code:
 

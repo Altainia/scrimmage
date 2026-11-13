@@ -52,11 +52,11 @@ pos = [0.43, 0.0, 0.0]    # on the floor at the front bumper's face (a 0.7 m fra
 ids = { roller = "PWM:2" }
 
 # ---- Sensors -------------------------------------------------------------------------
-# A CTRE CANrange in the bin, on the right-hand wall and looking across it, 8 cm off the carpet and 12 cm in front of the
-# bumper's face (in the intake's coordinates: x forward from the bumper's face, y left, z up, in meters). A ball in
-# the bin is closer than 17 cm (the bin's width is 34 cm); with nothing there it reads max_range. The robot code makes a
-# CANrange(2) and reads getDistance() and getIsDetected(): scrimmage writes the sensor's reading into that device.
-# threshold is the distance it counts as on closer than, for the Test tab's "is on".
+# A CTRE CANrange in the bin, on one side wall and looking across to the other, 8 cm off the carpet and 12 cm in front
+# of the bumper's face (in the intake's coordinates: x forward from the bumper's face, y left, z up, in meters). A ball
+# in the bin reads closer than 25 cm (threshold: the sensor is on). An empty bin reads 40 cm (max_range: it sees no
+# piece). The robot code makes a CANrange(2) and reads getDistance() and getIsDetected(): scrimmage writes the
+# sensor's reading into that device.
 
 [[sensor]]
 name = "bin"

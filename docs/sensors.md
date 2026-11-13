@@ -223,8 +223,7 @@ dio = 6                           # and a DigitalInput 6 beside it
 | CANrange | `getIsDetected()` | whether the distance is inside the CANrange's own configured threshold. Scrimmage's `threshold` isn't used |
 | LaserCAN | `getMeasurement()` (Java), `get_measurement()` (RobotPy) | null (`None`) until the first reading. Then status 0 with the distance, or status 2 with the mode's reach when nothing is in range |
 
-With nothing in range a CANrange simply reads its distance as far as it can see; nothing writes `max_range` for you to
-test against. A LaserCAN's status 2 is the "weak signal" status. Scrimmage uses it for nothing in range because the
+With nothing in range a CANrange reads `max_range` (3.0 m by default). A LaserCAN's status 2 is the "weak signal" status. Scrimmage uses it for nothing in range because the
 firmware passes the ST chip's status through; that hasn't been seen on hardware. Grapple's own example tests
 `status != 0`, which works.
 
