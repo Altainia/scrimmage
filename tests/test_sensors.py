@@ -439,6 +439,7 @@ def test_explicit_max_range_wins():
     ({"ctre": "CANrange:63"}, "CANrange:<id>"),
     ({"ctre": "CANrange:x"}, "CANrange:<id>"),
     ({"ctre": 5}, "CANrange:<id>"),
+    ({"ctre": "CANrange:\u00b2"}, "CANrange:<id>"),
     ({"grapple": "LaserCan:7"}, 'grapple = "LaserCan:7"'),
     ({"grapple": "LaserCAN:-1"}, "LaserCAN:<id>"),
     ({"ctre": "CANrange:5", "grapple": "LaserCAN:7"}, "only one"),
@@ -447,6 +448,11 @@ def test_bad_device_keys(extra, words):
     with pytest.raises(SensorError) as e:
         parse_sensors([dist_table(**extra)])
     assert "[[sensor]] \"d\"" in str(e.value) and words in str(e.value)
+
+
+def test_device_id_boundaries():
+    a, b = parse_sensors([dist_table(ctre="CANrange:0"), {**dist_table(grapple="LaserCAN:62"), "name": "e"}])
+    assert a.device_id == 0 and b.device_id == 62
 
 
 def test_device_key_on_other_kind():

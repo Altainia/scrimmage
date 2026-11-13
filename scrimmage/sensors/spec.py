@@ -171,7 +171,6 @@ class _Table:
                                   choices=i18n.t(" or ", context="list separator").join(f'"{c}"' for c in choices)))
         return v
 
-
     def device(self) -> tuple[str, int] | None:
         """The (device, id) of a `ctre = "CANrange:<id>"` or `grapple = "LaserCAN:<id>"` key; None if neither is given."""
         if "pwf" in self.t:
@@ -187,9 +186,10 @@ class _Table:
         want, v = DEVICE_KEYS[key], self.t[key]
         name, sep, ident = v.partition(":") if isinstance(v, str) else ("", "", "")
         ident = ident.strip()
-        if name != want or not sep or not ident.isdigit() or not 0 <= int(ident) <= MAX_DEVICE_ID:
-            raise self.err(i18n.t("{key_setting}: expected \"{want}:<id>\" with an id from 0 to {most} (e.g. "
-                                  "\"{want}:5\")", key_setting=f"{key} = {plain(v)}", want=want, most=MAX_DEVICE_ID))
+        if name != want or not sep or not (ident.isascii() and ident.isdigit()) or not 0 <= int(ident) <= MAX_DEVICE_ID:
+            raise self.err(i18n.t("{key_setting}: expected {form} with an id from 0 to {most} (e.g. {example})",
+                                  key_setting=f"{key} = {plain(v)}", form=f'"{want}:<id>"', most=MAX_DEVICE_ID,
+                                  example=f'"{want}:5"'))
         return want, int(ident)
 
 
@@ -344,9 +344,9 @@ def parse_sensors(tables) -> list[SensorSpec]:
         if s.device is not None:
             twin = next((o for o in specs if (o.device, o.device_id) == (s.device, s.device_id)), None)
             if twin is not None:
-                raise SensorError(i18n.t("[[sensor]] \"{first}\" and \"{second}\" both name {device} {id}; a device "
-                                         "is one sensor", first=twin.name, second=s.name, device=s.device,
-                                         id=s.device_id))
+                raise SensorError(i18n.t("{sensor_table} \"{first}\" and \"{second}\" both name {device} {id}; a "
+                                         "device is one sensor", first=twin.name, second=s.name, device=s.device,
+                                         id=s.device_id, sensor_table="[[sensor]]"))
         specs.append(s)
     return specs
 
