@@ -11,8 +11,8 @@ must the camera go to see the tags from where we shoot?". [A camera](#a-camera) 
 [Vision in robot code](#vision-in-robot-code) shows how robot code simulates its own vision from scrimmage's true pose.
 
 **The readings are ideal.** There is no noise, no mounting tolerance and no delay beyond one physics step. Sensors see
-balls, discs and rigid pieces alike, and never the robot's own parts. The color sensor's numbers are estimates, and
-Java's color sensor hasn't been run yet: [Estimated or not yet checked](#estimated-or-not-yet-checked) lists both.
+balls, discs and rigid pieces alike, and never the robot's own parts. The color sensor's numbers are estimates:
+[Estimated or not yet checked](#estimated-or-not-yet-checked) says which.
 
 `examples/blocks/beam` is a worked example: an intake that stops when its beam break sees a ball in the bin.
 `examples/blocks/canrange` is the same intake with a CTRE CANrange in the bin.
@@ -650,19 +650,15 @@ On NetworkTables, each camera's IDs are at `/MuJoCo/Camera/<name>/TagIds`, an in
 
 ## Estimated or not yet checked
 
-Three things here rest on our own numbers or on reading code, not on a real sensor or a real run:
+Two things here rest on our own numbers, not on a real sensor:
 
 - **Estimated: every number the color sensor gives.** The brightness (full up to 2 cm, half at 6 cm, nothing past
   10 cm), the 2047 counts at full brightness for red, green, blue and IR, the IR of something that isn't a piece (0.3
   of a piece's), the proximity's straight line from 2047 at contact to 0 at 10 cm, and the dark carpet's counts
   (red 12, green 14, blue 12, IR 8). They are our choices from REV's datasheet, not measured from a Color Sensor V3.
   `getColor()` and `ColorMatch` don't depend on the scale; code that compares raw counts or IR with a real sensor's
-  numbers does.
-- **Not yet checked: Java's color sensor.** REVLib's Java `ColorSensorV3` names its simulated device the same way as
-  RobotPy's (`REV Color Sensor V3[<port>,82]`, read from REVLib 2026.0.5's classes), but no Java robot program has
-  run one in Scrimmage yet. Only RobotPy has been checked running. If a Java robot's color sensor reads nothing,
-  this is the first thing to suspect.
-
+  numbers does. Both RobotPy's and Java's `ColorSensorV3` have been run reading it (Java's with REVLib 2026.0.5 on
+  WPILib 2026).
 - **Estimated: a camera's defaults.** The 70 x 50 degree fields of view (an OV9281 with its stock lens) and the 5.0 m
   range for 6.5 in tags at 1280x800 are estimates; the 60 degree most edge-on angle and 30 frames a second are our
   choices. [A camera](#a-camera) says how to set each from your own camera.
