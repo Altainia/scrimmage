@@ -27,7 +27,7 @@ ASM_SHA256 = "ed825d10ab1399c8c0cb669e688cf0c8c82629b4c8399b58352b68e92ca10fcb"
 # 4: the Grapple LaserCAN helper (ScrimmageGrapple).
 AGENT_VERSION = 4
 # The fast-mode library (scrimmage/java/fastmode), published to a file Maven repository a vendordep points at.
-FASTMODE_VERSION = "0.3.1"
+FASTMODE_VERSION = "0.4.0"
 FASTMODE_GROUP = "io.github.altainia.scrimmage"
 FASTMODE_ARTIFACT = "scrimmage-fastmode"
 VENDORDEP_UUID = "312a1138-d262-41fe-9cca-bc05120dfa6b"

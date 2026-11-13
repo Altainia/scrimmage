@@ -13,7 +13,7 @@ from typing import Literal
 from . import i18n
 from .bindings import CTRE_DEVICES, resolve_device_key
 from .bridge import (MISSING_AFTER, PHOENIX_NAME, REV_LABEL, REV_NAME, REV_OWN_NAME, REV_TYPE, SCRIMMAGE_TYPES,
-                     rev_unhelped)
+                     rev_unhelped, scrimmage_sensor_devices)
 from .protocol import HalState
 from .sensors.spec import LASERCAN_DEVICE, LASERCAN_TYPE
 
@@ -81,8 +81,8 @@ def check_devices(world, hal: HalState, robot_time: float) -> list[DeviceRow]:
     bound_can = {e for b, _ in bindings if (e := _expected_can(b.device_key))}
     sensors = getattr(world, "sensors", None)
     bound_can |= {(s.device, s.device_id) for s in (sensors.specs if sensors is not None else ())
-                  if s.device is not None}    # a distance sensor's CANrange or LaserCAN: bound, so not "extra"
-    bound_keys = {b.device_key for b, _ in bindings}
+                  if s.device_id is not None}    # a distance sensor's CANrange or LaserCAN: bound, so not "extra"
+    bound_keys = {b.device_key for b, _ in bindings} | set(scrimmage_sensor_devices(world))   # a sensor's CANrange
     counters = {"motor": 0, "encoder": 0, "gyro": 0}
     rows: list[DeviceRow] = []
     for b, what in bindings:

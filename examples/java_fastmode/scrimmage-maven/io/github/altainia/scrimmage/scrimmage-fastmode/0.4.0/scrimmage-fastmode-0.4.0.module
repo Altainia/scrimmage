@@ -1,0 +1,80 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "io.github.altainia.scrimmage",
+    "module": "scrimmage-fastmode",
+    "version": "0.4.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.11"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "files": [
+        {
+          "name": "scrimmage-fastmode-0.4.0.jar",
+          "url": "scrimmage-fastmode-0.4.0.jar",
+          "size": 32166,
+          "sha512": "e00e3d70263582fe7832e631152e12e6c5332d09ddd3f08b95f606f86c76e859894f66cb5e2a7819fb30b00ed8879cb9f964338349d71122fc0f34460990e109",
+          "sha256": "2acb6bb7e26487d8984ea823277a44ff203823f8f03ddcfb1c32b3dd22129aca",
+          "sha1": "eb9a6ebc0056a5919e32b3de99e1c94c2149ba74",
+          "md5": "a1c8ce01f28599e6240c45480965e9d5"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "scrimmage-fastmode-0.4.0.jar",
+          "url": "scrimmage-fastmode-0.4.0.jar",
+          "size": 32166,
+          "sha512": "e00e3d70263582fe7832e631152e12e6c5332d09ddd3f08b95f606f86c76e859894f66cb5e2a7819fb30b00ed8879cb9f964338349d71122fc0f34460990e109",
+          "sha256": "2acb6bb7e26487d8984ea823277a44ff203823f8f03ddcfb1c32b3dd22129aca",
+          "sha1": "eb9a6ebc0056a5919e32b3de99e1c94c2149ba74",
+          "md5": "a1c8ce01f28599e6240c45480965e9d5"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "scrimmage-fastmode-0.4.0-sources.jar",
+          "url": "scrimmage-fastmode-0.4.0-sources.jar",
+          "size": 18195,
+          "sha512": "2234d3d617e6e9a3b1fb0376e0c083efefc3c75383c2efe203c4780476b5cc934c0b8ea875d9d7f2a3b32899b642d32251e9e6ae775d3dc180bc2f4e3b1766f7",
+          "sha256": "c8a9fee3b8aa5bea5757ffc2014d0c0ca863808748cd25664f3415fa2b187bbb",
+          "sha1": "0c076dc8376114cbfb245b16e001b2e719b52e54",
+          "md5": "f06d821db3724b066cbf2dac8d17da61"
+        }
+      ]
+    }
+  ]
+}

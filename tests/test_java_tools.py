@@ -226,18 +226,18 @@ def test_vendordep_json_and_maven_folder(tmp_path, monkeypatch):
     assert json.loads(out.read_text()) == {
         "fileName": "Scrimmage.json",
         "name": "Scrimmage",
-        "version": "0.3.1",
+        "version": "0.4.0",
         "uuid": "312a1138-d262-41fe-9cca-bc05120dfa6b",
         "frcYear": "2026",
         "mavenUrls": ["scrimmage-maven"],
         "jsonUrl": "",
         "javaDependencies": [{"groupId": "io.github.altainia.scrimmage", "artifactId": "scrimmage-fastmode",
-                              "version": "0.3.1"}],
+                              "version": "0.4.0"}],
         "jniDependencies": [],
         "cppDependencies": [],
     }
-    jars = list(project.glob("scrimmage-maven/io/github/altainia/scrimmage/scrimmage-fastmode/0.3.1/*.jar"))
-    assert [j.name for j in jars] == ["scrimmage-fastmode-0.3.1.jar"]
+    jars = list(project.glob("scrimmage-maven/io/github/altainia/scrimmage/scrimmage-fastmode/0.4.0/*.jar"))
+    assert [j.name for j in jars] == ["scrimmage-fastmode-0.4.0.jar"]
 
 
 def test_vendordep_replaces_an_older_maven_folder(tmp_path, monkeypatch):

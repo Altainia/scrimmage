@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'io.github.altainia.scrimmage'
-version = project.findProperty('libVersion') ?: '0.3.1'
+version = project.findProperty('libVersion') ?: '0.4.0'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17

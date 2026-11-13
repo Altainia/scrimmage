@@ -304,6 +304,41 @@ def test_two_lasercans_read_their_own():
     assert ups[("ScrimmageGrapple", "LaserCAN[8]")][">status"] == 2, "its beam passes the ball"
 
 
+FAST_RANGE = {"name": "fr", "kind": "distance", "body": "drive.chassis", "at": AHEAD, "toward": [1, 0, 0],
+              "scrimmage": "intake_range"}
+FR_KEY = ("ScrimmageCANrange", "intake_range")
+
+
+def test_fast_canrange_update():
+    w = world(FAST_RANGE)
+    ball_ahead(w, 0.30)
+    step(w)
+    assert updates(w) == {FR_KEY: {">distance": pytest.approx(0.30, abs=1e-3)}}
+    w = world(FAST_RANGE)
+    step(w)
+    assert updates(w)[FR_KEY] == {">distance": w.sensors.specs[0].length}
+
+
+def test_fast_canrange_is_bound_not_extra():
+    from scrimmage.devicecheck import check_devices
+    w = world(FAST_RANGE)
+    hal = HalState()
+    hal.devices[FR_KEY] = {}
+    hal.devices[("ScrimmageCANrange", "other")] = {}
+    extra = [r for r in check_devices(w, hal, robot_time=5) if r.status == "extra"]
+    assert [r.made for r in extra] == ["ScrimmageCANrange:other"]
+
+
+def test_fast_canrange_missing_warning():
+    w = world(FAST_RANGE)
+    hal = HalState()
+    (msg,) = w.sensors.missing_devices(hal, 2.0)
+    assert 'ScrimmageCANrange "intake_range"' in msg and '"fr"' in msg and "fast-mode IO" in msg
+    assert "scrimmage" in msg
+    hal.devices[FR_KEY] = {}
+    assert w.sensors.missing_devices(hal, 2.0) == []
+
+
 def test_device_and_analog_together():
     w = world({**CANRANGE, "analog": 1})
     ball_ahead(w, 0.30)

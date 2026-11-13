@@ -368,6 +368,87 @@ class DevicesTest {
     }
 
     @Test
+    void canrangeFloorsToMillimeters() {
+        requireHal();
+        try (ScrimmageCANrange r = new ScrimmageCANrange("range")) {
+            assertEquals(0.0, r.getDistanceMeters(), 0);
+            in("ScrimmageCANrange:range", "distance", 0.24996);
+            assertEquals(0.249, r.getDistanceMeters(), 1e-12);
+            in("ScrimmageCANrange:range", "distance", 3.0);
+            assertEquals(3.0, r.getDistanceMeters(), 1e-12);
+        }
+    }
+
+    @Test
+    void canrangeDetectionLatches() {
+        requireHal();
+        try (ScrimmageCANrange r = new ScrimmageCANrange("latch")) {
+            assertTrue(r.getIsDetected()); // distance 0 at boot
+            in("ScrimmageCANrange:latch", "distance", 0.40);
+            assertTrue(r.getIsDetected());
+            in("ScrimmageCANrange:latch", "distance", 0.41);
+            assertTrue(r.getIsDetected()); // not above 0.41
+            in("ScrimmageCANrange:latch", "distance", 0.42);
+            assertFalse(r.getIsDetected());
+            in("ScrimmageCANrange:latch", "distance", 0.40);
+            assertFalse(r.getIsDetected()); // stays off inside the band
+            in("ScrimmageCANrange:latch", "distance", 0.39);
+            assertFalse(r.getIsDetected());
+            in("ScrimmageCANrange:latch", "distance", 0.38);
+            assertTrue(r.getIsDetected());
+            in("ScrimmageCANrange:latch", "distance", 0.40);
+            assertTrue(r.getIsDetected()); // stays on inside the band
+        }
+    }
+
+    @Test
+    void canrangeLatchUpdatesOnlyWhenCalled() {
+        requireHal();
+        try (ScrimmageCANrange r = new ScrimmageCANrange("sampled")) {
+            assertTrue(r.getIsDetected());
+            in("ScrimmageCANrange:sampled", "distance", 0.5); // crosses above...
+            in("ScrimmageCANrange:sampled", "distance", 0.2); // ...and back before the next call
+            assertTrue(r.getIsDetected(), "a crossing between two calls isn't seen");
+        }
+    }
+
+    @Test
+    void canrangeCustomProximity() {
+        requireHal();
+        try (ScrimmageCANrange r = new ScrimmageCANrange("custom")) {
+            r.setProximityThreshold(1.0);
+            r.setProximityHysteresis(0.1);
+            in("ScrimmageCANrange:custom", "distance", 1.2);
+            assertFalse(r.getIsDetected());
+            in("ScrimmageCANrange:custom", "distance", 1.0);
+            assertFalse(r.getIsDetected());
+            in("ScrimmageCANrange:custom", "distance", 0.85);
+            assertTrue(r.getIsDetected());
+        }
+    }
+
+    @Test
+    void canrangeDuplicateNameThrows() {
+        try (ScrimmageCANrange r = new ScrimmageCANrange("dup")) {
+            assertThrows(IllegalArgumentException.class, () -> new ScrimmageCANrange("dup"));
+        }
+        new ScrimmageCANrange("dup").close();
+    }
+
+    @Test
+    void canrangeReadsZeroWithoutScrimmage() {
+        SimDevice held = hal ? SimDevice.create("ScrimmageCANrange:held") : null;
+        try (ScrimmageCANrange r = new ScrimmageCANrange("held")) {
+            assertEquals(0.0, r.getDistanceMeters(), 0);
+            assertTrue(r.getIsDetected());
+        } finally {
+            if (held != null) {
+                held.close();
+            }
+        }
+    }
+
+    @Test
     void disabledRobotGivesNeutral() {
         requireHal();
         try (ScrimmageKraken k = new ScrimmageKraken("disabled", new KrakenSettings())) {
