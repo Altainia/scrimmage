@@ -129,7 +129,7 @@ MAIN: dict = {
                     "failed (block 13): the coral is seated 9.2 in of 11.0 in on branch_l2, less than 20 in at 7.4 s"],
          "clearance_lines": [],
          "outcome": "a check failed (block 13): the coral is seated 9.2 in of 11.0 in on branch_l2, less than 20 in at "
-                    "7.4 s"},
+                    "7.4 s; 0 of 1 made it in (0%); 1 placed on branch_l2"},
     "clears":
         {"air_lines": [],
          "checks": ["failed (block 2): expected the robot to clear trench_arm by at least 0.5 in, but it was 0.45 in "

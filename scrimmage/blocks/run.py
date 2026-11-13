@@ -322,12 +322,10 @@ class TestRun(_FailureWords):
         self.feeder = world.test_range.feeder if world.test_range is not None else None
         self.standin = is_standin(Path(program.path).parent / program.robot)
         self.placement = placement
-        # the floor piece ahead of the start (the one a spread places) is tracked in a placed run, and in any run on
-        # a soft-NOTE field whose test has a hopper (it asks what ends up in a body), so its feed outcome reaches the
-        # result however the test is run. Other runs (a ball or coral test) keep their outcomes as they were
-        tr = world.test_range
-        soft = tr is not None and tr.soft is not None
-        self._floor = spread_ball(world) if placement is not None or (soft and hopper_of(program)) else None
+        # the floor piece ahead of the start (the one a spread places) is tracked in a placed run, and in any run
+        # whose test has a hopper (it asks whether a piece got in), so its feed outcome reaches the result however
+        # the test is run. A test with no hopper keeps its outcome as it was
+        self._floor = spread_ball(world) if placement is not None or hopper_of(program) else None
         if placement is not None and self._floor is None:
             raise TestFileError(no_ball())
 

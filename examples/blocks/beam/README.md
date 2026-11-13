@@ -59,10 +59,10 @@ broken. The test does it with no robot code.
 
 ## What it does
 
-`finished` at 3.0 s, with both checks passed:
+It finishes at 3.0 s with the ball counted as in (the test names a hopper) and both checks passed:
 
 ```
-finished
+1 of 1 made it in (100%)
   passed: bin is on at 3.0 s (block 7)
   passed: a ball reaches intake.hopper at 3.0 s (block 8)
 ```
@@ -108,7 +108,7 @@ to = [0.32, -0.17, 0.05]
 and run the test again. It fails:
 
 ```
-a check failed (block 8): no ball was in intake.hopper at 2.0 s
+a check failed (block 8): no ball was in intake.hopper at 2.0 s; 0 of 1 made it in (0%); 1 stuck in the robot
 ```
 
 The beam breaks at 1.0 s, when the ball first gets under the roller. The blocks stop everything there, and the ball is
