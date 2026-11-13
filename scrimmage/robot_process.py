@@ -8,6 +8,7 @@ import ctypes
 import functools
 import os
 import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -72,6 +73,26 @@ def _alive(pid: int) -> bool:
             return f.read().rsplit(")", 1)[1].split()[0] != "Z"  # a zombie has exited
     except (OSError, IndexError):
         return False
+
+
+def kill_tree(pid: int) -> None:
+    """Kill a robot program and the processes it started: SIGKILL its process group (it was started in a session of
+    its own); on Windows, which has neither, taskkill /T (then the process alone if that fails). Raises
+    ProcessLookupError or PermissionError as os.killpg does; on Windows it never raises."""
+    if sys.platform != "win32":
+        os.killpg(pid, signal.SIGKILL)
+        return
+    try:
+        r = subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], stdin=subprocess.DEVNULL,
+                           capture_output=True, timeout=10)
+        if r.returncode == 0:
+            return
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        os.kill(pid, signal.SIGTERM)   # Windows: TerminateProcess
+    except OSError:
+        pass
 
 
 def kill_by_token(token: str, timeout: float = 10.0) -> None:
@@ -393,7 +414,10 @@ class RobotProcess:
             # Always signal the group, even if the leader already exited: its children may still run.
             # SIGKILL: a robot paused by lockstep ignores SIGINT/SIGTERM.
             try:
-                os.killpg(proc.pid, signal.SIGKILL)
+                if sys.platform == "win32":   # taskkill: a program to wait for
+                    await asyncio.get_running_loop().run_in_executor(None, kill_tree, proc.pid)
+                else:
+                    kill_tree(proc.pid)
             except (ProcessLookupError, PermissionError):
                 pass
             try:

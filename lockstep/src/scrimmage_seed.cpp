@@ -4,6 +4,9 @@
 // scrimmage loads it into a RobotPy robot program run with --scrimmage-lockstep through LD_PRELOAD, so this
 // definition of libstdc++'s std::random_device::_M_getval wins over libstdc++'s own. Only libstdc++ (what
 // RobotPy's Linux wheels use) has this symbol; for anything else the library has no effect.
+//
+// Linux only (lockstep/CMakeLists.txt builds it nowhere else): it overrides a libstdc++ symbol through LD_PRELOAD,
+// which Windows and macOS have no counterpart for, so it keeps GCC's visibility attribute.
 
 #include <cstdint>
 

@@ -38,6 +38,13 @@
 #include <hal/simulation/REVPHData.h>
 #include <hal/simulation/SimDeviceData.h>
 
+// HALSIM_InitExtension must be visible outside the library (the build hides everything else).
+#ifdef _WIN32
+#define SCRIMMAGE_EXPORT __declspec(dllexport)
+#else
+#define SCRIMMAGE_EXPORT __attribute__((visibility("default")))
+#endif
+
 namespace {
 
 using Clock = std::chrono::steady_clock;
@@ -366,7 +373,7 @@ void Shutdown(void* param) {
 
 extern "C" {
 
-__attribute__((visibility("default"))) int HALSIM_InitExtension(void) {
+SCRIMMAGE_EXPORT int HALSIM_InitExtension(void) {
   HAL_SimDeviceHandle dev = HAL_CreateSimDevice("ScrimmageLockstep");
   if (dev == 0) {
     Log("could not create the ScrimmageLockstep SimDevice; lockstep disabled");

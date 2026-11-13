@@ -1,5 +1,6 @@
 [build-system]
-requires = ["scikit-build-core>=0.10", "robotpy-native-wpihal>=2026.2,<2027"]
+# robotpy-native-wpihal: the HAL headers and library the C++ extension builds against (Linux only, see CMakeLists.txt)
+requires = ["scikit-build-core>=0.10", "robotpy-native-wpihal>=2026.2,<2027; sys_platform == 'linux'"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -17,3 +18,9 @@ scrimmage-lockstep = "scrimmage_lockstep"
 [tool.scikit-build]
 cmake.version = ">=3.21"
 wheel.packages = ["scrimmage_lockstep"]
+
+# Off Linux the package is pure Python (the REV and LaserCAN helpers; the robot runs in real time): no CMake, no
+# compiler, a py3-none-any wheel
+[[tool.scikit-build.overrides]]
+if.platform-system = "^(?!linux)"
+wheel.cmake = false

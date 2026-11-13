@@ -1,8 +1,12 @@
-"""Loads the scrimmage_lockstep HALSim extension: `python -m robotpy sim --ws-client --scrimmage-lockstep`."""
+"""Loads the scrimmage_lockstep HALSim extension: `python -m robotpy sim --ws-client --scrimmage-lockstep`.
+
+Lockstep is Linux only for now: elsewhere the package has no compiled extension, and loading it installs only the REV
+and LaserCAN helpers (the robot runs in real time)."""
 
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 
 logger = logging.getLogger("scrimmage_lockstep")
@@ -21,11 +25,14 @@ def loadExtension() -> None:
     import hal
 
     path = library_path()
-    if not path.exists():
+    if path.exists():
+        retval = hal.loadOneExtension(str(path))
+        if retval != 0:
+            logger.warning("loading %s may have failed (error=%d)", path, retval)
+    elif sys.platform.startswith("linux"):
         raise ImportError(f"{path} is missing; reinstall scrimmage-lockstep")
-    retval = hal.loadOneExtension(str(path))
-    if retval != 0:
-        logger.warning("loading %s may have failed (error=%d)", path, retval)
+    else:  # built only on Linux (see CMakeLists.txt): scrimmage notices no lockstep device and runs in real time
+        logger.info("lockstep is Linux only for now: on this computer the robot runs in real time")
     try:  # drive REV SPARKs' simulation (a no-op without robotpy-rev); never stops the robot program
         from . import rev as rev_helper
 

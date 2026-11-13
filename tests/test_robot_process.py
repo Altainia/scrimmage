@@ -371,3 +371,22 @@ def test_grapple_state_comes_from_the_lasercan_helpers_unavailable_line():
     assert r.grapple_state is None and r.agent_state() == "missing", "the LaserCAN helper isn't the REV agent"
     r._add(b"scrimmage grapple helper: unavailable: no libgrapplefrc.LaserCAN")
     assert r.grapple_state == "unavailable: no libgrapplefrc.LaserCAN" and r.rev_state is None
+
+
+def test_kill_tree_on_windows_ends_the_whole_tree(monkeypatch):
+    """Windows has no process groups (os.killpg) or SIGKILL: taskkill /T ends the robot program and its children,
+    and if that fails the process alone is ended."""
+    from scrimmage import robot_process
+    monkeypatch.setattr(sys, "platform", "win32")
+    seen, killed = [], []
+
+    class R:
+        returncode = 0
+    monkeypatch.setattr(robot_process.subprocess, "run", lambda cmd, **k: seen.append(cmd) or R())
+    monkeypatch.setattr(robot_process.os, "kill", lambda pid, sig: killed.append(pid))
+    monkeypatch.setattr(robot_process.os, "killpg", lambda *a: pytest.fail("killpg on Windows"))
+    robot_process.kill_tree(4321)
+    assert seen == [["taskkill", "/F", "/T", "/PID", "4321"]] and killed == []
+    R.returncode = 128   # taskkill couldn't
+    robot_process.kill_tree(4321)
+    assert killed == [4321]

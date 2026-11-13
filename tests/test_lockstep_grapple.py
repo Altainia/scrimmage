@@ -246,6 +246,41 @@ def test_load_extension_installs_the_grapple_helper(monkeypatch, capsys, tmp_pat
     assert capsys.readouterr().out.startswith(P + "loaded (python ")
 
 
+@pytest.mark.parametrize("platform", ["win32", "darwin"])
+def test_load_extension_off_linux_installs_the_helpers_without_the_library(monkeypatch, capsys, caplog, tmp_path,
+                                                                          platform):
+    """Lockstep is built only on Linux: elsewhere the package has no library, so loading it says once that the robot
+    runs in real time and still installs the helpers."""
+    fakes = Fakes()
+    for name, mod in fakes.modules().items():
+        monkeypatch.setitem(sys.modules, name, mod)
+    monkeypatch.setitem(sys.modules, "rev", None)
+    fakes.hal.loadOneExtension = lambda path: pytest.fail(f"loaded {path}")
+    pkg = load_package(monkeypatch)
+    monkeypatch.setattr(pkg, "library_path", lambda: tmp_path / "missing.so")
+    monkeypatch.setattr(sys, "platform", platform)
+    with caplog.at_level("INFO", logger="scrimmage_lockstep"):
+        pkg.loadExtension()
+    assert [r.getMessage() for r in caplog.records] == [
+        "lockstep is Linux only for now: on this computer the robot runs in real time"]
+    helper = sys.modules["scrimmage_lockstep.grapple"]
+    assert fakes.g.LaserCAN is helper.LaserCAN
+    fakes.g.LaserCAN(7)
+    assert capsys.readouterr().out.startswith(P + "loaded (python ")
+
+
+def test_load_extension_on_linux_needs_the_library(monkeypatch, tmp_path):
+    fakes = Fakes()
+    for name, mod in fakes.modules().items():
+        monkeypatch.setitem(sys.modules, name, mod)
+    pkg = load_package(monkeypatch)
+    monkeypatch.setattr(pkg, "library_path", lambda: tmp_path / "missing.so")
+    monkeypatch.setattr(sys, "platform", "linux")
+    with pytest.raises(ImportError, match="reinstall scrimmage-lockstep"):
+        pkg.loadExtension()
+    assert "scrimmage_lockstep.grapple" not in sys.modules   # nothing installed
+
+
 def test_load_extension_survives_a_failing_grapple_helper(monkeypatch, tmp_path):
     fakes = Fakes()
     for name, mod in fakes.modules().items():

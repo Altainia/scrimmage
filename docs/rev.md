@@ -34,8 +34,9 @@ RobotPy robots that use `robotpy-rev` work too, through Scrimmage's RobotPy lock
 
 1. Install robotpy-rev 2026.0.4 or later (below 2027): `pip install robotpy-rev`, or install Scrimmage with its
    `robotpy` extra (`pip install -e ".[robotpy]"`), which also brings RobotPy itself and commands2.
-2. Install the extension: `pip install ./lockstep`. It must be version 0.6.0 or later; **reinstall it after updating
-   Scrimmage** (`pip install ./lockstep` again). A RobotPy config run with `--scrimmage-lockstep` refuses to start with
+2. Install the extension: `pip install ./lockstep`, on any computer. It must be version 0.6.0 or later; **reinstall it
+   after updating Scrimmage** (`pip install ./lockstep` again). On Windows and macOS it installs the REV helper only
+   (no C++ compiler needed), without lockstep: the robot runs in real time there. A RobotPy config run with `--scrimmage-lockstep` refuses to start with
    an older one and says so. A robot with valves on a REV Pneumatic Hub needs 0.7.0 or later (see
    [pneumatics.md](pneumatics.md#robot-code)).
 3. Put `--scrimmage-lockstep` in `[robot_program] command`, the usual RobotPy command:
@@ -225,4 +226,5 @@ A robot with both kinds of device runs in real time, not lockstep (the notice na
 - A robot-code `setPosition` on an encoder from another thread (for example a `Notifier`) can occasionally be
   lost.
 - Phoenix 6 devices on the same robot still force real time (not lockstep).
-- Linux only, like the rest of the lockstep support.
+- Lockstep (faster than real time, repeatable) and the fixed seed (`LD_PRELOAD`) are Linux only. On Windows and macOS
+  the REV helper still drives the SPARKs, in real time.
