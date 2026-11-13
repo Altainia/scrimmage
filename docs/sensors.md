@@ -96,6 +96,9 @@ A distance sensor (`kind = "distance"`):
 | `sees` | `"pieces"` | `"pieces"`: game pieces only. `"anything"`: the first thing it hits that isn't the robot (a piece, a wall, the carpet) |
 | `analog` | none | an analog input channel: the robot code reads it as an `AnalogInput`, `volts_per_m` volts per meter of distance |
 | `volts_per_m` | 0.977 | volts per meter on the `analog` input (an estimate: a MaxBotix MB1013 ultrasonic sensor's 5 V over 5.12 m). The voltage stops at 5 V. It goes with `analog` |
+| `ctre` | none | `"CANrange:<id>"` (id 0 to 62): the sensor is also a CTRE CANrange the robot code reads. One device key per sensor. `max_range` then defaults to 3.0 m |
+| `grapple` | none | `"LaserCAN:<id>"` (id 0 to 62): the sensor is also a Grapple LaserCAN. One device key per sensor. `max_range` then defaults to 4.0 m |
+| `pwf` | none | not supported yet: it is an error that points you to `analog` (the Playing With Fusion Time of Flight) |
 | `dio` | none | a DIO channel that switches at `threshold`, like an IR proximity switch: on while something is closer than `threshold` |
 | `active_low` | `true` | `true`: the `dio` reads `false` while it is on. It goes with `dio` |
 | `threshold` (or `threshold_in`) | half of `max_range` | the distance (m, or inches) it is on closer than: for its `dio`, and for the Test tab's **is on**. It can't be past `max_range` |
