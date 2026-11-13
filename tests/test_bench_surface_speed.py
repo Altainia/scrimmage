@@ -10,7 +10,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from scrimmage import units
 from scrimmage.bench.build import build_bench
+from scrimmage.bench.problems import collect_problems
 from scrimmage.bench.run import run_bench
 from scrimmage.bench.spec import BenchError, parse_bench
 
@@ -95,3 +97,22 @@ def test_surface_speed_is_a_number():
         parse_bench(raw, HERE)
     raw["plate"][0].pop("surface_speed")
     assert parse_bench(raw, HERE).plates[0].surface_speed == 0.0
+
+
+def test_a_moving_plate_is_named_in_the_warnings(tmp_path):
+    """A result never hides that the carpet moved the piece: one warning per moving plate, in the Units setting, which
+    the summary prints and bench_check reports at the plate's key; none for a still plate."""
+    raw = _raw(speed=-1.5)
+    raw["plate"].append({"name": "still", "center": [0.0, 0.0, -1.0], "size": [0.1, 0.1, 0.1]})
+    with units.fixed("metric"):
+        assert parse_bench(raw, HERE).warnings == ("plate 'carpet' moves its surface at -1.5 m/s along its x",)
+    with units.fixed("imperial"):
+        assert parse_bench(raw, HERE).warnings == ("plate 'carpet' moves its surface at -4.92 ft/s along its x",)
+    assert parse_bench(_raw(speed=0.0), HERE).warnings == ()
+    path = tmp_path / "carpet.toml"
+    path.write_text('[bench]\nname = "c"\n[piece]\npreset = "2024-note"\n[[plate]]\nname = "carpet"\n'
+                    'center = [0.0, 0.0, -0.05]\nsize = [5.0, 1.0, 0.1]\nsurface_speed = 1.5\n', encoding="utf-8")
+    with units.fixed("metric"):
+        _, problems = collect_problems(path)
+    assert [(q.level, q.key, q.message) for q in problems if q.level == "warning"] == [
+        ("warning", "plate.carpet.surface_speed", "plate 'carpet' moves its surface at 1.5 m/s along its x")]

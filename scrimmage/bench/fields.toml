@@ -191,7 +191,7 @@ default = "polycarbonate"
 
 [plate.surface_speed]
 unit = "m/s"
-help = "how fast its top moves along its own x, as a conveyor or a robot driving onto a piece; negative runs back"
+help = "how fast its surface moves along its own x (every face of the box does), as a conveyor does; negative runs back"
 default = 0.0
 
 [bar.name]

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .. import i18n
+from .. import i18n, units
 from ..launcher.inputs import PRESETS, Ball
 from ..launcher.rigid_aero import DRAG_COEFFICIENT, SPIN_DAMPING
 from ..testrange.pieces import PieceKind
@@ -668,6 +668,7 @@ def parse_bench(raw: dict, base_dir: Path, problems: list[Problem] | None = None
     if bt is not None:
         fields = attempt(lambda: (bt.text("name"), bt.text("author", ""), bt.text("idea", ""), bt.text("notes", "")))
     run = attempt(_parse_run, raw.get("run", {}), key="run")
+    warned += [surface_warning(p) for p in parsed["plate"] if p.surface_speed]
     if len(errors) > start:
         return None
     return Bench(
@@ -676,6 +677,13 @@ def parse_bench(raw: dict, base_dir: Path, problems: list[Problem] | None = None
         curves=parsed["curve"], cads=cads, inlets=parsed["inlet"], outlets=parsed["outlet"], flight=flight,
         run=run, materials=dict(MATERIALS), sweep=dict(sweep), charts=list(charts),
         raw=copy.deepcopy(raw), base_dir=base_dir, warnings=tuple(warned))
+
+
+def surface_warning(plate: Plate) -> str:
+    """The warning a moving plate gives (K6-R14), so a result never hides that the carpet, not the mechanism, moved
+    the piece."""
+    return i18n.t("plate {name} moves its surface at {speed} along its x", name=repr(plate.name),
+                  speed=units.fmt(plate.surface_speed, "speed"))
 
 
 def _raise(err: BenchError):

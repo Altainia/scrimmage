@@ -23,7 +23,7 @@ def collect_problems(path: Path, text: str | None = None):
     """(the bench or None, every problem). The bench is None when there is any error. With `text`, that text is
     checked as if it were the file at `path` (includes and mesh paths read from its folder)."""
     from .build import build_bench, check_clear, flex_outlet_warnings, overlap_warnings
-    from .spec import BenchError, _read_toml, _resolve_includes, parse_bench
+    from .spec import BenchError, _read_toml, _resolve_includes, parse_bench, surface_warning
 
     path = Path(path)
     problems: list[Problem] = []
@@ -47,7 +47,9 @@ def collect_problems(path: Path, text: str | None = None):
         check_clear(built)
     except BenchError as e:
         return None, [Problem("error", e.key, str(e))]
-    problems += [Problem("warning", "piece", w) for w in bench.warnings]
+    # a moving plate's warning points at its key; the rest are the piece's
+    keys = {surface_warning(p): f"plate.{p.name}.surface_speed" for p in bench.plates if p.surface_speed}
+    problems += [Problem("warning", keys.get(w, "piece"), w) for w in bench.warnings]
     problems += overlap_warnings(built, bench)
     problems += flex_outlet_warnings(built, bench)
     return bench, problems
