@@ -20,7 +20,8 @@
                              whether LEAVE was earned and the climb level held at the end), points (auto, teleop,
                              endgame, total and the items: RunResult.points) and rules (the breaches; [] for none);
                              cameras (each camera [[sensor]]'s [t, [tag IDs]] whenever what it sees changed; {}
-                             without cameras: RunResult.cameras);
+                             without cameras: RunResult.cameras); soft_resets (the soft NOTE guard's resets:
+                             RunResult.soft_resets; 0 for a run kept before it);
                              and, for a run made inside machine text (a sweep's, a spread's,
                              MCP test_run's: its words above are machine text), words: the outcome, the checks'
                              words, the marks' text, seated and notes in every Language and Units setting
@@ -281,6 +282,7 @@ def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
             "goals": getattr(result, "goals", None), "air": getattr(result, "air", None),
             "clearance": getattr(result, "clearance", None), "hopper": bool(program.hopper),
             "pieces": getattr(result, "pieces", []), "cameras": getattr(result, "cameras", {}),
+            "soft_resets": getattr(result, "soft_resets", 0),
             **({"match": result.match, "points": result.points, "rules": result.rules}
                if getattr(result, "match", None) is not None else {}),
             **({"words": result.words} if getattr(result, "words", None) else {})})
@@ -340,6 +342,7 @@ def load_result(base, run_id: str) -> dict:
     out = json.loads((folder / "result.json").read_text(encoding="utf-8"))
     out["id"] = run_id
     out.setdefault("cameras", {})       # a run kept before cameras
+    out.setdefault("soft_resets", 0)    # a run kept before the soft NOTE guard
     out["signals"] = _read_signals(folder / "signals.csv")
     return out
 

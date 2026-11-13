@@ -16,6 +16,8 @@ import tomllib
 from dataclasses import replace
 from pathlib import Path
 
+import json
+
 import mujoco
 import numpy as np
 import pytest
@@ -23,6 +25,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import soft_helpers as sh  # noqa: E402
+from scrimmage.blocks import store  # noqa: E402
 from scrimmage.blocks.program import load  # noqa: E402
 from scrimmage.blocks.run import TestRun  # noqa: E402
 from scrimmage.flexcontact import id_name  # noqa: E402
@@ -374,9 +377,36 @@ def test_the_guard_resets_a_blown_up_ring(tmp_path):
             r = soft.ring_view(w.model, next(iter(rt.soft.in_use().values())))
             w.data.qvel[r.free_v:r.free_v + 3] = [KICK, 0.0, 0.0]
             kicked.append(t)
-    result = TestRun(w, _guard_test(tmp_path)).run(on_sample=on_sample)
+    program = _guard_test(tmp_path)
+    result = TestRun(w, program).run(on_sample=on_sample)
     assert kicked and result.soft_resets == 1, (kicked, result.outcome)
     assert len(_blew_up(result.notes)) == 1, result.notes
+    # result.json keeps the count (round 1, ruling 3); a run kept before it loads as 0
+    folder = store.save_run(result, program, tmp_path / "runs")
+    assert store.load_result(tmp_path / "runs", folder.name)["soft_resets"] == 1
+    kept = json.loads((folder / "result.json").read_text(encoding="utf-8"))
+    del kept["soft_resets"]
+    (folder / "result.json").write_text(json.dumps(kept), encoding="utf-8")
+    assert store.load_result(tmp_path / "runs", folder.name)["soft_resets"] == 0
+
+
+def test_a_note_that_blows_up_again_is_noted_once(tmp_path):
+    """Round 1, ruling 1: a NOTE the guard resets on three steps is one note, with the count and the first time's
+    when and speed; soft_resets (SoftPool.resets) counts every one."""
+    w = wing_world(tmp_path)
+    pool, hal = w.test_range.soft, HalState()
+    ring = _kicked(w)
+    w.step(hal)
+    t1 = w.time                 # the first reset: at the end of that step
+    for _ in range(2):
+        w.data.qvel[ring.free_v:ring.free_v + 3] = [KICK, 0.0, 0.0]
+        w.step(hal)
+    assert pool.resets == 3
+    said = _blew_up(w.test_range.notes())
+    assert len(said) == 1, said
+    assert said[0].startswith(f"soft NOTE {w.test_range.balls.piece_name(next(iter(pool.in_use())))} blew up 3 "
+                              f"times (first at {t1:.2f} s, a segment at ")
+    assert "each time it was reset to its rest shape" in said[0], said
 
 
 def test_a_non_finite_ring_is_reset_where_its_stand_in_was(tmp_path):
@@ -461,3 +491,25 @@ def test_a_badqacc_rise_is_noted(tmp_path):
     assert rt.unstable == [pytest.approx(t0)] and rt.notes().count(note) == 1, rt.notes()
     w.reset()
     assert rt.unstable == [] and note not in rt.notes()
+
+
+def test_a_badqvel_rise_is_noted_once(tmp_path):
+    """Round 1, ruling 2: MuJoCo's BADQVEL (and BADQPOS) resets are noted as BADQACC's are, once per run at the first;
+    a second reset, which leaves MuJoCo's count at 1, is still seen by the clock going back."""
+    w = wing_world(tmp_path)
+    rt, d, hal = w.test_range, w.data, HalState()
+    for _ in range(100):
+        w.step(hal)
+    t0 = w.time
+    d.qvel[0] = np.nan          # MuJoCo resets the whole state at the step's start (mj_checkVel)
+    w.step(hal)
+    assert d.warning[mujoco.mjtWarning.mjWARN_BADQVEL].number == 1 and w.time < t0
+    assert rt.unstable == [pytest.approx(t0)]
+    for _ in range(100):
+        w.step(hal)
+    t1 = w.time
+    d.qpos[0] = np.nan          # a second reset (mj_checkPos): the summed count is 1 again
+    w.step(hal)
+    assert rt.unstable == [pytest.approx(t0), pytest.approx(t1)]
+    notes = [n for n in rt.notes() if n.startswith("MuJoCo found the simulation unstable")]
+    assert notes == [f"MuJoCo found the simulation unstable at {t0:.2f} s and restarted it"], notes

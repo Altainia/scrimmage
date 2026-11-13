@@ -24,9 +24,10 @@ robot and anything else never do). A sleeping ball wakes when an awake body touc
 it, and when its qpos or qvel is written (parking, placing); checked on MuJoCo 3.4.0 and 3.17.0, and two runs stay
 bit-identical.
 
-Instability (K6-R7, K6-P7): when a step's accelerations go bad, MuJoCo resets the whole state, time included, and
-counts it in its BADQACC warning. after_physics reads that count after each step, as the bench does, and a rise is
-kept with the step's start time (`unstable`), so a silent restart becomes a note (notes()). MuJoCo's own reset stays.
+Instability (K6-R7, K6-P7): when a step's positions, velocities or accelerations go bad, MuJoCo resets the whole
+state, time included, and counts it in its BADQPOS, BADQVEL or BADQACC warning. after_physics reads those counts after
+each step, as the bench does, and a rise is kept with the step's start time (`unstable`), so a silent restart becomes
+a note (notes(): one per run, at the first). MuJoCo's own reset stays.
 """
 
 from __future__ import annotations
@@ -50,6 +51,10 @@ from .shooter import Shooter, parse_shooter
 from .shooter_disc import DiscShooter
 from .shooter_piece import PieceShooter
 from .station import DEFAULT_SEED, check_seed
+
+
+# MuJoCo's warnings that come with its own reset of the whole state (mj_checkPos, mj_checkVel, mj_checkAcc)
+_BAD = (mujoco.mjtWarning.mjWARN_BADQPOS, mujoco.mjtWarning.mjWARN_BADQVEL, mujoco.mjtWarning.mjWARN_BADQACC)
 
 
 class RangeRuntime:
@@ -98,7 +103,7 @@ class RangeRuntime:
         self.feeder = Feeder(self.balls, self.layout, self.range, self._config["seed"]) if self.range.stations else None
         self._prev = np.zeros((self.balls.n, 3))
         self.events: list[tuple[int, str]] = []     # the last step's (ball, "scored" | "out")
-        self.unstable: list[float] = []             # each step-start time at which MuJoCo's BADQACC count rose
+        self.unstable: list[float] = []             # each step-start time at which MuJoCo reset the state (_BAD)
         self._t0 = float(world.data.time)           # the step's start time (before_physics)
         self._badqacc = self._bad_count()
 
@@ -274,7 +279,7 @@ class RangeRuntime:
     def after_physics(self) -> None:
         """After mj_step: a soft NOTE's slot takes its ring's state first (so scoring and leaving the field read it),
         then the ledger's work, the free rings held, the intake, and last the soft swaps (so a NOTE the intake took
-        releases its ring in the same step). First of all, a rise in MuJoCo's BADQACC count is kept (`unstable`)."""
+        releases its ring in the same step). First of all, a rise in MuJoCo's bad-state counts is kept (`unstable`)."""
         self._see_instability()
         if self.shooter is not None:
             self.shooter.mirror()
@@ -290,7 +295,9 @@ class RangeRuntime:
             soft.update()
 
     def _bad_count(self) -> int:
-        return int(self.world.data.warning[mujoco.mjtWarning.mjWARN_BADQACC].number)
+        """MuJoCo's resets so far: its BADQPOS, BADQVEL and BADQACC warning counts, summed."""
+        warning = self.world.data.warning
+        return sum(int(warning[w].number) for w in _BAD)
 
     def _see_instability(self) -> None:
         """MuJoCo's own reset clears its warnings before it counts the one that caused it, so a second reset leaves the
@@ -322,10 +329,10 @@ class RangeRuntime:
         return self.soft.notes(lang) if self.soft is not None else []
 
     def notes(self, lang: str | None = None) -> list[str]:
-        """Every note the range has for a report (K6-P7): soft_notes(), then one for each time MuJoCo found the
-        simulation unstable and restarted it (`unstable`)."""
+        """Every note the range has for a report (K6-P7): soft_notes(), then, if MuJoCo found the simulation
+        unstable and restarted it, one note at the first time (`unstable`)."""
         return self.soft_notes(lang) + [i18n.t("MuJoCo found the simulation unstable at {t} s and restarted it",
-                                               lang=lang, t=f"{t:.2f}") for t in self.unstable]
+                                               lang=lang, t=f"{t:.2f}") for t in self.unstable[:1]]
 
     def ball_log(self) -> list[dict]:
         """Every ball's log (None for unset values), the in-play balls' last position and rest brought up to date."""

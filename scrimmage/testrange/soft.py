@@ -530,8 +530,9 @@ class SoftPool:
     - The guard (K6-R7, K6-P12), a last resort that is visible, never a fix: after its read each step, a ring in use
       and awake with a segment faster than GUARD_SPEED goes back to its rest shape at its read center and rotation,
       moving at its center's velocity capped at GUARD_RESET_SPEED, with no spin; one whose state is not finite goes
-      back to its stand-in's last shadow pose, at rest. Either way its dofs' warm start is zeroed, `resets` counts it,
-      and a note says when (notes()). A parked or sleeping ring is never read, so it never trips it.
+      back to its stand-in's last shadow pose, at rest. Either way its dofs' warm start is zeroed and `resets` counts
+      it. notes() has one note per NOTE that blew up, with how many times and the first time's when and why. A
+      parked or sleeping ring is never read, so it never trips it.
     """
 
     def __init__(self, model: mujoco.MjModel, data: mujoco.MjData, balls, layout, robot_root: int):
@@ -591,7 +592,8 @@ class SoftPool:
 
     def notes(self, lang: str | None = None) -> list[str]:
         """The full pool's note (once per reset), for each kind that turned soft its uncalibrated numbers, and one
-        note for each of the guard's resets (K6-R7), its speed in the Units setting."""
+        note for each NOTE the guard reset (K6-R7): how many times, and the first time's when and why (its speed in
+        the Units setting, or a state that was not finite)."""
         out = []
         if self._full_noted:
             out.append(i18n.tn("a NOTE came near the robot while the soft pool's {count} NOTE was in use; it stayed "
@@ -602,15 +604,26 @@ class SoftPool:
             out.append(i18n.t("soft NOTE: its stiffness ({stiffness} N/m) and restitution ({restitution}) are "
                               "UNCALIBRATED estimates; measure them (docs/measuring.md)", lang=lang,
                               stiffness=f"{kind.stiffness:g}", restitution=f"{kind.restitution:g}"))
-        for name, t, speed in self._blowups:
+        first: dict[str, tuple[float, float | None]] = {}
+        times: dict[str, int] = {}
+        for name, t, speed in self._blowups:        # one note per NOTE, in the order they first blew up
+            first.setdefault(name, (t, speed))
+            times[name] = times.get(name, 0) + 1
+        for name, (t, speed) in first.items():
+            n = times[name]
             if speed is None:
-                out.append(i18n.t("soft NOTE {name} blew up at {t} s (its state was not finite); it was reset to its "
-                                  "rest shape, so results near then aren't trustworthy", lang=lang, name=name,
-                                  t=f"{t:.2f}"))
+                out.append(i18n.tn("soft NOTE {name} blew up at {t} s (its state was not finite); it was reset to "
+                                   "its rest shape, so results near then aren't trustworthy",
+                                   "soft NOTE {name} blew up {count} times (first at {t} s, its state was not "
+                                   "finite); each time it was reset to its rest shape, so results near then aren't "
+                                   "trustworthy", n, lang=lang, name=name, t=f"{t:.2f}"))
             else:
-                out.append(i18n.t("soft NOTE {name} blew up at {t} s (a segment at {speed}); it was reset to its "
-                                  "rest shape, so results near then aren't trustworthy", lang=lang, name=name,
-                                  t=f"{t:.2f}", speed=units.fmt(speed, "speed")))
+                out.append(i18n.tn("soft NOTE {name} blew up at {t} s (a segment at {speed}); it was reset to its "
+                                   "rest shape, so results near then aren't trustworthy",
+                                   "soft NOTE {name} blew up {count} times (first at {t} s, a segment at {speed}); "
+                                   "each time it was reset to its rest shape, so results near then aren't "
+                                   "trustworthy", n, lang=lang, name=name, t=f"{t:.2f}",
+                                   speed=units.fmt(speed, "speed")))
         return out
 
     # ---- every step -------------------------------------------------------------------------------------------------
