@@ -424,6 +424,36 @@ def test_grapple_lasercan_key():
     assert device_key(s) == ("ScrimmageGrapple", "LaserCAN[7]")
 
 
+def test_scrimmage_fast_canrange_key():
+    s, = parse_sensors([dist_table(scrimmage="intake_range")])
+    assert s.device == "ScrimmageCANrange" and s.device_id is None and s.device_name == "intake_range"
+    assert s.length == DEVICE_MAX_RANGE["ScrimmageCANrange"] == 3.0 and s.threshold == CANRANGE_THRESHOLD
+    assert device_key(s) == ("ScrimmageCANrange", "intake_range")
+    assert parse_sensors([dist_table(scrimmage="r", max_range=0.3)])[0].threshold == 0.3   # capped, as a CANrange's
+    assert parse_sensors([dist_table(scrimmage="r", analog=0)])[0].analog == 0
+
+
+@pytest.mark.parametrize("extra, words", [
+    ({"scrimmage": ""}, "non-empty device name without spaces"),
+    ({"scrimmage": "a b"}, 'scrimmage = "a b"'),
+    ({"scrimmage": 3}, "scrimmage = 3"),
+    ({"scrimmage": "r", "ctre": "CANrange:5"}, "only one"),
+    ({"scrimmage": "r", "grapple": "LaserCAN:5"}, "only one"),
+])
+def test_bad_scrimmage_canrange_keys(extra, words):
+    with pytest.raises(SensorError) as e:
+        parse_sensors([dist_table(**extra)])
+    assert "[[sensor]] \"d\"" in str(e.value) and words in str(e.value)
+
+
+def test_same_scrimmage_canrange_twice():
+    a, b = dist_table(scrimmage="r"), {**dist_table(scrimmage="r"), "name": "e"}
+    with pytest.raises(SensorError) as e:
+        parse_sensors([a, b])
+    assert '"d"' in str(e.value) and '"e"' in str(e.value) and 'ScrimmageCANrange "r"' in str(e.value)
+    parse_sensors([a, {**b, "scrimmage": "s"}])     # another name is fine
+
+
 def test_device_key_with_analog():
     s, = parse_sensors([dist_table(ctre="CANrange:5", analog=0)])
     assert s.device_id == 5 and s.analog == 0

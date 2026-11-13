@@ -1429,6 +1429,20 @@ def test_created_but_unbound_scrimmage_device_is_named_once(caplog, tmp_path):
     assert "never created ScrimmageMotor:fl_drve;" in msg and msg.endswith("(it created ScrimmageMotor:fl_drive)"), msg
 
 
+def test_sensor_bound_fast_canrange_is_not_reported_unbound(caplog, tmp_path):
+    caplog.set_level(logging.WARNING, logger="scrimmage")
+    bridge = rev_bridge(tmp_path, speed=None, held=True, bindings="")
+    key = ("ScrimmageCANrange", "intake_range")
+    bridge._scrimmage_seen(key)
+    assert _messages(caplog, "nothing in the config binds it") == [
+        'fast mode: the robot program created ScrimmageCANrange:intake_range, but nothing in the config binds it: it '
+        'gets no physics (bind it with scrimmage = "intake_range")']
+    caplog.clear()
+    bridge._scrimmage_sensor_keys = [("ScrimmageCANrange", "bound")]    # what a [[sensor]] with scrimmage = "bound" gives
+    bridge._scrimmage_seen(("ScrimmageCANrange", "bound"))
+    assert _messages(caplog, "nothing in the config binds it") == []
+
+
 def test_scrimmage_device_created_late_gets_its_unchanged_inputs(tmp_path):
     bridge = rev_bridge(tmp_path, speed=None, held=True,
                         bindings='[[encoder]]\nscrimmage = "cc"\njoint = "shoulder"\n')

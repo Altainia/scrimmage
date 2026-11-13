@@ -27,11 +27,11 @@
         {
           "name": "scrimmage-fastmode-0.3.1.jar",
           "url": "scrimmage-fastmode-0.3.1.jar",
-          "size": 30829,
-          "sha512": "3f3b122e082663e30884d0c48d3b7988969dd18ba5972fb5e22dd90706fc6f754bd97d3f6be17e56be23fce83e4f4d925cbfdd547e361032b45fa61d8feb1340",
-          "sha256": "1b27a6a865257727fb3fb06a22f597ca2d8f65b671445575d4f121ab6139997d",
-          "sha1": "fbd85211feeb55f3341f544aab755a9ef54581f2",
-          "md5": "62eb403a039b77e250081ec7dfbb3506"
+          "size": 32166,
+          "sha512": "e00e3d70263582fe7832e631152e12e6c5332d09ddd3f08b95f606f86c76e859894f66cb5e2a7819fb30b00ed8879cb9f964338349d71122fc0f34460990e109",
+          "sha256": "2acb6bb7e26487d8984ea823277a44ff203823f8f03ddcfb1c32b3dd22129aca",
+          "sha1": "eb9a6ebc0056a5919e32b3de99e1c94c2149ba74",
+          "md5": "a1c8ce01f28599e6240c45480965e9d5"
         }
       ]
     },
@@ -48,11 +48,11 @@
         {
           "name": "scrimmage-fastmode-0.3.1.jar",
           "url": "scrimmage-fastmode-0.3.1.jar",
-          "size": 30829,
-          "sha512": "3f3b122e082663e30884d0c48d3b7988969dd18ba5972fb5e22dd90706fc6f754bd97d3f6be17e56be23fce83e4f4d925cbfdd547e361032b45fa61d8feb1340",
-          "sha256": "1b27a6a865257727fb3fb06a22f597ca2d8f65b671445575d4f121ab6139997d",
-          "sha1": "fbd85211feeb55f3341f544aab755a9ef54581f2",
-          "md5": "62eb403a039b77e250081ec7dfbb3506"
+          "size": 32166,
+          "sha512": "e00e3d70263582fe7832e631152e12e6c5332d09ddd3f08b95f606f86c76e859894f66cb5e2a7819fb30b00ed8879cb9f964338349d71122fc0f34460990e109",
+          "sha256": "2acb6bb7e26487d8984ea823277a44ff203823f8f03ddcfb1c32b3dd22129aca",
+          "sha1": "eb9a6ebc0056a5919e32b3de99e1c94c2149ba74",
+          "md5": "a1c8ce01f28599e6240c45480965e9d5"
         }
       ]
     },
@@ -68,11 +68,11 @@
         {
           "name": "scrimmage-fastmode-0.3.1-sources.jar",
           "url": "scrimmage-fastmode-0.3.1-sources.jar",
-          "size": 17043,
-          "sha512": "dd6219e811f06c0a9e42e1352b292b3b4f3c14abf2eaf555e7c8e1c47acd368ee9f58cc5b51359230297c4f60f94a46eb8e9df603a627e5e8014cde8b9e218c6",
-          "sha256": "ef8c7c6ab6234f36a44f4966be1c31642c6d1f89c190cf13172797ef59c839dd",
-          "sha1": "7155ee63c016fe0f4a0e2ea170d74eae9e992572",
-          "md5": "8c99d4071408d352074bd2bb7a95aa57"
+          "size": 18195,
+          "sha512": "2234d3d617e6e9a3b1fb0376e0c083efefc3c75383c2efe203c4780476b5cc934c0b8ea875d9d7f2a3b32899b642d32251e9e6ae775d3dc180bc2f4e3b1766f7",
+          "sha256": "c8a9fee3b8aa5bea5757ffc2014d0c0ca863808748cd25664f3415fa2b187bbb",
+          "sha1": "0c076dc8376114cbfb245b16e001b2e719b52e54",
+          "md5": "f06d821db3724b066cbf2dac8d17da61"
         }
       ]
     }

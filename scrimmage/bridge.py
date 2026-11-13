@@ -24,7 +24,7 @@ from .nt_reader import NetworkTablesLink, NTUnavailable
 from .pneumatics.runtime import PH_TYPE
 from .protocol import DeviceKey, HalState, OutboundCache, frame
 from .recorder import Recorder
-from .sensors.spec import LASERCAN_TYPE
+from .sensors.spec import FAST_DEVICE, LASERCAN_TYPE, device_key
 from .world import World
 
 log = logging.getLogger("scrimmage")
@@ -52,7 +52,8 @@ PHOENIX_ANNOUNCE = 0.1
 MISSING_AFTER = 2.0      # simulated seconds after connecting before a configured Phoenix device counts as missing
 # "<Kind> (v6)[<id>]" anywhere in a device name, not followed by a sub-device ("/Rotor Sensor")
 PHOENIX_NAME = re.compile("(?P<kind>" + "|".join(map(re.escape, CTRE_DEVICES.values())) + r")\[(?P<id>\d+)\](?!/)")
-SCRIMMAGE_TYPES = ("ScrimmageMotor", "ScrimmageEncoder", "ScrimmageGyro")   # fast-mode devices: "ScrimmageMotor:<name>" ...
+SCRIMMAGE_TYPES = ("ScrimmageMotor", "ScrimmageEncoder", "ScrimmageGyro",   # fast-mode devices: "ScrimmageMotor:<name>" ...
+                   "ScrimmageCANrange")
 REV_TYPE = "ScrimmageREV"   # the agent's helper SimDevice per SPARK: "ScrimmageREV:SparkMax[<id>]"
 REV_NAME = re.compile("(?P<kind>" + "|".join(map(re.escape, REV_DEVICES.values())) + r")\[(?P<id>\d+)\]")
 REV_LABEL = {"SparkMax": "SPARK MAX", "SparkFlex": "SPARK Flex"}
@@ -136,6 +137,14 @@ def fast_phoenix_message(names: list[str]) -> str:
     """What to say when a fast-mode run's robot program creates Phoenix 6 devices anyway."""
     return i18n.t("fast mode, but the robot program created Phoenix 6 devices ({devices}): they force real time; use "
                   "the fast-mode IO for them", devices=", ".join(names))
+
+
+def scrimmage_sensor_devices(world: World) -> list[DeviceKey]:
+    """The fast-mode CANranges the config's distance sensors bind (a missing one is the sensors' own warning)."""
+    sensors = getattr(world, "sensors", None)
+    keys = [k for s in (sensors.specs if sensors is not None else ()) if s.device == FAST_DEVICE
+            and (k := device_key(s)) is not None]
+    return list(dict.fromkeys(keys))
 
 
 def scrimmage_devices(world: World) -> list[DeviceKey]:
@@ -340,6 +349,7 @@ class Bridge:
         self._devices_checked = False    # missing Phoenix devices reported for the current connection
         self._rev_expected = rev_devices(world)
         self._scrimmage_expected = scrimmage_devices(world)
+        self._scrimmage_sensor_keys = scrimmage_sensor_devices(world)   # bound, but reported by the sensors
         self._left_out = getattr(world, "not_modeled", set())   # [robot_program] not_modeled: no warning for these
         self._scrimmage_present: set[DeviceKey] = set()   # fast-mode devices seen this connection
         self._scrimmage_unbound: set[DeviceKey] = set()   # ... that nothing in the config binds, reported once
@@ -501,7 +511,8 @@ class Bridge:
         if dev not in self._scrimmage_present:
             self._scrimmage_present.add(dev)
             self.cache.forget(*dev)
-        if dev not in self._scrimmage_expected and dev not in self._scrimmage_unbound and dev not in self._left_out:
+        if (dev not in self._scrimmage_expected and dev not in self._scrimmage_sensor_keys
+                and dev not in self._scrimmage_unbound and dev not in self._left_out):
             self._scrimmage_unbound.add(dev)
             log.warning("fast mode: the robot program created %s:%s, but nothing in the config binds it: it gets no "
                         "physics (bind it with scrimmage = \"%s\")", dev[0], dev[1], dev[1])

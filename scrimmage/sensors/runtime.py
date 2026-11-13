@@ -51,8 +51,8 @@ from ..bindings import Update
 from ..checks import Said, worded
 from ..protocol import HalState
 from .colors import nearest_color
-from .spec import (COLOR_MAX_RANGE, I2C_PORTS, LASERCAN_DEVICE, LASERCAN_TYPE, SensorError, SensorSpec, color_device,
-                   device_key)
+from .spec import (COLOR_MAX_RANGE, FAST_DEVICE, I2C_PORTS, LASERCAN_DEVICE, LASERCAN_TYPE, SensorError, SensorSpec,
+                   color_device, device_key)
 
 END_SLOP = 0.001    # m: a beam reaches this far past each end, so a piece resting exactly on an end reads broken on
                     # every step (a resting piece settles by far less than this) and never flickers
@@ -81,6 +81,11 @@ def _missing_device_words(name: str, device: str, device_id: int, after: float, 
     create; `language`: "java" / "python" / None, per the robot program command; `grapple`: the LaserCAN helper's
     "unavailable: <reason>" from the console, or None."""
     p = dict(sensor_table="[[sensor]]", name=name, device=device, device_id=device_id, after=f"{after:g}")
+    if device == FAST_DEVICE:     # device_id is its name
+        return i18n.t('{sensor_table} "{name}" is {device} "{device_id}", but the robot program hasn\'t created it '
+                      "{after} s after connecting; the robot builds it in its fast-mode IO (when "
+                      "Scrimmage.fastMode() is true), so check the name the robot code gives {device} and the "
+                      "sensor's {key}", key="scrimmage", **p)
     if device == "CANrange":
         return i18n.t('{sensor_table} "{name}" is {device} {device_id}, but the robot program hasn\'t created it '
                       "{after} s after connecting; check the id the robot code gives {device} and the sensor's "
@@ -324,6 +329,8 @@ class SensorRuntime:
                 ups.append((*color_device(s.i2c), {f">{k}": v for k, v in color_values(got).items()}))
             if s.device == "CANrange":
                 ups.append((*device_key(s), {">distance": got.distance, ">supplyVoltage": CAN_SUPPLY_VOLTS}))
+            elif s.device == FAST_DEVICE:   # the fast-mode library floors it to whole millimeters, and latches
+                ups.append((*device_key(s), {">distance": got.distance}))   # getIsDetected itself
             elif s.device == "LaserCAN":    # raw: the robot-side helper applies the short-mode cap (Tasks 4 and 5)
                 seen = got.distance < s.length
                 ups.append((*device_key(s), {">distance_mm": round(got.distance * 1000),
@@ -348,7 +355,8 @@ class SensorRuntime:
             key = device_key(s)
             if key is None or key in hal.devices:
                 continue
-            p = (s.name, s.device, s.device_id, after, made, language, grapple)
+            p = (s.name, s.device, s.device_id if s.device_name is None else s.device_name, after, made, language,
+                 grapple)
             msg = worded(lambda p=p: _missing_device_words(*p))
             out.append(msg)
             if msg not in self.world.warnings:

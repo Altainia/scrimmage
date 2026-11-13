@@ -102,7 +102,8 @@ ids = { lift = ["SimMotor:elevator_lead", { scrimmage = "elevator_follower", inv
 ```
 
 `"SimMotor:<name>"`, `"SimEncoder:<name>"` and `"SimGyro:<name>"` are short for `{ scrimmage = "<name>" }` (a table
-takes the other binding keys). They follow the same conventions as Phoenix bindings:
+takes the other binding keys). A distance sensor binds its `ScrimmageCANrange` the other way round, from the
+`[[sensor]]`: `scrimmage = "<name>"` ([CAN distance sensors](sensors.md#can-distance-sensors)). They follow the same conventions as Phoenix bindings:
 
 - An encoder's `offset` is where the magnet sits, in rotations, when the joint is at zero. For wheels straight
   ahead to read 0, use minus the robot's `MagnetOffset`, the same value in both configs.
@@ -127,6 +128,7 @@ HAL), they do nothing and read 0.
 | `ScrimmageKraken(name, settings)` | a Kraken X60 with Talon-style control: `setControl`, `follow(leader, opposed)`, `useRemoteEncoder(cancoder, fused)`, `setPosition`, `getPosition`, `getVelocity`, `getMotorVoltage`, `getStatorCurrent`, `getSupplyCurrent` |
 | `ScrimmageCANcoder(name, magnetOffsetRot, clockwisePositive)` | `getAbsolutePosition()` in [-0.5, 0.5), `getPosition()`, `getVelocity()` |
 | `ScrimmageGyro(name)` | `getYawDegrees()` (counter-clockwise positive), `getYawRateDegPerSec()`, `setYaw(deg)` |
+| `ScrimmageCANrange(name)` | `getDistanceMeters()` (whole millimeters), `getIsDetected()`, `setProximityThreshold(meters)`, `setProximityHysteresis(meters)` |
 
 Requests and readings are in mechanism units, after the ratios: rotations and rotations per second. A Kraken
 copies its settings when it's built, so changing a `KrakenSettings` afterwards changes nothing.
@@ -272,7 +274,15 @@ tuned close to its limits can pass in one mode and fail in the other. When it ma
   acceleration 0 holds the profile where it is.
 - Continuous wrap takes the shortest way round one mechanism rotation.
 
-**No CANrange stand-in yet.** A `ctre = "CANrange:<id>"` distance sensor ([sensors.md](sensors.md#can-distance-sensors)) works in Phoenix mode only; fast mode has no CANrange class to read it.
+**CANrange.** A distance sensor with `ctre = "CANrange:<id>"` ([sensors.md](sensors.md#can-distance-sensors)) works
+in Phoenix mode only; in fast mode the robot builds a `ScrimmageCANrange(name)` and the sensor says
+`scrimmage = "<name>"`. `getDistanceMeters()` is the distance in whole millimeters, as Phoenix keeps it.
+`getIsDetected()` latches as Phoenix's does (phoenix6 26.3.0): it starts true, turns false when the distance goes
+above the threshold plus the hysteresis, and true when it goes below the threshold minus the hysteresis. Defaults
+are Phoenix's, 0.4 m and 0.01 m; the IO class copies its `CANrangeConfiguration.ProximityParams` with
+`setProximityThreshold` and `setProximityHysteresis`. The latch looks at the distance when `getIsDetected()` is
+called, so call it every loop; and where Phoenix switches exactly at the threshold, a reading within 1 cm of it may
+differ between the modes.
 
 **Not modeled at all:** Phoenix Pro features (TorqueCurrentFOC requests, Motion Magic Expo, Dynamic Motion Magic,
 FOC commutation, fused or synced CANcoder behavior beyond the above), slots 1 and 2, limit switches, the

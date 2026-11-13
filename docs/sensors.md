@@ -99,6 +99,7 @@ A distance sensor (`kind = "distance"`):
 | `volts_per_m` | 0.977 | volts per meter on the `analog` input (an estimate: a MaxBotix MB1013 ultrasonic sensor's 5 V over 5.12 m). The voltage stops at 5 V. It goes with `analog` |
 | `ctre` | none | `"CANrange:<id>"` (id 0 to 62): the sensor is also a CTRE CANrange the robot code reads. One device key per sensor, alone or beside `analog` and `dio`. `max_range` then defaults to 3.0 m. [CAN distance sensors](#can-distance-sensors) |
 | `grapple` | none | `"LaserCAN:<id>"` (id 0 to 62): the sensor is also a Grapple LaserCAN. One device key per sensor, alone or beside `analog` and `dio`. `max_range` then defaults to 4.0 m. [CAN distance sensors](#can-distance-sensors) |
+| `scrimmage` | none | `"<name>"` (no spaces): the sensor is also a fast-mode CANrange, `ScrimmageCANrange("<name>")` in the robot code ([fast-mode.md](fast-mode.md)). One device key per sensor. `max_range` then defaults to 3.0 m. [CAN distance sensors](#can-distance-sensors) |
 | `pwf` | none | not supported yet: it is an error (the Playing With Fusion Time of Flight is a CAN sensor scrimmage can't feed yet). In simulation, use an `analog` stand-in sensor |
 | `dio` | none | a DIO channel that switches at `threshold`, like an IR proximity switch: on while something is closer than `threshold` |
 | `active_low` | `true` | `true`: the `dio` reads `false` while it is on. It goes with `dio` |
@@ -183,8 +184,11 @@ each count by the sum of the three, so it reads the same whatever the scale: the
 
 A distance sensor can also be a CAN device the robot code reads with its vendor's own class: a **CTRE CANrange**
 (`ctre = "CANrange:<id>"`) or a **Grapple LaserCAN** (`grapple = "LaserCAN:<id>"`). The id is 0 to 62, the CAN id the
-robot code gives the device. The device key goes on a `kind = "distance"` sensor, alone or beside `analog` and `dio`.
-A sensor is one device, so it takes one of `ctre` and `grapple`, and two sensors can't name the same device.
+robot code gives the device. In [fast mode](fast-mode.md) a CANrange is the library's `ScrimmageCANrange` instead,
+named by the robot code: `scrimmage = "<name>"` (any name without spaces). The device key goes on a
+`kind = "distance"` sensor, alone or beside `analog` and `dio`. A sensor is one device, so it takes one of `ctre`,
+`grapple` and `scrimmage`, and two sensors can't name the same device. As with motors, the fast-mode config and the
+Phoenix config differ ([Write two Scrimmage configs](fast-mode.md)).
 
 ```toml
 [[part]]
@@ -219,7 +223,7 @@ dio = 6                           # and a DigitalInput 6 beside it
 
 | device | robot code | reads |
 |---|---|---|
-| CANrange | `getDistance()` | the distance in whole millimeters, as Phoenix keeps it |
+| CANrange | `getDistance()` (fast mode: `getDistanceMeters()`) | the distance in whole millimeters, as Phoenix keeps it |
 | CANrange | `getIsDetected()` | whether the distance is inside the CANrange's own configured threshold (`ProximityParams.ProximityThreshold`, 0.4 m unless robot code sets it). Scrimmage's `threshold` isn't used; it defaults to the same 0.4 m, so the Test tab's **is on** matches when neither is set |
 | LaserCAN | `getMeasurement()` (Java), `get_measurement()` (RobotPy) | null (`None`) until the first reading. Then status 0 with the distance, or status 2 with the mode's reach when nothing is in range |
 
@@ -230,7 +234,7 @@ firmware passes the ST chip's status through; that hasn't been seen on hardware.
 A CANrange whose `max_range` is at or under its ProximityThreshold plus hysteresis (0.4 m plus 0.01 m by default) reads
 "detected" with nothing in front, so set the threshold in robot code (and `threshold` in the config) below `max_range`.
 
-**A CANrange is a Phoenix 6 device.** A robot with one runs in real time, like every Phoenix robot: see
+**A CANrange is a Phoenix 6 device.** (Not in fast mode, where `ScrimmageCANrange` is not.) A robot with one runs in real time, like every Phoenix robot: see
 [Simulation controls](drive.md#simulation-controls).
 
 **The LaserCAN needs scrimmage's helper**, loaded as REV's is ([rev.md](rev.md#setup)). Java robots load it through
@@ -679,7 +683,9 @@ what a real one adds).
   see a piece at the edge of its view that the ray misses, and the other way round.
 - **A CAN sensor's signal.** Signal strength, ambient light, noise and a LaserCAN's timing budget (its effect on speed
   and accuracy) aren't simulated. The reading is the ray's distance, whole millimeters.
-- **CANrange in fast mode.** Fast mode has no CANrange stand-in yet ([fast-mode.md](fast-mode.md)).
+- **CANrange in fast mode.** Supported with `ScrimmageCANrange` ([fast-mode.md](fast-mode.md)); a `ctre` CANrange
+  needs Phoenix mode. Its `getIsDetected()` is the latch seen with Phoenix 6 26.3.0, so a reading within 1 cm of the
+  threshold may differ from the real one's.
 - **Playing With Fusion's Time of Flight.** Not supported yet; see [CAN distance sensors](#can-distance-sensors). A
   distance sensor on an `analog` or `dio` input is the stand-in.
 - **A camera's image.** A camera is a yes-or-no rule per tag, not a real detector: no image, no motion blur, no

@@ -21,6 +21,7 @@
     threshold = 0.5                 #   default half of max_range; a CANrange's 0.4, Phoenix's default)
     ctre = "CANrange:5"             # and/or a CTRE CANrange, or grapple = "LaserCAN:7" (one of them; ids 0 to 62); the
                                     #   robot reads it as it would the real one, and max_range defaults to its reach
+                                    #   (or scrimmage = "intake_range": a fast-mode CANrange, ScrimmageCANrange)
 
     [[sensor]]
     name = "eye"
@@ -70,13 +71,14 @@ MAX_FPS = 1000                  # choice: a camera looks at most once a physics 
 STRAIGHT_UP_DEG = 1.0           # choice: a camera's toward this close to the body's z has no up to measure from
 COLOR_MAX_RANGE = 0.10          # m: a color sensor's longest range (spec C5: nothing past 10 cm)
 DEFAULT_VOLTS_PER_M = 0.977     # V/m: a MaxBotix MB1013's 5 V over 5.12 m (spec C3, an estimate)
-DEVICE_MAX_RANGE = {"CANrange": 3.0, "LaserCAN": 4.0}   # m, a distance sensor's default max_range per device:
+DEVICE_MAX_RANGE = {"CANrange": 3.0, "ScrimmageCANrange": 3.0, "LaserCAN": 4.0}   # m, a distance sensor's default max_range per device:
 # CANrange 3.0 m is CTRE's CANrange User's Guide (11/25/2024) section 1.3, long range mode; LaserCAN 4.0 m is
 # libgrapplefrc's LaserCanInterface RangingMode javadoc, long mode (checks file, sections 1 and 2)
 CANRANGE_THRESHOLD = 0.4        # m: a CANrange's default threshold: Phoenix 6's default ProximityThreshold
 # (ProximityParams in phoenix6 26.3.0's CANrangeConfiguration, hysteresis 0.01 m; getIsDetected() is true closer than
 # it), so the Test tab's "is on" matches getIsDetected() when neither is configured; capped at max_range
-DEVICE_KEYS = {"ctre": "CANrange", "grapple": "LaserCAN"}   # the config key that names each device
+DEVICE_KEYS = {"ctre": "CANrange", "grapple": "LaserCAN", "scrimmage": "ScrimmageCANrange"}   # the key per device
+FAST_DEVICE = "ScrimmageCANrange"   # the fast-mode CANrange (java/fastmode's class): named, not numbered
 MAX_DEVICE_ID = 62              # a CAN id: 0 to 62
 LASERCAN_TYPE = "ScrimmageGrapple"      # the Grapple helper's SimDevice per LaserCAN: "ScrimmageGrapple:LaserCAN[<id>]"
 LASERCAN_DEVICE = re.compile(r"LaserCAN\[(?P<id>\d+)\]")
@@ -85,7 +87,7 @@ _LOOK = ("at", "at_in", "toward", "max_range", "max_range_in", "sees")
 KEYS = {
     "beam": _COMMON + ("from", "from_in", "to", "to_in", "dio", "active_low"),
     "distance": _COMMON + _LOOK + ("dio", "active_low", "threshold", "threshold_in", "analog", "volts_per_m",
-                                                       "ctre", "grapple", "pwf"),
+                                                       "ctre", "grapple", "scrimmage", "pwf"),
     "color": _COMMON + _LOOK + ("i2c",),
     "camera": _COMMON + ("at", "at_in", "toward", "hfov_deg", "vfov_deg", "max_range", "max_range_in",
                          "max_angle_deg", "fps"),
@@ -122,8 +124,10 @@ class SensorSpec:
     vfov_deg: float | None = None           #   tag at (degrees off the tag's normal) and its frames per second; None
     max_angle_deg: float | None = None      #   for every other kind
     fps: float | None = None
-    device: str | None = None               # a distance sensor's CAN device: "CANrange" or "LaserCAN"; None otherwise
-    device_id: int | None = None            #   and its id (0 to 62)
+    device: str | None = None               # a distance sensor's device: "CANrange", "LaserCAN" or the fast-mode
+                                            #   "ScrimmageCANrange"; None otherwise
+    device_id: int | None = None            #   and its CAN id (0 to 62); None for the fast-mode one
+    device_name: str | None = None          #   and the fast-mode one's name (scrimmage = "<name>"); None otherwise
 
 
 class _Table:
@@ -177,9 +181,9 @@ class _Table:
                                   choices=i18n.t(" or ", context="list separator").join(f'"{c}"' for c in choices)))
         return v
 
-    def device(self) -> tuple[str, int] | None:
-        """The (device, id) of a `ctre = "CANrange:<id>"` or `grapple = "LaserCAN:<id>"` key; None if neither is
-        given."""
+    def device(self) -> tuple[str, int | None, str | None] | None:
+        """The (device, id, name) of a `ctre = "CANrange:<id>"` or `grapple = "LaserCAN:<id>"` key (name None), or a
+        `scrimmage = "<name>"` key (id None); None if none is given."""
         if "pwf" in self.t:
             raise self.err(i18n.t("pwf: the Playing With Fusion Time of Flight is a CAN sensor, and scrimmage can't "
                                   "feed it yet; in simulation, use an analog stand-in sensor ({analog_setting})",
@@ -192,13 +196,18 @@ class _Table:
             return None
         key = given[0]
         want, v = DEVICE_KEYS[key], self.t[key]
+        if key == "scrimmage":
+            if not isinstance(v, str) or not v or any(c.isspace() for c in v):
+                raise self.err(i18n.t("{key_setting}: expected a non-empty device name without spaces (e.g. "
+                                      "{example})", key_setting=f"{key} = {plain(v)}", example='"intake_range"'))
+            return want, None, v
         name, sep, ident = v.partition(":") if isinstance(v, str) else ("", "", "")
         ident = ident.strip()
         if name != want or not sep or not (ident.isascii() and ident.isdigit()) or not 0 <= int(ident) <= MAX_DEVICE_ID:
             raise self.err(i18n.t("{key_setting}: expected {form} with an id from 0 to {most} (e.g. {example})",
                                   key_setting=f"{key} = {plain(v)}", form=f'"{want}:<id>"', most=MAX_DEVICE_ID,
                                   example=f'"{want}:5"'))
-        return want, int(ident)
+        return want, int(ident), None
 
 
 def plain(v) -> str:
@@ -328,8 +337,8 @@ def parse_sensor(table, index: int) -> SensorSpec:
                                    analog_setting="analog = <channel>"))
             kw["volts_per_m"] = float(v)
         if device:
-            kw["device"], kw["device_id"] = device
-        default = (min(CANRANGE_THRESHOLD, kw["length"]) if kw.get("device") == "CANrange"     # Phoenix's default
+            kw["device"], kw["device_id"], kw["device_name"] = device
+        default = (min(CANRANGE_THRESHOLD, kw["length"]) if kw.get("device") in ("CANrange", FAST_DEVICE)     # Phoenix's default
                    else kw["length"] / 2.0)
         threshold = t.length("threshold", default)
         if threshold > kw["length"]:
@@ -352,7 +361,12 @@ def parse_sensors(tables) -> list[SensorSpec]:
             raise SensorError(i18n.t("two sensors named \"{name}\"; give each {sensor_table} its own name",
                                      name=s.name, sensor_table="[[sensor]]"))
         if s.device is not None:
-            twin = next((o for o in specs if (o.device, o.device_id) == (s.device, s.device_id)), None)
+            twin = next((o for o in specs if (o.device, o.device_id, o.device_name)
+                         == (s.device, s.device_id, s.device_name)), None)
+            if twin is not None and s.device_name is not None:
+                raise SensorError(i18n.t("{sensor_table} \"{first}\" and \"{second}\" both name {device} "
+                                         "\"{id}\"; a device is one sensor", first=twin.name, second=s.name,
+                                         device=s.device, id=s.device_name, sensor_table="[[sensor]]"))
             if twin is not None:
                 raise SensorError(i18n.t("{sensor_table} \"{first}\" and \"{second}\" both name {device} {id}; a "
                                          "device is one sensor", first=twin.name, second=s.name, device=s.device,
@@ -362,7 +376,10 @@ def parse_sensors(tables) -> list[SensorSpec]:
 
 
 def device_key(s: SensorSpec) -> tuple[str, str] | None:
-    """The (type, device) of a sensor's CANrange or LaserCAN over HALSim WebSocket; None if it names neither."""
+    """The (type, device) of a sensor's CANrange, LaserCAN or fast-mode CANrange over HALSim WebSocket; None if it
+    names none."""
+    if s.device == FAST_DEVICE:     # the fast-mode library's SimDevice: "ScrimmageCANrange:<name>"
+        return FAST_DEVICE, s.device_name
     if s.device == "CANrange":      # CTRE's own SimDevice, as RobotPy's phoenix6 registers it too
         return "CAN", f"CANrange (v6)[{s.device_id}]"
     if s.device == "LaserCAN":      # ours: the Grapple helper and the Java agent register it (sensors/grapple.py)
