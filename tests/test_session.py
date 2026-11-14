@@ -12,6 +12,7 @@ import pytest
 
 import scrimmage.bridge as bridge_mod
 import scrimmage.session as session_mod
+from scrimmage import java_tools
 from fake_robot import FakeRobot, next_port, wait_until
 from scrimmage.session import Session, SessionError
 
@@ -818,6 +819,7 @@ def test_on_windows_an_older_lockstep_runs_in_real_time_with_a_note(tmp_path, mo
     stop the session, it says the robot runs in real time and how to update."""
     from importlib import metadata
     monkeypatch.setattr(metadata, "version", lambda name: "0.7.0")
+    monkeypatch.setattr(java_tools, "agent_missing_message", lambda *a, **k: None)  # no built agent in CI
     cfg = Session(fake_config(tmp_path, command), nt=False).config
     assert session_mod.lockstep_version_problem(cfg) is None
     note = session_mod.lockstep_update_note(cfg)
