@@ -2,7 +2,7 @@
 
 `scrimmage inspect` compares the robot you modeled with a season's weight and size rules, the way an inspector does
 at an event: weight, frame perimeter, starting height, and how far the robot reaches past its frame. Each line names
-the rule, the manual it came from, and how far you are within or over.
+the rule and how far you are within or over; the report ends with the manual the numbers came from.
 
 ```
 scrimmage inspect configs/kitbot.toml --season 2024
@@ -90,11 +90,13 @@ raised is out of its starting configuration, and the report says so by what it m
   part that sets it, for example `(bl.base)`.
 - **Diameter** (2013): the smallest circle holding the robot seen from above, bumpers included.
 
-Most stock example robots read 2 to 7 cm of start reach, so `scrimmage inspect` reports the
-start reach over on them (a swerve module's base plate, a wheel or an intake sits past the chassis's frame plate).
-That is the model, not a verdict: the frame here is the chassis's frame plate, and a module, wheel or bumper-zone part
-the model places past the plate reads as reaching. In the real rule the frame perimeter wraps around such parts, so
-**check your real frame**, and move the plate or the part in the model if you want the report to agree.
+On the stock example configs the start reach on 2026 reads from 2 mm (swerve) and 6 mm (kitbot), both within the
+allowance, through 14 mm (climber_robot), 44 mm (maxswerve), 59 mm (disc_robot) and 75 mm (fastmode_range), to
+about 300 mm (fastmode, elevator_arm). The small readings come from parts the model places past the chassis's frame
+plate: a swerve module's base plate, a wheel, an intake. That is the model, not a verdict: in the real rule the frame
+perimeter wraps around such parts, so **check your real frame**, and move the plate or the part in the model if you
+want the report to agree. The large readings are different: a robot whose arm starts extended really is out of its
+starting configuration, so start it tucked.
 
 ## What isn't checked
 

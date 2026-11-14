@@ -69,7 +69,8 @@ def test_an_over_weight_on_estimates_says_so(tmp_path):
     r = inspect(heavy, 2026)
     w = line(r, "weight")
     assert w.over > 0 and w.estimate and w in r.over
-    assert "weigh your battery and bumpers" in str(w.text) and "battery_mass" in str(w.text)
+    assert "weigh your battery and bumpers" not in str(w.text)       # the advice is one line, not on each
+    assert "weigh your battery and bumpers and set battery_mass and bumper_mass under" in str(r.advice)
     assert "weigh your battery" in " ".join(warnings(r))
 
 
@@ -109,8 +110,9 @@ def test_the_start_reach_names_the_part(tmp_path):
     assert s.over > 0 and s in r.over and s.limit == pytest.approx(0.25 * IN)
     with units.fixed("imperial"):
         text = shown(s.text)
-    assert text.startswith("start reach: 1.7 in past the frame (bl.base); the rules want it within the frame")
-    assert "1/4 in" in text or "0.25 in" in text
+    assert text.startswith("start reach: 1.723 in past the frame (bl.base), over the 0.25 in allowed for minor "
+                           "protrusions (R104) by 1.473 in; the rules want it within the frame"), text
+    assert shown(s.warning).startswith("2026 R104: start reach 1.723 in past the frame (bl.base), over the 0.25 in")
     ok = line(inspect(config(tmp_path), 2024), "start_reach")
     assert ok.over <= 0 and "within" in str(ok.text)
 
@@ -170,3 +172,35 @@ def test_cli_exit_codes(tmp_path):
     assert s.returncode == 2 and "--season 2019: scrimmage knows the seasons 2013, 2016" in s.stderr
     assert "[inspection]" not in s.stderr
     assert run_cli("inspect", str(tmp_path / "missing.toml")).returncode == 2
+
+
+def test_the_default_bumper_estimate_is_not_compared_with_the_limit(tmp_path):
+    r = inspect(config(tmp_path), 2024)         # the 15 lb estimate equals 2024's 15 lb limit
+    b = line(r, "bumper_set")
+    assert b.estimate and b.over == 0 and b not in r.over and b.measured == pytest.approx(15 * LB)
+    with units.fixed("imperial"):
+        assert shown(b.text) == "one set of bumpers: 15 lb, estimate, not checked against the 15 lb limit (R407)"
+    with units.fixed("metric"):
+        assert "6.8 kg" in shown(b.text) and "6.804" not in shown(b.text)
+    set_ = config(tmp_path, CHASSIS + "[inspection]\nbumper_mass = 7.0\n", "set.toml")
+    b = line(inspect(set_, 2024), "bumper_set")
+    assert not b.estimate and b.over > 0 and "not checked" not in str(b.text)
+
+
+def test_one_advice_line_names_only_the_unset_settings(tmp_path):
+    both = inspect(config(tmp_path), 2026)
+    assert str(both.advice) == ("with estimates: weigh your battery and bumpers and set battery_mass and bumper_mass "
+                                "under [inspection]")
+    one = inspect(config(tmp_path, CHASSIS + "[inspection]\nbattery_mass = 5.0\n", "one.toml"), 2026)
+    assert str(one.advice).endswith("and set bumper_mass under [inspection]")
+    none = inspect(config(tmp_path, CHASSIS + "[inspection]\nbattery_mass = 5.0\nbumper_mass = 6.0\n", "all.toml"), 2026)
+    assert none.advice is None
+    assert str(both.advice) not in " ".join(str(x.text) for x in both.lines)
+
+
+def test_match_rule_lines_say_they_are_start_pose_values(tmp_path):
+    r = inspect(config(tmp_path), 2026)
+    for key in ("height", "reach"):
+        assert "at the start pose (a scenario run with [inspection] watches it during the run)" in str(line(r, key).text)
+    assert "watches" not in str(line(r, "perimeter").text)
+    assert "watches" not in str(line(inspect(config(tmp_path), 2025), "height").text)    # no limit: nothing to watch
