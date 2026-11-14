@@ -7,13 +7,14 @@ SPARK MAX 2 following it inverted, on a motor that faces the other way across th
 
 REVLib's simulated sensor noise comes from its C++ library, seeded from std::random_device, which robotpy-rev gives no
 way to seed; scrimmage preloads scrimmage-lockstep's seed library to pin it, so two runs are identical (checked
-below, as test_rev_e2e.py does for Java).
+below, as test_rev_e2e.py does for Java). On Linux only: on Windows the noise isn't pinned (docs/rev.md).
 
 Each scenario is run once and its checks share the recording."""
 
 import asyncio
 import math
 import re
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -336,6 +337,8 @@ def velocity_runs(tmp_path_factory) -> tuple[Run, Run]:
                  for i in range(2))
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="RobotPy REV's sensor noise isn't pinned on Windows (no seed "
+                    "library there: docs/rev.md), so runs part once velocity control acts on it")
 def test_two_runs_give_identical_physics(velocity_runs):
     """REV's sensor noise repeats (scrimmage preloads the seed library) and the robot's clock starts at exactly 0,
     so velocity control gives bit-identical physics, and the robot reads bit-identical values."""

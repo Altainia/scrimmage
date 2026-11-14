@@ -28,7 +28,8 @@ REGENERATE = ("to refresh it, push this commit, wait for CI's windows job, then 
 
 
 def test_the_committed_windows_dll_was_built_from_this_source():
-    assert (stamp.DLL_DIR / stamp.DLL_NAME).is_file(), f"the prebuilt Windows lockstep extension is missing: {REGENERATE}"
+    dll = stamp.DLL_DIR / stamp.DLL_NAME
+    assert dll.is_file(), f"the prebuilt Windows lockstep extension is missing: {REGENERATE}"
     assert stamp.read_stamp() == stamp.source_hash(), (
         f"the prebuilt Windows lockstep extension was built from other source than lockstep/'s (src/"
         f"scrimmage_lockstep.cpp or CMakeLists.txt changed since): {REGENERATE}")

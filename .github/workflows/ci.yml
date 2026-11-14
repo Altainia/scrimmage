@@ -69,8 +69,8 @@ jobs:
         run: pytest -v -s tests/test_examples_note_intake.py::test_the_intake_grids
 
   # The Part tab's CAD code (STEP/STL reading, mass, the import file, the server) and the Test tab's blocks (test
-  # files, runs, kept runs, sweeps, its server) have to work on the students' Windows laptops too; the browser tests
-  # need Linux's Chromium setup, so they are skipped here. tests/test_mcp_blocks.py is left off because this job
+  # files, runs, kept runs, sweeps, its server) have to work on the students' Windows laptops too, and so does
+  # lockstep (below); the browser tests need Linux's Chromium setup, so they are skipped here. tests/test_mcp_blocks.py is left off because this job
   # doesn't install the mcp extra.
   windows:
     runs-on: windows-latest
@@ -102,9 +102,88 @@ jobs:
         run: pip install ./lockstep
       - name: Check RobotPy, phoenix6, libgrapplefrc and the lockstep extension are importable
         run: python -c "import wpilib, halsim_ws, scrimmage_lockstep, phoenix6, libgrapplefrc"
-      - name: Test RobotPy CAN distance sensors
+      # Lockstep on Windows runs a prebuilt DLL committed in the package (lockstep/scrimmage_lockstep/lib/win_amd64).
+      # Build it here from source with MSVC (against the HAL RobotPy installed) and test that build, never the
+      # committed one: it replaces the DLL in the installed package. The 3.13 run uploads it with its stamp as the
+      # artifact lockstep/tools/update_windows_dll.py takes after a change to the C++.
+      - name: Build the lockstep extension from source
         shell: bash
-        run: pytest tests/test_lockstep_grapple.py tests/test_distance_py_e2e.py -v -rs
+        run: |
+          cmake -S lockstep -B build-lockstep -DPython_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')"
+          cmake --build build-lockstep --config Release
+          mkdir -p lockstep-win-dll
+          cp build-lockstep/Release/halsim_scrimmage_lockstep.dll lockstep-win-dll/
+          python lockstep/tools/stamp.py --write lockstep-win-dll
+      - name: Use the fresh build in the installed package
+        run: >
+          python -c "import shutil, scrimmage_lockstep as s; p = s.library_path(); p.parent.mkdir(parents=True,
+          exist_ok=True); [shutil.copy('lockstep-win-dll/' + f, p.parent) for f in (p.name, 'SOURCE.sha256')];
+          print(p)"
+      - name: Upload the Windows lockstep extension
+        if: matrix.python-version == '3.13'
+        uses: actions/upload-artifact@v5
+        with:
+          name: lockstep-win-dll
+          path: lockstep-win-dll/
+          if-no-files-found: error
+      # the extension itself, RobotPy REV in lockstep (its identical-physics test skips itself: REV noise isn't pinned
+      # on Windows), a RobotPy robot without REV repeating bit for bit, the job object and run-token kill, the DLL's
+      # stamp (on a Windows checkout's line endings) and the CAN distance sensors
+      - name: Test RobotPy lockstep and CAN distance sensors
+        shell: bash
+        run: >
+          pytest tests/test_lockstep_ext.py tests/test_rev_py_e2e.py tests/test_e2e.py::test_runs_are_repeatable
+          tests/test_robot_process_windows.py tests/test_lockstep_windows_dll.py tests/test_lockstep_grapple.py
+          tests/test_distance_py_e2e.py -v -rs
+
+  # A Java robot in lockstep on Windows: the init script's Windows path (gradlew.bat, the DLL on HALSIM_EXTENSIONS
+  # with Windows' path separator, the JNI HAL loaded before it) on REV's MAXSwerve template, the smallest Java test
+  # that checks lockstep stayed engaged. Like the windows job it builds the extension from source and tests that.
+  windows-java:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('examples/java_maxswerve/**/*.gradle', 'tests/java_probe/**/*.gradle', '**/vendordeps/*.json', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+      - name: Install
+        run: |
+          pip install -e ".[dev,nt,mcp]"
+          pip install ./lockstep
+      - name: Build the lockstep extension from source
+        shell: bash
+        run: |
+          cmake -S lockstep -B build-lockstep -DPython_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')"
+          cmake --build build-lockstep --config Release
+      - name: Use the fresh build in the installed package
+        run: >
+          python -c "import shutil, scrimmage_lockstep as s; p = s.library_path(); p.parent.mkdir(parents=True,
+          exist_ok=True); shutil.copy('build-lockstep/Release/' + p.name, p.parent); print(p)"
+      # the test module builds the sim-write guard agent itself (`scrimmage java build` also builds the fast-mode
+      # library, which this test doesn't use)
+      - name: Java lockstep test
+        shell: bash
+        run: pytest -v -rs -m java tests/test_java_e2e.py -k test_java_maxswerve_auto_scenario
+      - name: Stop Gradle daemons
+        if: always()
+        shell: cmd
+        run: |
+          cd examples\java_maxswerve && call gradlew.bat --stop
+          cd %GITHUB_WORKSPACE%\tests\java_probe && call gradlew.bat --stop
+          exit /b 0
 
   # Java robots (Phoenix 6, REVLib): needs a JDK 17; downloads WPILib and the vendor libraries (no ~/wpilib on CI)
   java:
