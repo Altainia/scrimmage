@@ -138,7 +138,7 @@ them like the terrain signals:
 | `climb.hook_load` | N: the largest whole hook's contact force (every geom of `<inst>.hook<i>`, the latch too), peak-held between checks |
 | `climb.hook.<inst>.hook<i>.load` | N: one hook's |
 | `climb.hook.<part>.<body>.load` | N: one hook body's, for a body of a CAD part made a hook (see below) |
-| `climb.extension` | m: how far the robot reaches beyond its frame perimeter, in the chassis's own plane (G107) |
+| `climb.extension` | m: how far the robot reaches beyond its frame perimeter, in the chassis's own plane (G107); the largest distance of any single point past the frame's outline, so a geom turned in yaw can read smaller than its bounding box's per-axis maxima would, never larger |
 | `climb.height` | m: the robot's top above the carpet (G106) |
 
 **A body of your own part as a hook.** The stock climber's hooks are found by name. For a climber made in CAD, name

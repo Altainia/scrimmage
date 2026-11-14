@@ -98,8 +98,8 @@ raised is out of its starting configuration, and the report says so by what it m
 
 On the stock example configs the start reach on 2026 reads from 2 mm (swerve) and 6 mm (kitbot), both within the
 allowance, through 14 mm (climber_robot), 44 mm (maxswerve), 59 mm (disc_robot) and 75 mm (fastmode_range), to
-about 300 mm (fastmode, elevator_arm). The small readings come from parts the model places past the chassis's frame
-plate: a swerve module's base plate, a wheel, an intake. That is the model, not a verdict: in the real rule the frame
+290 mm (fastmode) and 310 mm (elevator_arm), both set by `arm.arm`, the arm starting forward. The small readings come from parts the model places past the chassis's
+frame plate: a swerve module's base plate, a wheel, an intake. That is the model, not a verdict: in the real rule the frame
 perimeter wraps around such parts, so **check your real frame**, and move the plate or the part in the model if you
 want the report to agree. The large readings are different: a robot whose arm starts extended really is out of its
 starting configuration, so start it tucked.

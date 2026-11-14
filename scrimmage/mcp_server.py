@@ -209,18 +209,22 @@ async def inspect_robot(season: int | None = None) -> str:
     (height, reach or diameter over a match limit during the run); null without the section."""
     s = _need()
     from .config import build_world
-    from .inspection.report import inspect_world
+    from .inspection.report import inspect_world, line_dict
+    from .inspection.spec import check_override
+    mon = s.world.inspection if s.world is not None else None
+    # With an [inspection] section the world measured the robot as it was made: use that unless another season is asked.
+    known = mon.start if mon is not None and season is None else None
 
     def work():
-        return inspect_world(build_world(s.config), s.config.raw, season)
+        if season is not None:
+            check_override(season, "season")
+        return known or inspect_world(build_world(s.config), s.config.raw, season)
     try:
         r = await _in_thread(work)
     except (ConfigError, ValueError) as e:
         raise _fail(e) from None
-    mon = s.world.inspection if s.world is not None else None
     return _json({"season": r.season.year, "reason": r.reason,
-                  "lines": [{"key": x.key, "rule": x.rule, "measured": x.measured, "limit": x.limit, "over": x.over,
-                             "estimate": x.estimate, "text": str(x.text)} for x in r.lines],
+                  "lines": [line_dict(x, False) for x in r.lines],
                   "notes": [str(n) for n in r.notes], "not_checked": list(r.not_checked), "advice": str(r.advice) if r.advice is not None else None,
                   "monitor": [str(n) for n in mon.notes(mon.episode)] if mon is not None else None})
 
