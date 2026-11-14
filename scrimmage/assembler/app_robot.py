@@ -12,7 +12,7 @@ import mujoco
 import tomlkit
 
 from .. import i18n, teamfolders
-from ..checks import shown
+from ..inspection.report import line_dict
 from ..parts.assemble import PLACEMENT_KEYS
 from . import edits, library, validate
 from .doc import FileChanged
@@ -31,8 +31,7 @@ def _inspection(w) -> dict | None:
         return None
     r = mon.start
     return {"season": r.season.year, "reason": r.reason,
-            "lines": [{"key": x.key, "rule": x.rule, "measured": x.measured, "limit": x.limit, "over": x.over,
-                       "estimate": x.estimate, "text": shown(x.text)} for x in r.lines]}
+            "lines": [line_dict(x, True) for x in r.lines]}
 
 
 class RobotMixin:

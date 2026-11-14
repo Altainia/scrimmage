@@ -293,7 +293,7 @@ def test_inspect_robot_reads_the_session_s_config(tmp_path):
                 assert per["over"] > 0 and per["rule"] == "R104" and per["text"].startswith("frame perimeter: 2800 mm")
                 assert got["monitor"] is None and got["not_checked"]      # no [inspection]: no monitor
                 r = await c.call_tool("inspect_robot", {"season": 1999})
-                assert r.is_error and "season" in r.content[0].text
+                assert r.is_error and "season 1999: scrimmage knows the seasons 2013, 2016" in r.content[0].text
             finally:
                 await c.call_tool("stop_session", {})
             cfg.write_text(cfg.read_text(encoding="utf-8") + "\n[inspection]\nseason = 2024\n", encoding="utf-8")
@@ -301,6 +301,9 @@ def test_inspect_robot_reads_the_session_s_config(tmp_path):
                 assert not (await c.call_tool("start_session", {"config": str(cfg)})).is_error
                 got = json.loads((await c.call_tool("inspect_robot", {})).content[0].text)
                 assert got["season"] == 2024 and got["monitor"] == []
+                assert got["lines"] and all(x["text"] for x in got["lines"])      # from the world's own inspection
+                got = json.loads((await c.call_tool("inspect_robot", {"season": 2026})).content[0].text)
+                assert got["season"] == 2026 and got["reason"] == "--season"
             finally:
                 await c.call_tool("stop_session", {})
 

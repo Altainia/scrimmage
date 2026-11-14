@@ -17,7 +17,7 @@ from .spec import DEFAULT_BATTERY, DEFAULT_BUMPERS, START_ALLOWANCE, Limit, Seas
 
 KEYS = ("weight", "weight_with_bumpers", "bumper_set", "perimeter", "start_height", "start_reach", "diameter",
         "height", "reach")
-SETTINGS = {"inspection_table": "[inspection]", "battery_setting": "battery_mass", "bumper_setting": "bumper_mass"}
+SETTINGS = {"section": "inspection", "battery_setting": "battery_mass", "bumper_setting": "bumper_mass"}
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,13 @@ class Inspection:
     @property
     def over(self) -> list[Line]:
         return [x for x in self.lines if x.over > 0]
+
+
+def line_dict(line: Line, localized: bool) -> dict:
+    """A line as a JSON-ready dict (numbers in SI): the Robot tab's and the MCP tool's one serializer. `localized` puts
+    the text in the Units and Language settings; otherwise it is the machine text."""
+    return {"key": line.key, "rule": line.rule, "measured": line.measured, "limit": line.limit, "over": line.over,
+            "estimate": line.estimate, "text": shown(line.text) if localized else str(line.text)}
 
 
 def _said(words: Callable[[], str]) -> Said:
@@ -129,7 +136,7 @@ def inspect_world(world, raw: dict, override: int | None = None) -> Inspection:
     def bumpers_part() -> str:
         return t("{mass} bumpers", mass=_mass(bumpers, 0))
 
-    at_start = lambda: t("; at the start pose (a scenario run with {inspection_table} watches it during the run)",  # noqa: E731
+    at_start = lambda: t("; at the start pose (a scenario run with [{section}] watches it during the run)",  # noqa: E731
                          **SETTINGS)
     lines = [_line("weight", season, lambda: t("weight without bumpers and battery"), weight, season.weight,
                    _mass, estimate=est_battery or est_bumpers,
@@ -163,7 +170,7 @@ def inspect_world(world, raw: dict, override: int | None = None) -> Inspection:
     if weight < 0:
         notes.append(_said(lambda: t("the model weighs {modeled}, less than the {battery} battery and {bumpers} "
                                      "bumpers taken off it: if your model leaves them out, set {battery_setting} and "
-                                     "{bumper_setting} to 0 under {inspection_table}", modeled=_mass(m.mass),
+                                     "{bumper_setting} to 0 under [{section}]", modeled=_mass(m.mass),
                                      battery=_mass(battery, 0), bumpers=_mass(bumpers, 0), **SETTINGS)))
     advice = None
     if any(x.estimate for x in lines):
@@ -175,11 +182,11 @@ def _advice(battery: bool, bumpers: bool) -> str:
     """Which settings to set: only the unset ones, in the words too."""
     if battery and bumpers:
         return t("with estimates: weigh your battery and bumpers and set {battery_setting} and {bumper_setting} under "
-                 "{inspection_table}", **SETTINGS)
+                 "[{section}]", **SETTINGS)
     if battery:
-        return t("with an estimate: weigh your battery and set {battery_setting} under {inspection_table}",
+        return t("with an estimate: weigh your battery and set {battery_setting} under [{section}]",
                  **SETTINGS)
-    return t("with an estimate: weigh your bumpers and set {bumper_setting} under {inspection_table}", **SETTINGS)
+    return t("with an estimate: weigh your bumpers and set {bumper_setting} under [{section}]", **SETTINGS)
 
 
 def _bumpers_unchecked(season: Season, bumpers: float) -> Line:
@@ -235,8 +242,8 @@ def season_line(inspection: Inspection) -> Said:
 
     def words() -> str:
         if reason == "the newest season":
-            return t("{year} rules (the newest season; set {season_setting} to choose)", year=year,
-                     season_setting="[inspection] season")
+            return t("{year} rules (the newest season; set [{section}] season to choose)", year=year,
+                     section="inspection")
         return t("{year} rules (from {reason})", year=year, reason=reason)
     return _said(words)
 

@@ -2,6 +2,7 @@
 I1 to I3). Limits are in SI: meters and kilograms."""
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,9 +43,12 @@ class Season:
 _NONE = Limit(None, "")
 
 
-def _limit(entry: dict | None) -> Limit:
+def _limit(entry: dict | None, season: str = "?", name: str = "?") -> Limit:
     if entry is None:
         return _NONE
+    if ("max_lb" not in entry and "max_in" not in entry) or "rule" not in entry:
+        raise ValueError(t("seasons.toml: season {season}, limit {name}: needs max_lb or max_in, and rule",
+                           season=season, name=name))
     if "max_lb" in entry:
         value = entry["max_lb"] * LB
     else:
@@ -52,16 +56,19 @@ def _limit(entry: dict | None) -> Limit:
     return Limit(value, entry["rule"], entry.get("unless", ""))
 
 
-def _load() -> dict[int, Season]:
-    text = (Path(__file__).with_name("seasons.toml")).read_text(encoding="utf-8")
+def _parse(text: str) -> dict[int, Season]:
     seasons = {}
     for key, e in tomllib.loads(text).items():
         year = int(key)
         seasons[year] = Season(
-            year, e["manual"], e["url"], *(_limit(e.get(n)) for n in (
+            year, e["manual"], e["url"], *(_limit(e.get(n), key, n) for n in (
                 "weight", "weight_with_bumpers", "bumper_set", "perimeter", "start_reach", "start_height", "height",
                 "reach", "diameter")), tuple(e.get("not_checked", ())))
     return seasons
+
+
+def _load() -> dict[int, Season]:
+    return _parse((Path(__file__).with_name("seasons.toml")).read_text(encoding="utf-8"))
 
 
 SEASONS: dict[int, Season] = _load()
@@ -80,6 +87,14 @@ def _season_number(v) -> int:
         raise ConfigError(t("[{section}] season must be one of {seasons}, not {value}",
                             section="inspection", seasons=", ".join(str(y) for y in sorted(SEASONS)), value=repr(v)))
     return v
+
+
+def check_override(year: int, name: str) -> None:
+    """A season asked for on the command line or in a tool call (`name`: "--season" or "season") that scrimmage doesn't
+    know: raises ConfigError listing the seasons it knows."""
+    if isinstance(year, bool) or year not in SEASONS:
+        raise ConfigError(t("{name} {year}: scrimmage knows the seasons {seasons}", name=name, year=year,
+                            seasons=", ".join(str(y) for y in sorted(SEASONS))))
 
 
 def _mass(table: dict, key: str) -> float | None:
@@ -107,9 +122,9 @@ def _range_season(raw: dict) -> tuple[int, str] | None:
     name = _table(raw, "range").get("file")
     if not isinstance(name, str):
         return None
-    digits = Path(name).name[:4]
-    if digits.isdigit() and int(digits) in SEASONS:
-        return int(digits), name
+    found = re.match(r"(\d{4})(?!\d)", Path(name).name)       # four digits, then the end or a non-digit
+    if found and int(found.group(1)) in SEASONS:
+        return int(found.group(1)), name
     return None
 
 

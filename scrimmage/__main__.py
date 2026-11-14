@@ -872,11 +872,10 @@ def _model(args) -> None:
 
 def _inspect(args) -> None:
     from .inspection.report import inspect_world, render
-    from .inspection.spec import SEASONS
+    from .inspection.spec import check_override
     try:
-        if args.season is not None and args.season not in SEASONS:
-            raise ConfigError(f"--season {args.season}: scrimmage knows the seasons "
-                              f"{', '.join(str(y) for y in sorted(SEASONS))}")
+        if args.season is not None:
+            check_override(args.season, "--season")
         config = load_config(args.config)
         result = inspect_world(build_world(config), config.raw, args.season)
     except (ConfigError, ValueError, OSError) as e:

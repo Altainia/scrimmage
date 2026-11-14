@@ -33,6 +33,16 @@ def test_the_stock_kitbot():   # configs/kitbot.toml: chassis 0.66 x 0.6, bumper
     assert 0.02 + 0.12 <= m.height <= 0.16       # at least the bumpers' top (clearance + their height); the wheels' boxes
 
 
+def test_the_stock_swerve():   # configs/swerve.toml: a 0.7 m square frame plate, four MK4i modules
+    w = world("swerve.toml")
+    m = measure(w)
+    assert m.perimeter == pytest.approx(4 * 0.7, abs=1e-6) and m.frame_plate
+    assert m.reach < 0.01       # a module's azimuth rim sticks out 2 mm past the frame
+    # the tallest part is the 0.05 x 0.02 x 0.005 plate centered 0.145 m up, on the chassis: its top is 0.15 m, and
+    # the wheels (r 0.051, centered 0.051 up) stand on the floor
+    assert m.height == pytest.approx(0.15, abs=1e-6)
+
+
 def collides(model, g: int) -> bool:
     return bool(model.geom_contype[g] or model.geom_conaffinity[g])
 
@@ -61,7 +71,11 @@ def test_an_arm_reaching_out_reads_its_reach():
     rc = d.xmat[w.robot_body].reshape(3, 3)
     pivot_x = float((d.xpos[arm] - d.xpos[w.robot_body]) @ rc[:, 0])
     want = 0.33 + 0.3 - pivot_x
-    a = next(x for x in np.linspace(0, math.pi / 2, 200001) if 0.5 * math.cos(x) + 0.02 * math.sin(x) <= want)
+    lo, hi = 0.0, math.pi / 2        # 0.5 cos a + 0.02 sin a falls over this range (a bisection for it)
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if 0.5 * math.cos(mid) + 0.02 * math.sin(mid) > want else (lo, mid)
+    a = hi
     d.qpos[m.jnt_qposadr[m.joint("arm.pivot").id]] = a
     mujoco.mj_forward(m, d)
     got = measure(w)
@@ -148,6 +162,36 @@ def test_smallest_circle():
     # at least the set's diameter (its farthest pair), at most 2/sqrt(3) times it (Jung's theorem)
     full = max(np.linalg.norm(pts - p, axis=1).max() for p in pts)
     assert full - 1e-9 <= dia <= full * 2 / math.sqrt(3) + 1e-9
+
+
+def _brute_force_diameter(pts: np.ndarray) -> float:
+    """The smallest circle holding every point, from all the circles through 2 points (as a diameter) and 3 points
+    (circumscribed), keeping those that hold every point."""
+    best = math.inf
+    n = len(pts)
+    candidates = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            candidates.append(((pts[i] + pts[j]) / 2, float(np.linalg.norm(pts[i] - pts[j])) / 2))
+            for k in range(j + 1, n):
+                a, b, c = pts[i], pts[j], pts[k]
+                d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]))
+                if abs(d) < 1e-12:
+                    continue
+                ux = ((a @ a) * (b[1] - c[1]) + (b @ b) * (c[1] - a[1]) + (c @ c) * (a[1] - b[1])) / d
+                uy = ((a @ a) * (c[0] - b[0]) + (b @ b) * (a[0] - c[0]) + (c @ c) * (b[0] - a[0])) / d
+                centre = np.array([ux, uy])
+                candidates.append((centre, float(np.linalg.norm(a - centre))))
+    for centre, r in candidates:
+        if r < best and np.linalg.norm(pts - centre, axis=1).max() <= r + 1e-9:
+            best = r
+    return 2 * best
+
+
+@pytest.mark.parametrize("seed", [3, 4, 5, 6, 7])
+def test_smallest_circle_matches_a_brute_force(seed):
+    pts = np.random.default_rng(seed).normal(size=(30, 2))
+    assert smallest_circle(pts) == pytest.approx(_brute_force_diameter(pts), abs=1e-9)
 
 
 def test_smallest_circle_holds_every_point():

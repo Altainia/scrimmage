@@ -44,9 +44,9 @@ the geoms in ELEMENT_GROUP, as the TerrainMonitor's; a truss (a box that isn't g
   `climb.hook_load` is the largest hook's.
 - `climb.extension` (m): how far the robot reaches beyond its frame perimeter, horizontally in the chassis's own
   x-y plane (so a tilted robot doesn't read its tilt as reach): the largest distance from the frame's outline to any
-  corner of a colliding geom's bounding box, among the geoms not on the chassis body itself (its frame and
-  bumpers). The frame's outline is the outline of the largest box geom on the robot's body (the chassis), in that
-  body's x-y plane: the stock chassis's frame plate. A robot body without a box geom (a hand-written model) uses
+  point of a colliding geom (measured point by point, so a geom turned in yaw can read smaller than its box's
+  per-axis maxima would, never larger), among the geoms not on the chassis body itself (its frame and bumpers). The frame's outline is the outline of
+  the largest box geom on the robot's body (the chassis), in that body's x-y plane: the stock chassis's frame plate. A robot body without a box geom (a hand-written model) uses
   the outline of all its colliding geoms' bounding boxes. G107 (2022) caps it at 16 in.
 - `climb.height` (m): the robot's top above the carpet, the highest of its colliding geoms' bounding boxes. G106
   (2022) caps it at 66 in in the HANGAR ZONE.

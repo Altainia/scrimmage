@@ -12,6 +12,7 @@ machine text (SI, American English), `words()` the Units and Language settings."
 from __future__ import annotations
 
 import dataclasses
+import threading
 from dataclasses import dataclass
 
 import numpy as np
@@ -20,7 +21,7 @@ from .. import units
 from ..checks import Said
 from ..i18n import t
 from .measure import Extent, geom_label, smallest_circle
-from .report import Inspection, warnings
+from .report import Inspection, _length, warnings
 from .spec import Limit, Season
 
 SAMPLE_S = 0.02         # s of simulated time between samples (Call I7)
@@ -34,10 +35,6 @@ def _what(key: str) -> str:
     if key == "reach":
         return t("reach beyond the frame")
     return t("diameter of the smallest circle holding the robot")
-
-
-def _length(v: float, fewer: int = 1) -> str:
-    return units.fmt(v, "length", fewer=fewer)
 
 
 @dataclass
@@ -84,6 +81,7 @@ class InspectionMonitor:
         self._extent = Extent(world) if self.watched else None
         self.episode = 0
         self.samples = 0                    # samples taken this episode
+        self._lock = threading.RLock()      # the note state: a sim thread samples while the MCP loop reads the notes
         self._current: dict[str, Breach] = {}
         self._past: list[Breach] = []
         self._last = self._next = 0.0
@@ -91,15 +89,17 @@ class InspectionMonitor:
 
     def reset(self) -> None:
         """A world reset: a new episode, sampled at once (its start pose)."""
-        self._past = (self._past + list(self._current.values()))[-KEEP:]
-        self._current = {}
-        self.episode += 1
-        self.samples = 0
-        self._sample(first=True)
+        with self._lock:
+            self._past = (self._past + list(self._current.values()))[-KEEP:]
+            self._current = {}
+            self.episode += 1
+            self.samples = 0
+            self._sample(first=True)
 
     def after_physics(self) -> None:
         if self.world.data.time + 1e-9 >= self._next:
-            self._sample()
+            with self._lock:
+                self._sample()
 
     def _sample(self, first: bool = False) -> None:
         now = float(self.world.data.time)
@@ -140,10 +140,12 @@ class InspectionMonitor:
 
     def breaches(self, since: int = 0) -> list[Breach]:
         """The breaches of episode `since` and later, in the order they began."""
-        return [b for b in self._past + list(self._current.values()) if b.episode >= since]
+        with self._lock:
+            return [b for b in self._past + list(self._current.values()) if b.episode >= since]
 
     def notes(self, since: int = 0) -> list[Said]:
-        return [b.note() for b in self.breaches(since)]
+        with self._lock:
+            return [b.note() for b in self.breaches(since)]
 
     def start_notes(self) -> list[Said]:
         """The start check's warnings but height, reach and diameter (the first sample covers those)."""

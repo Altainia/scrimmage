@@ -5,6 +5,8 @@ from scrimmage.config import ConfigError
 from scrimmage.inspection.spec import SEASONS, choose_season, settings
 
 LB, IN = 0.45359237, 0.0254
+
+
 def test_every_season_matches_the_manuals():
     want = {  # year: (weight lb, perimeter in, start height in, match height in or None, reach in or None)
         2013: (120, 112, 84, 60, None), 2016: (120, 120, 54, 54, 15), 2020: (125, 120, 45, 45, 12),
@@ -18,6 +20,8 @@ def test_every_season_matches_the_manuals():
         assert (s.height.value is None) == (h is None) and (h is None or s.height.value == pytest.approx(h * IN))
         assert (s.reach.value is None) == (r is None) and (r is None or s.reach.value == pytest.approx(r * IN))
         assert s.weight.rule and s.perimeter.rule and s.url.startswith("https://firstfrc.blob.core.windows.net/")
+
+
 RULES = {  # year: (weight, weight with bumpers, bumper set, perimeter, start reach, start height, height, reach,
            # diameter); "" where the season has no such limit. From the manuals (sources file), read 2026-11-14.
     2013: ("R05", "", "R23", "R03-A", "R04", "R03-C", "G22", "", "R03-B, G23"),
@@ -53,6 +57,8 @@ def test_choose_season():
     assert choose_season({"range": {"file": "2024"}})[0].year == 2024
     assert choose_season({"range": {"file": "2013-pyramid"}})[0].year == 2013
     assert choose_season({"range": {"file": "reef"}})[0].year == 2026          # no year in its name: newest
+    assert choose_season({"range": {"file": "20245-x"}})[0].year == 2026       # five digits: not 2024
+    assert choose_season({"range": {"file": "2024x"}})[0].year == 2024
     assert choose_season({"inspection": {"season": 2022}, "range": {"file": "2024"}})[0].year == 2022
     assert choose_season({"inspection": {"season": 2022}}, override=2016) == (SEASONS[2016], "--season")
 def test_bad_inspection_sections_are_config_errors():
@@ -60,3 +66,22 @@ def test_bad_inspection_sections_are_config_errors():
         with pytest.raises(ConfigError):
             settings({"inspection": bad})
     assert settings({}).present is False and settings({"inspection": {}}).present is True
+
+
+def test_a_malformed_season_table_names_the_season_and_the_limit():
+    from scrimmage.inspection.spec import _parse
+    broken = '[2030]\nmanual = "m"\nurl = "u"\n[2030.weight]\nrule = "R1"\n'
+    with pytest.raises(ValueError, match=r"season 2030, limit weight"):
+        _parse(broken)
+    no_rule = '[2031]\nmanual = "m"\nurl = "u"\n[2031.perimeter]\nmax_in = 100\n'
+    with pytest.raises(ValueError, match=r"season 2031, limit perimeter"):
+        _parse(no_rule)
+    good = '[2032]\nmanual = "m"\nurl = "u"\n[2032.perimeter]\nmax_in = 100\nrule = "R1"\n'
+    assert _parse(good)[2032].perimeter.rule == "R1"
+
+
+def test_an_unknown_season_override_lists_the_known_ones():
+    from scrimmage.inspection.spec import check_override
+    with pytest.raises(ConfigError, match=r"^season 2019: scrimmage knows the seasons 2013, 2016"):
+        check_override(2019, "season")
+    check_override(2024, "season")
