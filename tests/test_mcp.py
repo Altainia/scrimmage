@@ -19,7 +19,7 @@ TESTS = Path(__file__).resolve().parent
 FAKE = str(TESTS / "fake_robot.toml")
 TOOLS = {"start_session", "stop_session", "restart_robot", "session_status", "advance", "set_mode", "set_joystick",
          "set_match", "get_state", "get_hal", "get_console", "nt_list", "nt_get", "set_pose", "push", "move_body",
-         "screenshot", "contact_sheet", "run_scenario", "robot_parts"}
+         "screenshot", "contact_sheet", "run_scenario", "robot_parts", "inspect_robot"}
 
 SCENARIO = f"""config = "{FAKE}"
 [[step]]

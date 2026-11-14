@@ -98,6 +98,48 @@ perimeter wraps around such parts, so **check your real frame**, and move the pl
 want the report to agree. The large readings are different: a robot whose arm starts extended really is out of its
 starting configuration, so start it tucked.
 
+## Scenarios
+
+With an `[inspection]` section, a scenario's report gets inspection notes. They never fail a run: a breach is a note,
+as the [climb runs](climbing.md)' G106 and G107 breaches are.
+
+- **At the start**, once: every limit the robot is over at its start pose (weight, perimeter, starting height, start
+  reach), the same words as the warnings below.
+- **During the run**: the robot's height, its reach beyond the frame and (2013) the smallest circle holding it, against
+  the season's match limits, every 20 ms of simulated time. Each breach is one note, with when it first went over, how
+  far over at most and when, and how long it was over in all:
+
+```
+2026 R105: reach beyond the frame over the 12 in limit from t=0.52 s, by up to 1.78 in (arm) at 0.72 s (1.00 s over in all)
+```
+
+A season with no limit for a measure (2025's height) isn't watched for it. A limit with an exception is still noted,
+quoting it with "not checked" (a 2022 robot climbing in the hangar zone gets a height note it may dismiss). Sampling
+every 20 ms means a flick past the line shorter than that can be missed; the rules' limits are judged over seconds.
+A world reset (restarting the robot program, putting the robot back) starts the watch over: a later breach is a new
+note.
+
+## The assembler
+
+With an `[inspection]` section, the Robot tab's warnings list each limit the robot is over at its start pose, in the
+Units setting:
+
+```
+2026 R104: frame perimeter 110.24 in, over the 110 in limit by 0.24 in
+```
+
+Within-limit lines aren't warnings. The robot state (`/api/robot/state`) carries `inspection`: the season, why it was
+chosen, and each line's key, measured value, limit and how far over (in meters and kilograms), whether it rests on an
+estimate, and its words; `null` without the section.
+
+## MCP
+
+The `inspect_robot` tool inspects the running session's robot (its config, built fresh at its start pose, not the
+live world), with or without an `[inspection]` section, as `scrimmage inspect` does. `season` picks the year, like
+`--season`. It returns the season and why, each line in SI (key, rule, measured, limit, over, estimate, and its words
+in metric), the Not checked list and the advice; and, with an `[inspection]` section, the live
+session's breach notes since its last reset.
+
 ## What isn't checked
 
 Each season's report lists, under "Not checked", the rules a single number can't carry: reach over one side at a

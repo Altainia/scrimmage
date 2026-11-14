@@ -202,7 +202,16 @@ class World:
         if sensor_specs:
             from .sensors.runtime import SensorRuntime
             self.sensors = SensorRuntime(self, sensor_specs)
+        self.inspection = None
         self.reset()
+        # The robot's height, reach and diameter against a season's match limits (scrimmage/inspection/monitor.py),
+        # sampled every 20 ms of simulated time: only for a config with an [inspection] section; otherwise None, and
+        # stepping costs nothing extra. Made after the reset, so its start check measures the start pose.
+        if "inspection" in cfg:
+            from .inspection.monitor import InspectionMonitor
+            from .inspection.report import inspect_world
+            start = inspect_world(self, cfg)
+            self.inspection = InspectionMonitor(self, start.season, start)
 
     def terrain_monitor(self):
         """The world's TerrainMonitor, made on first use."""
@@ -251,6 +260,8 @@ class World:
             self.terrain.reset()
         if self.climb is not None:
             self.climb.reset()
+        if self.inspection is not None:
+            self.inspection.reset()
         if self.partner is not None:
             self.partner.reset()
         if self.sensors is not None:
@@ -280,6 +291,8 @@ class World:
             self.terrain.reset()
         if self.climb is not None:
             self.climb.reset()
+        if self.inspection is not None:
+            self.inspection.reset()
         self._read_sensors()
 
     def _apply_start_pose(self) -> None:
@@ -409,6 +422,8 @@ class World:
             self.terrain.after_physics()
         if self.climb is not None:
             self.climb.after_physics()
+        if self.inspection is not None:
+            self.inspection.after_physics()
         if self.partner is not None:
             self.partner.after_physics()
         if self.sensors is not None:

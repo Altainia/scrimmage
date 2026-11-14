@@ -632,6 +632,34 @@ def terrain_notes(world, noted: dict) -> list[str]:
     return notes
 
 
+class _InspectionNotes:
+    """A robot config with [inspection]: the start check's notes (all but height, reach and diameter) once, at the
+    start, and each breach the monitor sees (world.inspection) once. A breach's note is added at the end of the step
+    it began in and updated in place at each later step's end (its peak and time over can grow), so it is noted once
+    with its numbers at the run's end. The breaches counted are from the world's episode at the start on: a world
+    reset during the run keeps its earlier breaches (the monitor does). Without [inspection], nothing."""
+
+    def __init__(self, world, notes: list):
+        self.world, self.notes = world, notes
+        self.at: dict[tuple[int, str], int] = {}       # (episode, key) -> its note's index in `notes`
+        mon = world.inspection
+        self.since = mon.episode if mon is not None else 0
+        if mon is not None:
+            notes.extend(mon.start_notes())
+
+    def update(self) -> None:
+        mon = self.world.inspection
+        if mon is None:
+            return
+        for b in mon.breaches(self.since):
+            i = self.at.get((b.episode, b.key))
+            if i is None:
+                self.at[(b.episode, b.key)] = len(self.notes)
+                self.notes.append(b.note())
+            else:
+                self.notes[i] = b.note()
+
+
 def _stopped() -> Said:
     return Said(STOPPED, lambda: t("stopped by the user"))
 
@@ -670,6 +698,7 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
                             words)
         return
     noted: dict = {}
+    inspected = _InspectionNotes(session.world, report.notes)
     rng = session.world.test_range
     # a range with a [game]: the scenario's points (none of this without one)
     match = session.world.scenario_match = (
@@ -702,6 +731,7 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
             if match is not None:
                 match.finish(session.t)
             report.notes.extend(terrain_notes(session.world, noted))
+            inspected.update()
     report.notes.extend(session.world.warnings)
     if (rng := session.world.test_range) is not None:    # a soft NOTE's, the guard's resets, MuJoCo's restarts
         shown = _shown_now(rng.notes)()

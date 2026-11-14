@@ -200,11 +200,13 @@ def _start_reach(season: Season, m) -> Line:
                 _said(lambda: words(True)) if over > 0 else None)
 
 
-def warnings(inspection: Inspection) -> list[Said]:
+def warnings(inspection: Inspection, skip: tuple[str, ...] = ()) -> list[Said]:
     """One warning per over line ("2026 R104: frame perimeter 110.24 in, over the 110 in limit by 0.24 in"), then the
-    report's other warnings."""
-    out = [x.warning for x in inspection.over if x.warning is not None] + list(inspection.notes)
-    if inspection.advice is not None and any(x.estimate for x in inspection.over):
+    report's other warnings. The lines whose keys are in `skip` are left out (a scenario's start notes leave height,
+    reach and diameter to the monitor)."""
+    over = [x for x in inspection.over if x.key not in skip]
+    out = [x.warning for x in over if x.warning is not None] + list(inspection.notes)
+    if inspection.advice is not None and any(x.estimate for x in over):
         out.append(inspection.advice)
     return out
 

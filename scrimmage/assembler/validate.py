@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..checks import shown
 from ..config import ConfigError, build_world, load_config_text
+from ..inspection.report import warnings
 
 
 @dataclass(frozen=True)
@@ -48,7 +50,9 @@ def _map_warning(message: str) -> FieldError:
 
 
 def check(text: str, path) -> Result:
-    """Run `text` through load_config_text and build_world; never raises for a bad config."""
+    """Run `text` through load_config_text and build_world; never raises for a bad config. A config with an
+    [inspection] section also warns of each limit the robot is over at its start pose (inspection.report.warnings,
+    in the Units and Language settings)."""
     try:
         cfg = load_config_text(text, path)
         world = build_world(cfg)
@@ -56,4 +60,7 @@ def check(text: str, path) -> Result:
         return Result(False, _map_error(_strip_path(str(e), path), e.fields), [], None)
     except Exception as e:   # a bug-shaped failure still must not take the server down
         return Result(False, [FieldError("status", f"{type(e).__name__}: {e}")], [], None)
-    return Result(True, [], [_map_warning(w) for w in world.warnings], world)
+    found = [_map_warning(w) for w in world.warnings]
+    if world.inspection is not None:     # an [inspection] section: its over-limit lines on the status line
+        found += [FieldError("status", shown(w)) for w in warnings(world.inspection.start)]
+    return Result(True, [], found, world)

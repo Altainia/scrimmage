@@ -10,10 +10,16 @@ import re
 import tomllib
 from pathlib import Path
 
-from .. import i18n, teamfolders
+from .. import i18n, settings, teamfolders
 from ..measure.use import SUFFIX
 from ..parts.stock import REGISTRY, _load_all
 from . import edits, library, part_session, recent
+
+
+def words_key() -> tuple[str, str]:
+    """The Language and Units settings: the robot's errors and warnings are worded again when either changed (an
+    inspection warning has lengths and masses in it)."""
+    return i18n.current_language(), settings.current_units()
 
 
 POLL_SECONDS = 25.0
