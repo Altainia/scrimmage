@@ -26,9 +26,22 @@ def test_find_jdk_prefers_java_home(tmp_path, monkeypatch):
     assert java_tools.find_jdk() == jdk
 
 
+def test_find_jdk_on_windows_looks_where_the_wpilib_installer_puts_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(java_tools.sys, "platform", "win32")
+    monkeypatch.delenv("JAVA_HOME", raising=False)
+    monkeypatch.setattr(java_tools, "WPILIB_GLOB", str(tmp_path / "home" / "wpilib" / "*" / "jdk"))
+    monkeypatch.setattr(java_tools, "WINDOWS_WPILIB_GLOB", str(tmp_path / "Public" / "wpilib" / "*" / "jdk"))
+    with pytest.raises(java_tools.JavaToolError, match=r"Public"):
+        java_tools.find_jdk()
+    _fake_jdk(tmp_path / "Public" / "wpilib" / "2025" / "jdk", ".exe")
+    jdk = _fake_jdk(tmp_path / "Public" / "wpilib" / "2026" / "jdk", ".exe")
+    assert java_tools.find_jdk() == jdk
+
+
 def test_find_jdk_on_windows_looks_for_exe_files(tmp_path, monkeypatch):
     monkeypatch.setattr(java_tools.sys, "platform", "win32")
     monkeypatch.setattr(java_tools, "WPILIB_GLOB", str(tmp_path / "wpilib" / "*" / "jdk"))
+    monkeypatch.setattr(java_tools, "WINDOWS_WPILIB_GLOB", str(tmp_path / "Public" / "wpilib" / "*" / "jdk"))
     monkeypatch.setenv("JAVA_HOME", str(_fake_jdk(tmp_path / "unix", "")))
     with pytest.raises(java_tools.JavaToolError):
         java_tools.find_jdk()

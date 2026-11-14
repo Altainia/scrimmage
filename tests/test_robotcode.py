@@ -226,6 +226,16 @@ def test_install_lockstep_failure_off_linux_asks_for_no_compiler(tmp_path, monke
     assert f'/x/python -m pip install "{robotcode.LOCKSTEP_DIR}"' in r.message
 
 
+def test_install_lockstep_on_windows_while_a_robot_holds_the_dll_says_to_stop_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    tail = ["ERROR: Could not install packages due to an OSError: [WinError 5] Access is denied: "
+            "'C:\\venv\\Lib\\site-packages\\scrimmage_lockstep\\lib\\win_amd64\\halsim_scrimmage_lockstep.dll'"]
+    monkeypatch.setattr(robotcode, "_stream", lambda *a, **k: (1, tail))
+    info = ProjectInfo(tmp_path, "robotpy", [], False, Path("/x/python"), "")
+    r = run_fix("install_lockstep", info, lambda s: None)
+    assert "stop the session" in r.message and "internet" not in r.message
+
+
 @pytest.mark.parametrize("example", ["robotpy_kitbot", "java_swerve"])
 def test_checklist_on_windows_x64_needs_0_8_0_for_lockstep(monkeypatch, example):
     """Windows x64 runs in lockstep from 0.8.0's prebuilt DLL: older is "too old" (it still runs, in real time), and

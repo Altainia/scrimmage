@@ -103,9 +103,9 @@ jobs:
       - name: Check RobotPy, phoenix6, libgrapplefrc and the lockstep extension are importable
         run: python -c "import wpilib, halsim_ws, scrimmage_lockstep, phoenix6, libgrapplefrc"
       # Lockstep on Windows runs a prebuilt DLL committed in the package (lockstep/scrimmage_lockstep/lib/win_amd64).
-      # Build it here from source with MSVC (against the HAL RobotPy installed) and test that build, never the
-      # committed one: it replaces the DLL in the installed package. The 3.13 run uploads it with its stamp as the
-      # artifact lockstep/tools/update_windows_dll.py takes after a change to the C++.
+      # Build it here from source with MSVC (against the HAL RobotPy installed) and test that build: it replaces the
+      # DLL in the installed package. Once its tests pass, the 3.13 run uploads it with its stamp as the artifact
+      # lockstep/tools/update_windows_dll.py takes after a change to the C++. Last, the committed DLL itself runs.
       - name: Build the lockstep extension from source
         shell: bash
         run: |
@@ -116,9 +116,17 @@ jobs:
           python lockstep/tools/stamp.py --write lockstep-win-dll
       - name: Use the fresh build in the installed package
         run: >
-          python -c "import shutil, scrimmage_lockstep as s; p = s.library_path(); p.parent.mkdir(parents=True,
-          exist_ok=True); [shutil.copy('lockstep-win-dll/' + f, p.parent) for f in (p.name, 'SOURCE.sha256')];
-          print(p)"
+          python -c "import shutil, scrimmage_lockstep as s; p = s.library_path();
+          assert p.is_file() and (p.parent / 'SOURCE.sha256').is_file(), f'pip install ./lockstep left out {p}';
+          [shutil.copy('lockstep-win-dll/' + f, p.parent) for f in (p.name, 'SOURCE.sha256')]; print(p)"
+      # the extension itself, RobotPy REV in lockstep (its identical-physics test skips itself: REV noise isn't pinned
+      # on Windows), a RobotPy robot without REV repeating bit for bit, the job object and run-token kill, and the CAN
+      # distance sensors
+      - name: Test RobotPy lockstep and CAN distance sensors
+        shell: bash
+        run: >
+          pytest tests/test_lockstep_ext.py tests/test_rev_py_e2e.py tests/test_e2e.py::test_runs_are_repeatable
+          tests/test_robot_process_windows.py tests/test_lockstep_grapple.py tests/test_distance_py_e2e.py -v -rs
       - name: Upload the Windows lockstep extension
         if: matrix.python-version == '3.13'
         uses: actions/upload-artifact@v5
@@ -126,15 +134,15 @@ jobs:
           name: lockstep-win-dll
           path: lockstep-win-dll/
           if-no-files-found: error
-      # the extension itself, RobotPy REV in lockstep (its identical-physics test skips itself: REV noise isn't pinned
-      # on Windows), a RobotPy robot without REV repeating bit for bit, the job object and run-token kill, the DLL's
-      # stamp (on a Windows checkout's line endings) and the CAN distance sensors
-      - name: Test RobotPy lockstep and CAN distance sensors
+      # the committed DLL was built from this source (on a Windows checkout's line endings); fails after a C++ change
+      # until the artifact above is committed
+      - name: Check the committed DLL's stamp
+        run: pytest tests/test_lockstep_windows_dll.py -v
+      - name: Test the committed DLL
         shell: bash
-        run: >
-          pytest tests/test_lockstep_ext.py tests/test_rev_py_e2e.py tests/test_e2e.py::test_runs_are_repeatable
-          tests/test_robot_process_windows.py tests/test_lockstep_windows_dll.py tests/test_lockstep_grapple.py
-          tests/test_distance_py_e2e.py -v -rs
+        run: |
+          python -c "import shutil, scrimmage_lockstep as s; p = s.library_path(); shutil.copy('lockstep/scrimmage_lockstep/lib/win_amd64/' + p.name, p.parent)"
+          pytest tests/test_lockstep_ext.py -v
 
   # A Java robot in lockstep on Windows: the init script's Windows path (gradlew.bat, the DLL on HALSIM_EXTENSIONS
   # with Windows' path separator, the JNI HAL loaded before it) on REV's MAXSwerve template, the smallest Java test
@@ -170,8 +178,9 @@ jobs:
           cmake --build build-lockstep --config Release
       - name: Use the fresh build in the installed package
         run: >
-          python -c "import shutil, scrimmage_lockstep as s; p = s.library_path(); p.parent.mkdir(parents=True,
-          exist_ok=True); shutil.copy('build-lockstep/Release/' + p.name, p.parent); print(p)"
+          python -c "import shutil, scrimmage_lockstep as s; p = s.library_path();
+          assert p.is_file(), f'pip install ./lockstep left out {p}'; shutil.copy('build-lockstep/Release/' + p.name,
+          p.parent); print(p)"
       # the test module builds the sim-write guard agent itself (`scrimmage java build` also builds the fast-mode
       # library, which this test doesn't use)
       - name: Java lockstep test

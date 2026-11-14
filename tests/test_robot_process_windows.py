@@ -90,6 +90,7 @@ def test_a_job_that_cant_be_made_or_joined_is_one_line_and_no_error(no_job, capl
 
 def test_kill_by_token_on_windows_asks_cim_for_the_command_line_and_taskkills(monkeypatch, caplog):
     monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(robot_process, "_warned_query", False)
     token, seen, killed = uuid.uuid4().hex, [], []
 
     def run(cmd, **kw):
@@ -102,7 +103,7 @@ def test_kill_by_token_on_windows_asks_cim_for_the_command_line_and_taskkills(mo
     assert killed == [123, 456]
     assert seen[0][:4] == ["powershell", "-NoProfile", "-NonInteractive", "-Command"]
     assert "Get-CimInstance Win32_Process" in seen[0][4] and f"'{RUN_TOKEN_ARG}{token}'" in seen[0][4]
-    assert "$_.ProcessId -ne $PID" in seen[0][4]   # not the query's own PowerShell, whose command line has it too
+    assert "$_.Name -ne 'powershell.exe'" in seen[0][4]   # not a query's PowerShell, whose command line has it too
 
     monkeypatch.setattr(robot_process.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, "", "x"))
     killed.clear()
@@ -111,6 +112,22 @@ def test_kill_by_token_on_windows_asks_cim_for_the_command_line_and_taskkills(mo
     lines = [r.getMessage() for r in caplog.records]
     assert killed == [] and len(lines) == 1 and f"{RUN_TOKEN_ARG}{token}" in lines[0], lines
     assert "may still be running" in lines[0]
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="scrimmage"):
+        robot_process.kill_by_token(token)
+    assert caplog.records == []   # once: where PowerShell is blocked, every stop would say it
+
+
+def test_kill_by_token_on_windows_puts_only_its_own_tokens_in_the_query(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(robot_process.subprocess, "run", lambda *a, **k: pytest.fail("ran the query"))
+    robot_process.kill_by_token("x') ; Stop-Computer ; ('")
+
+
+def test_on_windows_stop_looks_for_leftovers_only_for_a_gradle_robot():
+    assert robot_process.token_on_command_line(["C:/team/gradlew.bat", "-I", "x/scrimmage.init.gradle", "simulateJava"])
+    assert robot_process.token_on_command_line(["./gradlew", "simulateJava"])
+    assert not robot_process.token_on_command_line(["C:/py/python.exe", "-m", "robotpy", "sim"])
 
 
 def test_gradlew_runs_as_gradlew_bat_on_windows(tmp_path):

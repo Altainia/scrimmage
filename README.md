@@ -593,7 +593,7 @@ writes the `[robot_program]` section for you; the hand-written version follows.
 
 ### One-time setup
 
-1. Install WPILib (the JDK 17 that ships with it is found at `~/wpilib/<year>/jdk`; `JAVA_HOME` wins if set).
+1. Install WPILib (the JDK 17 that ships with it is found at `~/wpilib/<year>/jdk`, or on Windows `C:\Users\Public\wpilib\<year>\jdk`; `JAVA_HOME` wins if set).
 2. `pip install ./lockstep` (Linux and Windows x64), as in the quick start.
 3. `scrimmage java build` compiles the sim-write guard agent (see below) into `~/.cache/scrimmage/java`
    (`SCRIMMAGE_CACHE` changes the directory) and downloads ASM once. Run it again after upgrading scrimmage.

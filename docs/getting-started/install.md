@@ -135,7 +135,7 @@ that doesn't ask again for this folder, so the questions don't interrupt the roo
 | | Linux | Windows | macOS |
 |---|---|---|---|
 | Component bench, launcher model | tested | should work; untested | should work; untested |
-| Robot code, by hand or headless | tested, repeatable, faster than real time | repeatable (RobotPy REV robots: not exactly), faster than real time on x64; tested on CI only | real time only; untested |
+| Robot code, by hand or headless | tested, repeatable, faster than real time | x64: repeatable (RobotPy REV robots: not exactly) and faster than real time; ARM: real time only; tested on CI only | real time only; untested |
 | Agents, the browser editor and Bench tab | tested | untested | untested |
 
 ## If something goes wrong

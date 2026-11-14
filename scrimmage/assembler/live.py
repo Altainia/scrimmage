@@ -244,7 +244,8 @@ class LiveManager:
         return True
 
     def kill_robots(self) -> None:
-        """Kill, by their run tokens, the robot programs the worker started and hasn't stopped (Linux only)."""
+        """Kill, by their run tokens, the robot programs the worker started and hasn't stopped (Linux; on Windows only
+        Java robot programs, found by the token on their command line; elsewhere a no-op)."""
         with self._lock:
             thread = self._thread
         if thread is not None and thread.ident is not None:

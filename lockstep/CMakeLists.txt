@@ -35,6 +35,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)
     # wpiHal.lib is the import library of wpiHal.dll: the DLL records wpiHal.dll by name, so at runtime it binds to
     # the HAL the robot process already loaded. No seed library: REV's noise isn't pinned on Windows (docs/rev.md).
     target_link_libraries(halsim_scrimmage_lockstep PRIVATE "${WPIHAL_DIR}/lib/wpiHal.lib")
+    # A robot JVM may already have loaded an older msvcp140.dll (JDKs ship one): without this, std::mutex built by
+    # MSVC 17.10 or later crashes there at its first lock (Microsoft's documented workaround).
+    target_compile_definitions(halsim_scrimmage_lockstep PRIVATE _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
     install(TARGETS halsim_scrimmage_lockstep RUNTIME DESTINATION scrimmage_lockstep/lib/win_amd64)
   else()
     # libwpiHal.so's SONAME is "libwpiHal.so", so this records NEEDED libwpiHal.so (no path): at runtime

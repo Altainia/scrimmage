@@ -8,6 +8,7 @@ import ctypes
 import functools
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -99,14 +100,17 @@ def kill_tree(pid: int) -> None:
         pass
 
 
-def _token_pids_windows(token: str) -> list[int] | None:
+def _token_pids_windows(token: str, timeout: float) -> list[int] | None:
     """Windows: the processes whose command line carries RUN_TOKEN_ARG<token> (it can't read another process's
-    environment), from a CIM query through PowerShell (on every Windows 10 and 11); None when the query fails."""
-    script = ("Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and "
+    environment), from a CIM query through PowerShell (on every Windows 10 and 11); None when the query fails. Never
+    a PowerShell: the query's own command line holds the token, and so does another query running at once."""
+    if not re.fullmatch(r"[0-9a-f]{32}", token):   # it goes into the query: only the uuid4().hex tokens start() makes
+        return []
+    script = ("Get-CimInstance Win32_Process | Where-Object { $_.Name -ne 'powershell.exe' -and $_.CommandLine -and "
               f"$_.CommandLine.Contains('{RUN_TOKEN_ARG}{token}') }} | ForEach-Object {{ $_.ProcessId }}")
     try:
         r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=max(timeout, 10.0))
     except (OSError, subprocess.SubprocessError):
         return None
     if r.returncode != 0:
@@ -114,14 +118,25 @@ def _token_pids_windows(token: str) -> list[int] | None:
     return [int(line) for line in r.stdout.split() if line.isdigit()]
 
 
+_warned_query = False
+
+
+def token_on_command_line(command: list[str]) -> bool:
+    """Windows can find a leftover robot only by its command line, where only a Gradle robot JVM carries the token
+    (the init script puts it there): for any other robot the query can't find anything, so it isn't run."""
+    return any(Path(c).name.lower().startswith("gradle") for c in command)
+
+
 def kill_by_token(token: str, timeout: float = 10.0) -> None:
     """Kill every process whose environment carries SCRIMMAGE_RUN_TOKEN=<token> (on Windows, whose command line
     carries RUN_TOKEN_ARG<token>; elsewhere a no-op). Catches robot JVMs spawned by a Gradle daemon, which are outside
     the robot program's process group. SIGTERM first, then SIGKILL for whatever is left after `timeout` s; on Windows
     taskkill /F /T at once."""
+    global _warned_query
     if sys.platform == "win32":
-        pids = _token_pids_windows(token)
-        if pids is None:
+        pids = _token_pids_windows(token, timeout)
+        if pids is None and not _warned_query:   # once: where PowerShell is blocked, every stop would say it
+            _warned_query = True
             log.warning("%s", i18n.t("scrimmage couldn't look for robot programs left running ({query} failed), so one "
                                      "may still be running: its command line has {arg}", query="Get-CimInstance",
                                      arg=f"{RUN_TOKEN_ARG}{token}"))
@@ -551,7 +566,8 @@ class RobotProcess:
                 await asyncio.wait_for(proc.wait(), 5)
             except TimeoutError:
                 pass
-            if self._token is not None:  # a child that escaped the process group (e.g. via a Gradle daemon)
+            if self._token is not None and (sys.platform != "win32" or token_on_command_line(self.command)):
+                # a child that escaped the process group (e.g. via a Gradle daemon)
                 await asyncio.get_running_loop().run_in_executor(None, kill_by_token, self._token)
             if proc.returncode is not None:  # reaped: its pid may be reused, so a second stop() mustn't signal it
                 self._last_returncode = proc.returncode

@@ -136,7 +136,8 @@ class RunManager:
 
     def kill_robots(self) -> None:
         """Kill, by their run tokens, the robot programs the worker thread started and hasn't stopped: for a worker
-        that didn't finish after Stop (Linux only; elsewhere a no-op)."""
+        that didn't finish after Stop (Linux; on Windows only Java robot programs, found by the token on their command
+        line; elsewhere a no-op)."""
         with self._lock:
             thread = self._thread
         if thread is not None and thread.ident is not None:

@@ -33,7 +33,7 @@ works this way, with the Bench tab (`scrimmage edit`) beside it so the room sees
 | **robot config** | A TOML file that describes your robot (its parts and their CAN IDs) and how to start its code. |
 | **scenario** | A TOML file that runs your robot through some steps (disabled, auto, teleop) and checks the results. |
 | **UNCALIBRATED** | The numbers are estimates until someone measures the real ball or wheel. Good for comparing ideas, not for exact predictions. |
-| **lockstep** | Scrimmage controls the robot code's clock, so runs are faster than real time and repeat exactly. Linux and Windows x64. |
+| **lockstep** | Scrimmage controls the robot code's clock, so runs are faster than real time and repeat exactly. Linux and Windows x64 (on Windows, RobotPy robots with REV parts repeat only closely). |
 | **MCP** | How an AI agent such as Claude Code talks to scrimmage. |
 
 ## After these guides

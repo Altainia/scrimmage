@@ -389,6 +389,11 @@ def run_fix(fix: str, info: ProjectInfo, out: Callable[[str], None], cancel: thr
                                                    by_hand=by_hand), fix=fix)
         code, tail = _stream([python, "-m", "pip", "install", str(LOCKSTEP_DIR)], None, None, out, **kw)
         from .session import lockstep_platform
+        if code != 0 and sys.platform == "win32" and any("WinError 5" in l or "Access is denied" in l for l in tail):
+            # a running robot program holds the DLL open
+            return _failed("lockstep", lambda: i18n.t("Installing the fast-simulation add-on didn't work."),
+                           lambda: i18n.t("A running robot program is using it: stop the session, then try again."),
+                           tail, fix, code)
         if code != 0 and sys.platform != "linux":   # pure Python there (Windows x64: a prebuilt DLL): no compiler needed
             return _failed("lockstep", (lambda: i18n.t("Installing the fast-simulation add-on didn't work."))
                            if lockstep_platform() == "windows"

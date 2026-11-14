@@ -155,7 +155,7 @@ To check your robot automatically every time the code changes, go on to
   time on a computer. Close the other one (the browser's Drive tab, an agent session or a terminal).
 - **The robot program crashed**: the error is in the run's `robot.log`, or shown in the Drive tab. Fix the code and
   run again.
-- **Windows**: runs are faster than real time and repeat, as on Linux (tested on CI only so far), except that a
+- **Windows** (x64; on ARM, real time only): runs are faster than real time and repeat, as on Linux (tested on CI only so far), except that a
   RobotPy robot with REV SPARKs doesn't repeat exactly. **macOS**: runs are always real time, and untested so far.
 - More in the README: [Java robots](../../README.md#java-robots-phoenix-6),
   [REV robots](../rev.md) and [troubleshooting](../../README.md#sessions-environment-and-troubleshooting).

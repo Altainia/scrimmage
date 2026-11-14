@@ -19,6 +19,8 @@ from . import i18n
 
 JAVA_DIR = Path(__file__).resolve().parent / "java"
 WPILIB_GLOB = str(Path.home() / "wpilib" / "*" / "jdk")
+# The WPILib installer on Windows puts each year under the Public profile, and sets JAVA_HOME only in its VS Code.
+WINDOWS_WPILIB_GLOB = str(Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "wpilib" / "*" / "jdk")
 ASM_VERSION = "9.10.1"
 ASM_URL = f"https://repo1.maven.org/maven2/org/ow2/asm/asm/{ASM_VERSION}/asm-{ASM_VERSION}.jar"
 ASM_SHA256 = "ed825d10ab1399c8c0cb669e688cf0c8c82629b4c8399b58352b68e92ca10fcb"
@@ -145,11 +147,13 @@ def find_jdk() -> Path:
         tried.append(f"JAVA_HOME={home}")
         if _is_jdk(Path(home)):
             return Path(home)
-    for cand in sorted(glob.glob(WPILIB_GLOB), reverse=True):  # newest WPILib year first
-        tried.append(cand)
-        if _is_jdk(Path(cand)):
-            return Path(cand)
-    tried.append(WPILIB_GLOB)
+    globs = [WPILIB_GLOB, WINDOWS_WPILIB_GLOB] if sys.platform == "win32" else [WPILIB_GLOB]
+    for pattern in globs:
+        for cand in sorted(glob.glob(pattern), reverse=True):  # newest WPILib year first
+            tried.append(cand)
+            if _is_jdk(Path(cand)):
+                return Path(cand)
+    tried.extend(globs)
     raise JavaToolError("no JDK found (looked at: " + ", ".join(tried) + "). Install WPILib "
                         "(https://docs.wpilib.org) or set JAVA_HOME to a JDK 17.")
 
