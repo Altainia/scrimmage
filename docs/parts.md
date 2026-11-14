@@ -642,7 +642,7 @@ chassis: rectangular drive base with bumpers; modules mount at its corners
 parameters:
   length = 0.7 m (greater than 0): frame length (front to back), without bumpers
   width = 0.7 m (greater than 0): frame width (side to side), without bumpers
-  mass = 46.0 kg (greater than 0): everything on the chassis that isn't another part (frame, battery, electronics)
+  mass = 46.0 kg (greater than 0): everything on the chassis that isn't another part (frame, bumpers, battery, electronics)
   frame_height = 0.12 m (greater than 0): height of the frame's middle above the floor
   bumper = 0.08 m (greater than 0): bumper thickness
   bumper_clearance = 0.02 m (greater than 0): height of the bumpers' bottom above the carpet; with the bumpers' reach past the front wheels it sets the approach angle, the steepest ramp the robot drives onto (docs/terrain.md)

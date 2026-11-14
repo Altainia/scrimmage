@@ -105,6 +105,30 @@ def robot_hooks(model: mujoco.MjModel, robot_body: int) -> dict[str, list[int]]:
     return dict(sorted(out.items()))
 
 
+def frame_outline(model: mujoco.MjModel, body: int, colliding_only: bool = True) -> tuple[float, float, float, float]:
+    """(x min, x max, y min, y max) of the frame perimeter in the body's frame: the outline of the largest box geom
+    on the body (by top-view area), or, without one, of all its geoms' bounding boxes. Only the colliding geoms
+    count unless colliding_only is False (inspection counts every geom); with none, all zeros."""
+    m = model
+    own = [g for g in range(m.ngeom) if m.geom_bodyid[g] == body
+           and (not colliding_only or m.geom_contype[g] or m.geom_conaffinity[g])]
+    boxes = [g for g in own if m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX]
+    if boxes:
+        own = [max(boxes, key=lambda g: float(m.geom_size[g][0] * m.geom_size[g][1]))]
+    if not own:
+        return (0.0, 0.0, 0.0, 0.0)
+    lo, hi = np.full(2, np.inf), np.full(2, -np.inf)
+    rot = np.zeros(9)
+    for g in own:
+        mujoco.mju_quat2Mat(rot, m.geom_quat[g])
+        r = rot.reshape(3, 3)
+        center = m.geom_pos[g] + r @ m.geom_aabb[g][:3]
+        half = np.abs(r) @ m.geom_aabb[g][3:]
+        lo = np.minimum(lo, (center - half)[:2])
+        hi = np.maximum(hi, (center + half)[:2])
+    return (float(lo[0]), float(hi[0]), float(lo[1]), float(hi[1]))
+
+
 class ClimbMonitor:
     def __init__(self, world, hook_bodies: list[str] | None = None):
         m = world.model
@@ -194,32 +218,11 @@ class ClimbMonitor:
         self._reach = len(reach)        # the first _reach of _geoms count for the extension
         signs = np.array(list(np.ndindex(2, 2, 2)), dtype=float) * 2.0 - 1.0          # (8, 3)
         self._corners = m.geom_aabb[self._geoms, None, :3] + signs * m.geom_aabb[self._geoms, None, 3:]  # (n, 8, 3)
-        x0, x1, y0, y1 = self._frame_outline()
+        x0, x1, y0, y1 = frame_outline(m, self.body)
         self._frame_lo, self._frame_hi = np.array([x0, y0]), np.array([x1, y1])
         # Extension and height need the extent every step: on once a scenario asks for one (track_extent).
         self.extent = False
         self.reset()
-
-    def _frame_outline(self) -> tuple[float, float, float, float]:
-        """(x min, x max, y min, y max) of the frame perimeter in the robot body's frame."""
-        m = self.model
-        own = [g for g in range(m.ngeom)
-               if m.geom_bodyid[g] == self.body and (m.geom_contype[g] or m.geom_conaffinity[g])]
-        boxes = [g for g in own if m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX]
-        if boxes:
-            own = [max(boxes, key=lambda g: float(m.geom_size[g][0] * m.geom_size[g][1]))]
-        if not own:
-            return (0.0, 0.0, 0.0, 0.0)
-        lo, hi = np.full(2, np.inf), np.full(2, -np.inf)
-        rot = np.zeros(9)
-        for g in own:
-            mujoco.mju_quat2Mat(rot, m.geom_quat[g])
-            r = rot.reshape(3, 3)
-            center = m.geom_pos[g] + r @ m.geom_aabb[g][:3]
-            half = np.abs(r) @ m.geom_aabb[g][3:]
-            lo = np.minimum(lo, (center - half)[:2])
-            hi = np.maximum(hi, (center + half)[:2])
-        return (float(lo[0]), float(hi[0]), float(lo[1]), float(hi[1]))
 
     def track_extent(self) -> None:
         """Read the extension and height every step from now on."""
