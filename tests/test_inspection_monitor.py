@@ -274,11 +274,12 @@ def test_the_assembler_state_carries_the_inspection(tmp_path):
     assert App(cfg, open_browser=False).state()["inspection"] is None
 
 
-def test_inspect_robot_reads_the_session_s_config(tmp_path):
+def test_inspect_robot_reads_the_session_s_config(tmp_path, monkeypatch):
     pytest.importorskip("mcp")
     from mcp import Client
     from parts_fake import parts_config
     from scrimmage import mcp_server
+    from scrimmage.inspection import report
     cfg = parts_config(tmp_path)
 
     async def main():
@@ -299,11 +300,16 @@ def test_inspect_robot_reads_the_session_s_config(tmp_path):
             cfg.write_text(cfg.read_text(encoding="utf-8") + "\n[inspection]\nseason = 2024\n", encoding="utf-8")
             try:
                 assert not (await c.call_tool("start_session", {"config": str(cfg)})).is_error
+                built = []                     # each world inspect_robot builds and measures from now on
+                real = report.inspect_world
+                monkeypatch.setattr(report, "inspect_world", lambda *a: built.append(a) or real(*a))
                 got = json.loads((await c.call_tool("inspect_robot", {})).content[0].text)
                 assert got["season"] == 2024 and got["monitor"] == []
-                assert got["lines"] and all(x["text"] for x in got["lines"])      # from the world's own inspection
+                assert got["lines"] and all(x["text"] for x in got["lines"])
+                assert built == []                                     # the world's own start measurement, reused
                 got = json.loads((await c.call_tool("inspect_robot", {"season": 2026})).content[0].text)
                 assert got["season"] == 2026 and got["reason"] == "--season"
+                assert built[-1][2] == 2026        # another season: a fresh world, measured for that season
             finally:
                 await c.call_tool("stop_session", {})
 

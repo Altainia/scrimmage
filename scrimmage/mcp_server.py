@@ -200,7 +200,8 @@ async def robot_parts() -> str:
 @_tool()
 async def inspect_robot(season: int | None = None) -> str:
     """The session's robot against a season's size and weight rules, as `scrimmage inspect` does: measured at the
-    robot's start pose (a fresh world from the session's config, not the live one). season: the year whose rules to
+    robot's start pose, not the live one: with an [inspection] section and no season given, the measurement the session's
+    world took when it was made; otherwise a fresh world from the session's config. season: the year whose rules to
     use; leave it out for the config's [inspection] season, else its [range] file's year, else the newest. Returns
     {season, reason, lines: [{key, rule, measured, limit, over, estimate, text}], notes, not_checked, advice,
     monitor}:
