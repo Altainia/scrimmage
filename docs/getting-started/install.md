@@ -7,8 +7,8 @@ You do this once per computer. It takes about five minutes, most of it downloadi
 ## What you need
 
 - **A computer running Linux.** That is where Scrimmage is tested. On Windows and macOS the component bench
-  should work, but nobody has tried it yet, and robot code runs only in real time there (see
-  [What works where](#what-works-where)).
+  should work, but nobody has tried it yet. Robot code runs in lockstep on Windows x64 too (tested on CI only), and
+  only in real time on macOS (see [What works where](#what-works-where)).
 - **Python 3.11 or newer.** Type `python3 --version` in a terminal to check.
 - **git**, a GitHub account, and access to the Scrimmage repository (it is private: ask the mentor who runs it to
   add you).
@@ -132,11 +132,11 @@ that doesn't ask again for this folder, so the questions don't interrupt the roo
 
 ## What works where
 
-| | Linux | Windows, macOS |
-|---|---|---|
-| Component bench, launcher model | tested | should work; untested |
-| Robot code, by hand or headless | tested, repeatable, faster than real time | real time only; untested |
-| Agents, the browser editor and Bench tab | tested | untested |
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| Component bench, launcher model | tested | should work; untested | should work; untested |
+| Robot code, by hand or headless | tested, repeatable, faster than real time | x64: repeatable (RobotPy REV robots: not exactly) and faster than real time; ARM: real time only; tested on CI only | real time only; untested |
+| Agents, the browser editor and Bench tab | tested | untested | untested |
 
 ## If something goes wrong
 

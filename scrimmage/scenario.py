@@ -39,7 +39,7 @@ def runs_folder(base: Path) -> Path:
     is (a team that deleted the file to commit its reports keeps that)."""
     if not base.is_dir():
         base.mkdir(parents=True, exist_ok=True)
-        (base / ".gitignore").write_text(RUNS_GITIGNORE)
+        (base / ".gitignore").write_text(RUNS_GITIGNORE, encoding="utf-8")
     return base
 
 @dataclass
@@ -152,7 +152,7 @@ def _size(width: int, height: int, where: str, at: str) -> None:
 def load_scenario(path: str | Path) -> Scenario:
     path = Path(path).resolve()
     try:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise ScenarioError(t("scenario file not found: {path}", path=path)) from None
     except OSError as e:

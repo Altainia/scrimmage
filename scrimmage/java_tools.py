@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import urllib.request
+import sys
 import zipfile
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from . import i18n
 
 JAVA_DIR = Path(__file__).resolve().parent / "java"
 WPILIB_GLOB = str(Path.home() / "wpilib" / "*" / "jdk")
+# The WPILib installer on Windows puts each year under the Public profile, and sets JAVA_HOME only in its VS Code.
+WINDOWS_WPILIB_GLOB = str(Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "wpilib" / "*" / "jdk")
 ASM_VERSION = "9.10.1"
 ASM_URL = f"https://repo1.maven.org/maven2/org/ow2/asm/asm/{ASM_VERSION}/asm-{ASM_VERSION}.jar"
 ASM_SHA256 = "ed825d10ab1399c8c0cb669e688cf0c8c82629b4c8399b58352b68e92ca10fcb"
@@ -128,8 +131,13 @@ def init_script_path() -> Path:
     return JAVA_DIR / "scrimmage.init.gradle"
 
 
+def _tool(jdk: Path, name: str) -> Path:
+    """A JDK tool's file: bin/<name>, with .exe on Windows."""
+    return jdk / "bin" / (name + ".exe" if sys.platform == "win32" else name)
+
+
 def _is_jdk(p: Path) -> bool:
-    return all((p / "bin" / t).exists() for t in ("java", "javac", "jar"))
+    return all(_tool(p, t).exists() for t in ("java", "javac", "jar"))
 
 
 def find_jdk() -> Path:
@@ -139,11 +147,13 @@ def find_jdk() -> Path:
         tried.append(f"JAVA_HOME={home}")
         if _is_jdk(Path(home)):
             return Path(home)
-    for cand in sorted(glob.glob(WPILIB_GLOB), reverse=True):  # newest WPILib year first
-        tried.append(cand)
-        if _is_jdk(Path(cand)):
-            return Path(cand)
-    tried.append(WPILIB_GLOB)
+    globs = [WPILIB_GLOB, WINDOWS_WPILIB_GLOB] if sys.platform == "win32" else [WPILIB_GLOB]
+    for pattern in globs:
+        for cand in sorted(glob.glob(pattern), reverse=True):  # newest WPILib year first
+            tried.append(cand)
+            if _is_jdk(Path(cand)):
+                return Path(cand)
+    tried.extend(globs)
     raise JavaToolError("no JDK found (looked at: " + ", ".join(tried) + "). Install WPILib "
                         "(https://docs.wpilib.org) or set JAVA_HOME to a JDK 17.")
 
@@ -177,12 +187,12 @@ def build_agent(jdk: Path | None = None) -> Path:
     with tempfile.TemporaryDirectory() as tmp:
         classes = Path(tmp) / "classes"
         classes.mkdir()
-        _run([str(jdk / "bin" / "javac"), "--release", "17", "-cp", str(asm), "-d", str(classes), *map(str, src)])
+        _run([str(_tool(jdk, "javac")), "--release", "17", "-cp", str(asm), "-d", str(classes), *map(str, src)])
         mf = Path(tmp) / "MANIFEST.MF"
         mf.write_text(f"Premain-Class: scrimmage.agent.ScrimmageAgent\nClass-Path: {asm.name}\n"
-                      f"Scrimmage-Agent-Version: {AGENT_VERSION}\n")
+                      f"Scrimmage-Agent-Version: {AGENT_VERSION}\n", encoding="utf-8")
         built = Path(tmp) / "agent.jar"
-        _run([str(jdk / "bin" / "jar"), "cfm", str(built), str(mf), "-C", str(classes), "."])
+        _run([str(_tool(jdk, "jar")), "cfm", str(built), str(mf), "-C", str(classes), "."])
         out = agent_jar_path()
         _write_atomic(out, built.read_bytes())
     return out
@@ -272,7 +282,7 @@ def write_vendordep(project: Path) -> Path:
         _replace_dir(src, dest)
         out.parent.mkdir(exist_ok=True)
         # Two-space indent: what WPILib's Spotless setup (gson, 2 spaces) formats it to, so a build leaves it alone.
-        out.write_text(json.dumps(vendordep_json(), indent=2) + "\n")
+        out.write_text(json.dumps(vendordep_json(), indent=2) + "\n", encoding="utf-8")
     except OSError as e:
         raise JavaToolError(f"can't write the vendordep into {project}: {e.strerror or e}") from None
     return out

@@ -1,0 +1,5 @@
+# The prebuilt Windows lockstep extension's stamp hashes this source (lockstep/tools/stamp.py, CRLF read as LF too):
+# keep it LF in every checkout, and the DLL byte for byte.
+lockstep/src/*.cpp text eol=lf
+lockstep/CMakeLists.txt text eol=lf
+*.dll binary

@@ -35,8 +35,9 @@ RobotPy robots that use `robotpy-rev` work too, through Scrimmage's RobotPy lock
 1. Install robotpy-rev 2026.0.4 or later (below 2027): `pip install robotpy-rev`, or install Scrimmage with its
    `robotpy` extra (`pip install -e ".[robotpy]"`), which also brings RobotPy itself and commands2.
 2. Install the extension: `pip install ./lockstep`, on any computer. It must be version 0.6.0 or later; **reinstall it
-   after updating Scrimmage** (`pip install ./lockstep` again). On Windows and macOS it installs the REV helper only
-   (no C++ compiler needed), without lockstep: the robot runs in real time there. A RobotPy config run with `--scrimmage-lockstep` refuses to start with
+   after updating Scrimmage** (`pip install ./lockstep` again). On Windows no C++ compiler is needed: it carries the
+   extension prebuilt (Windows x64; 0.8.0 or later). On macOS and Windows on ARM it installs the REV helper only,
+   without lockstep: the robot runs in real time there. A RobotPy config run with `--scrimmage-lockstep` refuses to start with
    an older one and says so. A robot with valves on a REV Pneumatic Hub needs 0.7.0 or later (see
    [pneumatics.md](pneumatics.md#robot-code)).
 3. Put `--scrimmage-lockstep` in `[robot_program] command`, the usual RobotPy command:
@@ -60,7 +61,8 @@ naming the first caller. Your code needs no changes; it just has no effect under
 **Runs repeat.** REV's simulated sensor noise comes from REVLib's C++ library, which seeds it from
 `std::random_device`, and robotpy-rev gives Python no way to seed it. So when Scrimmage starts a RobotPy robot with
 `--scrimmage-lockstep`, it preloads a small library from the extension (`LD_PRELOAD`) that makes `std::random_device`
-return the same numbers every run, so runs repeat exactly, as for Java.
+return the same numbers every run, so runs repeat exactly, as for Java. On Linux only: on Windows the noise isn't
+pinned (see [Limitations](#limitations)).
 A robot you start yourself (attach mode) doesn't get the library; to get it, start the robot with
 `LD_PRELOAD=$(python -c "import scrimmage_lockstep; print(scrimmage_lockstep.seed_library_path())")` in its environment.
 
@@ -188,7 +190,7 @@ the simulated position.
 |---|---|---|
 | Speed | Lockstep at any `--speed`, faster than real time | Real time only, not lockstep: Phoenix's simulation runs on the wall clock (CTRE confirmed in October 2026 that Phoenix simulation supports only real time) |
 | Controller logic | REV's own simulated controller (`SparkSim`), driven by the agent | Phoenix's own simulation, driven through its sim state |
-| Repeatable | Java: yes (except MAXMotion; see [Limitations](#limitations)): REV's simulation follows the simulated clock and its sensor noise is seeded, so the same config gives the same log. RobotPy: yes, through a preloaded library that pins the noise's seed (see [RobotPy](#robotpy)) | No: Phoenix 6 follows the wall clock, so results are close from run to run but not identical |
+| Repeatable | Java: yes (except MAXMotion; see [Limitations](#limitations)): REV's simulation follows the simulated clock and its sensor noise is seeded, so the same config gives the same log. RobotPy: yes on Linux, through a preloaded library that pins the noise's seed (see [RobotPy](#robotpy)); on Windows close but not identical (see [Limitations](#limitations)) | No: Phoenix 6 follows the wall clock, so results are close from run to run but not identical |
 | Robot code changes | None | None |
 
 A robot with both kinds of device runs in real time, not lockstep (the notice names the Phoenix devices only).
@@ -226,5 +228,9 @@ A robot with both kinds of device runs in real time, not lockstep (the notice na
 - A robot-code `setPosition` on an encoder from another thread (for example a `Notifier`) can occasionally be
   lost.
 - Phoenix 6 devices on the same robot still force real time (not lockstep).
-- Lockstep (faster than real time, repeatable) and the fixed seed (`LD_PRELOAD`) are Linux only. On Windows and macOS
-  the REV helper still drives the SPARKs, in real time.
+- Lockstep (faster than real time, repeatable) runs on Linux and Windows x64. The fixed seed (`LD_PRELOAD`) is Linux
+  only: on Windows a RobotPy REV robot runs in lockstep, but REV's sensor noise differs from run to run, so two runs
+  part once the noise reaches the physics (with velocity control, about half a second into the spin in a test). Its
+  scenarios still pass on their tolerances. Pinning it there would mean patching REV's simulation library as it
+  loads, fragile across REV releases. Java REV robots don't need it: the agent sets their noise. On macOS and Windows
+  on ARM the REV helper still drives the SPARKs, in real time.

@@ -7,13 +7,14 @@ SPARK MAX 2 following it inverted, on a motor that faces the other way across th
 
 REVLib's simulated sensor noise comes from its C++ library, seeded from std::random_device, which robotpy-rev gives no
 way to seed; scrimmage preloads scrimmage-lockstep's seed library to pin it, so two runs are identical (checked
-below, as test_rev_e2e.py does for Java).
+below, as test_rev_e2e.py does for Java). On Linux only: on Windows the noise isn't pinned (docs/rev.md).
 
 Each scenario is run once and its checks share the recording."""
 
 import asyncio
 import math
 import re
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,10 +37,10 @@ REV_LINE = re.compile(r"^\[\s*([\d.]+)\] rev loop=(\d+) (.*)$")  # a robot.log l
 
 def probe_config(tmp: Path, **env) -> Path:
     """tests/rev_probe_py.toml, run from `tmp` with extra [robot_program] env."""
-    text = (TESTS / "rev_probe_py.toml").read_text().replace('cwd = "rev_probe_py"', f'cwd = "{PROBE}"')
+    text = (TESTS / "rev_probe_py.toml").read_text().replace('cwd = "rev_probe_py"', f'cwd = "{PROBE.as_posix()}"')   # a Windows path's backslashes are TOML escapes
     if env:
         table = ", ".join(f'{k} = "{v}"' for k, v in env.items())
-        text = text.replace(f'cwd = "{PROBE}"\n', f'cwd = "{PROBE}"\nenv = {{ {table} }}\n')
+        text = text.replace(f'cwd = "{PROBE.as_posix()}"\n', f'cwd = "{PROBE.as_posix()}"\nenv = {{ {table} }}\n')
     p = tmp / "rev_probe_py.toml"
     p.write_text(text)
     return p
@@ -90,7 +91,7 @@ def parse_prints(log: str) -> list[dict]:
 def run_probe(tmp: Path, steps: list[str], **env) -> Run:
     """Run the probe through `steps` (scenario [[step]] tables) and record it."""
     cfg = probe_config(tmp, **env)
-    scenario = load_scenario_text(f'config = "{cfg}"\n' + "".join(steps), tmp / "probe_scenario.toml")
+    scenario = load_scenario_text(f'config = "{Path(cfg).as_posix()}"\n' + "".join(steps), tmp / "probe_scenario.toml")
     run = Run()
     clock: list[float] = []
 
@@ -336,6 +337,8 @@ def velocity_runs(tmp_path_factory) -> tuple[Run, Run]:
                  for i in range(2))
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="RobotPy REV's sensor noise isn't pinned on Windows (no seed "
+                    "library there: docs/rev.md), so runs part once velocity control acts on it")
 def test_two_runs_give_identical_physics(velocity_runs):
     """REV's sensor noise repeats (scrimmage preloads the seed library) and the robot's clock starts at exactly 0,
     so velocity control gives bit-identical physics, and the robot reads bit-identical values."""

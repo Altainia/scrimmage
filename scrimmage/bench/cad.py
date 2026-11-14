@@ -147,7 +147,7 @@ def check_closed(v: np.ndarray, f: np.ndarray, path: Path) -> None:
 
 def write_obj(path: Path, v: np.ndarray, f: np.ndarray) -> None:
     lines = [f"v {x:.9g} {y:.9g} {z:.9g}" for x, y, z in v] + [f"f {a + 1} {b + 1} {c + 1}" for a, b, c in f]
-    Path(path).write_text("\n".join(lines) + "\n")
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def volume(v: np.ndarray, f: np.ndarray) -> float:

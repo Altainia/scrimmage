@@ -5,11 +5,14 @@
 //     the FRC Driver Station is the DS
 //   - appends the scrimmage_lockstep HALSim extension (SCRIMMAGE_LOCKSTEP_SO) to HALSIM_EXTENSIONS
 //   - loads the sim-write guard agent (SCRIMMAGE_AGENT_JAR) so robot-side sim models can't fight the physics
+//   - puts scrimmage's run token (SCRIMMAGE_RUN_TOKEN) on the robot JVM's command line, where scrimmage finds a robot
+//     left running on Windows (it can't read another process's environment there)
 //   - writes the robot's console to SCRIMMAGE_CONSOLE_FILE when scrimmage sets it: Gradle's own console passes task
 //     output on in batches, seconds behind at first, which a fast lockstep run can outrun
 // HALSIMWS_HOST/HALSIMWS_PORT reach the robot JVM through the ./gradlew environment.
 def lockstepSo = System.getenv("SCRIMMAGE_LOCKSTEP_SO")
 def consoleFile = System.getenv("SCRIMMAGE_CONSOLE_FILE")
+def runToken = System.getenv("SCRIMMAGE_RUN_TOKEN")
 final boolean DS_SOCKET = System.getenv("SCRIMMAGE_DS_SOCKET") == "1"
 // The agent jar: scrimmage passes SCRIMMAGE_AGENT_JAR; hand-run, fall back to where `scrimmage java build` puts
 // it (java_tools.agent_jar_path(): $SCRIMMAGE_CACHE, else ~/.cache/scrimmage/java).
@@ -57,6 +60,7 @@ allprojects { p ->
             def simTasks = p.tasks.matching { it.name in SIM_TASKS }
             simTasks.configureEach { t ->
                 if (AGENT_FOUND) t.jvmArgs("-javaagent:" + agentJar)
+                if (runToken) t.jvmArgs("-Dscrimmage.runToken=" + runToken)   // robot_process.RUN_TOKEN_ARG
             }
             if (lockstepSo || consoleFile) {
                 // GradleRIO's doFirst overwrites HALSIM_EXTENSIONS; insert ours right before the exec action.

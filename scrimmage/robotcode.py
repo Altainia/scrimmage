@@ -197,7 +197,7 @@ def _check_gradle_built(info: ProjectInfo) -> Check:
 
 
 def _check_robotpy_helpers(info: ProjectInfo) -> Check:
-    """Off Linux: lockstep isn't built there, but a RobotPy robot still needs the package, for its REV SPARK and
+    """Without lockstep (macOS, Windows on ARM): a RobotPy robot still needs the package, for its REV SPARK and
     LaserCAN helpers and because the RobotPy command (ROBOTPY_ARGS) carries --scrimmage-lockstep."""
     have, _ = _lockstep_state(info.python)
     from .session import LOCKSTEP_VERSION
@@ -215,21 +215,27 @@ def _check_robotpy_helpers(info: ProjectInfo) -> Check:
 
 
 def _check_lockstep(info: ProjectInfo) -> Check:
-    if sys.platform != "linux":
+    """Linux and Windows x64 alike, but Windows needs WINDOWS_LOCKSTEP_VERSION (the first with its prebuilt extension;
+    an older one still drives the helpers, in real time) and its compiled part is that DLL, not a build."""
+    from .session import LOCKSTEP_VERSION, WINDOWS_LOCKSTEP_VERSION, lockstep_platform
+    where = lockstep_platform()
+    if where is None:
         if info.kind == "robotpy":
             return _check_robotpy_helpers(info)
         return Check("lockstep", None, i18n.t("not available on this computer: the robot runs in real time"))
     have, imports = _lockstep_state(info.python)
-    from .session import LOCKSTEP_VERSION
-    need = ".".join(map(str, LOCKSTEP_VERSION))
+    need_version = WINDOWS_LOCKSTEP_VERSION if where == "windows" else LOCKSTEP_VERSION
+    need = ".".join(map(str, need_version))
     if have is None:
         return Check("lockstep", False, i18n.t("The fast-simulation add-on isn't installed for this robot's Python: install it to run "
                                                "faster than real time and to pause the robot.") if info.python
                      else i18n.t("The fast-simulation add-on isn't installed: install it to run faster than real time and to "
                                  "pause the robot."), fix="install_lockstep")
-    if _version_tuple(have) < LOCKSTEP_VERSION:
-        return Check("lockstep", False, i18n.t("The fast-simulation add-on is too old ({have}; this scrimmage needs {need} or newer): update it.",
-                                               have=have, need=need), fix="install_lockstep")
+    if _version_tuple(have) < need_version:
+        return Check("lockstep", False, i18n.t("The fast-simulation add-on is too old ({have}; this scrimmage needs {need} or newer): update it to run faster than real time.",
+                                               have=have, need=need) if where == "windows"
+                     else i18n.t("The fast-simulation add-on is too old ({have}; this scrimmage needs {need} or newer): update it.",
+                                 have=have, need=need), fix="install_lockstep")
     if not imports:
         return Check("lockstep", False, i18n.t("The fast-simulation add-on is installed for this robot's Python but doesn't load (its "
                                                "compiled part is missing): install it again.") if info.python
@@ -239,7 +245,8 @@ def _check_lockstep(info: ProjectInfo) -> Check:
 
 
 def _check_realtime(info: ProjectInfo) -> Check:
-    if sys.platform != "linux":
+    from .session import lockstep_platform
+    if lockstep_platform() is None:
         return Check("realtime", None, i18n.t("On this computer the robot runs in real time (one second of robot is one second of waiting)."))
     if "Phoenix 6" in info.vendors:
         return Check("realtime", None, i18n.t("This robot uses CTRE Phoenix 6, so it runs in real time: it can't be paused or sped up."))
@@ -381,8 +388,16 @@ def run_fix(fix: str, info: ProjectInfo, out: Callable[[str], None], cancel: thr
             return Check("lockstep", False, i18n.t("scrimmage can't find its lockstep folder (it isn't running from its downloaded copy). From the scrimmage folder, run: {by_hand}",
                                                    by_hand=by_hand), fix=fix)
         code, tail = _stream([python, "-m", "pip", "install", str(LOCKSTEP_DIR)], None, None, out, **kw)
-        if code != 0 and sys.platform != "linux":   # pure Python there (no lockstep): no compiler needed
-            return _failed("lockstep", lambda: i18n.t("Installing scrimmage's RobotPy add-on didn't work."),
+        from .session import lockstep_platform
+        if code != 0 and sys.platform == "win32" and any("WinError 5" in l or "Access is denied" in l for l in tail):
+            # a running robot program holds the DLL open
+            return _failed("lockstep", lambda: i18n.t("Installing the fast-simulation add-on didn't work."),
+                           lambda: i18n.t("A running robot program is using it: stop the session, then try again."),
+                           tail, fix, code)
+        if code != 0 and sys.platform != "linux":   # pure Python there (Windows x64: a prebuilt DLL): no compiler needed
+            return _failed("lockstep", (lambda: i18n.t("Installing the fast-simulation add-on didn't work."))
+                           if lockstep_platform() == "windows"
+                           else lambda: i18n.t("Installing scrimmage's RobotPy add-on didn't work."),
                            lambda: i18n.t("It needs the internet the first time. To try by hand, run: {by_hand}",
                                           by_hand=by_hand), tail, fix, code)
         if code != 0:

@@ -56,6 +56,28 @@ NOT_LISTENING = N_("the robot program isn't listening for the Driver Station (UD
 # scrimmage-lockstep: 0.2.0 REV helper, 0.3.0 clock at 0, 0.4.0 seed, 0.5.0 sim_values, 0.6.0 clock at 1 us (AdvantageKit)
 LOCKSTEP_VERSION = (0, 6, 0)
 PH_LOCKSTEP_VERSION = (0, 7, 0)   # 0.7.0 relays the REV Pneumatic Hub; needed only by robots with valves on one
+# 0.8.0 carries the prebuilt Windows x64 extension: older ones still drive REV SPARKs and LaserCANs there, in real time
+WINDOWS_LOCKSTEP_VERSION = (0, 8, 0)
+WINDOWS_X64 = ("AMD64", "x86_64")   # platform.machine() on Windows x64 (as scrimmage_lockstep.WINDOWS_X64)
+
+
+def lockstep_platform() -> str | None:
+    """Where this computer runs robots in lockstep: "linux" (the extension built by pip), "windows" (x64: the prebuilt
+    one in scrimmage-lockstep 0.8.0 or later), or None (macOS, Windows on ARM: real time)."""
+    import platform
+    if sys.platform == "linux":
+        return "linux"
+    if sys.platform == "win32" and platform.machine() in WINDOWS_X64:
+        return "windows"
+    return None
+
+
+def _version_tuple(text: str) -> tuple[int, ...]:
+    nums = []
+    for part in text.split(".")[:3]:
+        digits = "".join(itertools.takewhile(str.isdigit, part))
+        nums.append(int(digits) if digits else 0)
+    return tuple(nums + [0] * (3 - len(nums)))
 
 
 def lockstep_install(python: str | None = None) -> str:
@@ -113,11 +135,7 @@ def lockstep_version_problem(config: Config) -> str | None:
                      "it isn't installed: `{install}`", **said)
         return t("{config} runs a RobotPy robot with --scrimmage-lockstep, which needs scrimmage-lockstep {need} or "
                  "later, but it isn't installed: `{install}`", **said)
-    nums = []
-    for part in have.split(".")[:3]:
-        digits = "".join(itertools.takewhile(str.isdigit, part))
-        nums.append(int(digits) if digits else 0)
-    if tuple(nums + [0] * (3 - len(nums))) < need_version:
+    if _version_tuple(have) < need_version:
         said["have"] = have
         if why == "ph":
             return t("{config} binds valves on a REV Pneumatic Hub, which needs scrimmage-lockstep {need} or later "
@@ -131,6 +149,30 @@ def lockstep_version_problem(config: Config) -> str | None:
         return t("{config} runs a RobotPy robot with --scrimmage-lockstep, which needs scrimmage-lockstep {need} or "
                  "later (installed: {have}): reinstall it with `{install}`", **said)
     return None
+
+
+def lockstep_update_note(config: Config) -> str | None:
+    """On Windows x64: why a robot that would run in lockstep runs in real time instead, its scrimmage-lockstep being
+    older than WINDOWS_LOCKSTEP_VERSION (the first with the Windows extension). Not a problem that stops the session:
+    the older package still drives REV SPARKs and LaserCANs. None everywhere else, and when nothing needs saying (not
+    installed is lockstep_version_problem's to say, or, for Java, real time as before)."""
+    from importlib import metadata
+    if lockstep_platform() != "windows":
+        return None
+    rp = config.robot_program
+    language = robot_language(rp.command) if rp is not None else None
+    if not (language == "java" or (language == "python" and "--scrimmage-lockstep" in rp.command)):
+        return None
+    try:
+        have = metadata.version("scrimmage-lockstep")
+    except metadata.PackageNotFoundError:
+        return None
+    if _version_tuple(have) >= WINDOWS_LOCKSTEP_VERSION:
+        return None
+    return t("{config} runs in real time: scrimmage-lockstep {have} has no lockstep for Windows. Update it to {need} "
+             "or later to run faster than real time: `{install}`", config=config.path, have=have,
+             need=".".join(map(str, WINDOWS_LOCKSTEP_VERSION)),
+             install=lockstep_install(rp.command[0] if language == "python" and rp.command else None))
 
 
 # A real-time advance of s seconds gives up after ADVANCE_FACTOR s + ADVANCE_EXTRA seconds of wall time, plus the time
@@ -242,6 +284,7 @@ class Session:
             rp = real_ds_program(rp)
             self.config = dataclasses.replace(self.config, robot_program=rp)
         self._ds_notes: list[str] = []          # the real-DS listening check's note
+        self._lockstep_notes: list[str] = []    # Windows: an older scrimmage-lockstep runs it in real time
         self._ds_watch: asyncio.Task | None = None
         if rp is not None and not attach:
             from . import java_tools
@@ -285,6 +328,9 @@ class Session:
             raise SessionError(t("this session has already been started"))
         if not self.attach and (problem := lockstep_version_problem(cfg)):
             raise SessionError(problem)
+        self._lockstep_notes = [note] if not self.attach and (note := lockstep_update_note(cfg)) else []
+        for note in self._lockstep_notes:
+            log.warning("%s", note)
         if self.real_ds and not self.attach and (problem := ds_ports_problem()):
             raise SessionError(problem)
         if not self.attach and self.nt and _listening("127.0.0.1", cfg.nt_port):
@@ -758,7 +804,7 @@ class Session:
                 "connected": b is not None and b.ws is not None,
                 "port": b.bound_port if b is not None else None, "robot": robot,
                 "devices": sorted(f"{t}/{d}" for t, d in b.hal.devices) if b is not None else [],
-                "warnings": [*self.world.warnings, *self.phoenix_warnings(), *self._ds_notes],
+                "warnings": [*self.world.warnings, *self.phoenix_warnings(), *self._ds_notes, *self._lockstep_notes],
                 "rev_state": self.rev_state(),
                 **self._device_status(), **self._phoenix_status()}
 

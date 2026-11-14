@@ -12,6 +12,7 @@ import pytest
 
 import scrimmage.bridge as bridge_mod
 import scrimmage.session as session_mod
+from scrimmage import java_tools
 from fake_robot import FakeRobot, next_port, wait_until
 from scrimmage.session import Session, SessionError
 
@@ -802,6 +803,45 @@ def test_lockstep_version_ok_at_0_6_0(tmp_path, monkeypatch, extra):
     assert session_mod.lockstep_version_problem(cfg) is None
     monkeypatch.setattr(metadata, "version", lambda name: "0.10.1")
     assert session_mod.lockstep_version_problem(cfg) is None
+
+
+@pytest.fixture
+def windows_x64(monkeypatch):
+    import platform
+    monkeypatch.setattr(session_mod.sys, "platform", "win32")
+    monkeypatch.setattr(platform, "machine", lambda: "AMD64")
+
+
+@pytest.mark.parametrize("command", [ROBOTPY_COMMAND, '["./gradlew", "-I", "{scrimmage_java}/scrimmage.init.gradle", '
+                                                      '"simulateJava"]'])
+def test_on_windows_an_older_lockstep_runs_in_real_time_with_a_note(tmp_path, monkeypatch, windows_x64, command):
+    """Windows x64 asks for 0.8.0, the first with the prebuilt extension; an older one (not too old for Linux) doesn't
+    stop the session, it says the robot runs in real time and how to update."""
+    from importlib import metadata
+    monkeypatch.setattr(metadata, "version", lambda name: "0.7.0")
+    monkeypatch.setattr(java_tools, "agent_missing_message", lambda *a, **k: None)  # no built agent in CI
+    cfg = Session(fake_config(tmp_path, command), nt=False).config
+    assert session_mod.lockstep_version_problem(cfg) is None
+    note = session_mod.lockstep_update_note(cfg)
+    assert note.startswith(f"{cfg.path} runs in real time: scrimmage-lockstep 0.7.0 has no lockstep for Windows. "
+                           "Update it to 0.8.0 or later to run faster than real time: `") and "pip install" in note
+    monkeypatch.setattr(metadata, "version", lambda name: "0.8.0")
+    assert session_mod.lockstep_update_note(cfg) is None
+
+
+def test_the_windows_note_is_for_windows_x64_lockstep_robots_only(tmp_path, monkeypatch):
+    import platform
+    from importlib import metadata
+    monkeypatch.setattr(metadata, "version", lambda name: "0.7.0")
+    cfg = Session(fake_config(tmp_path, ROBOTPY_COMMAND), nt=False).config
+    for plat, machine in (("linux", "x86_64"), ("win32", "ARM64"), ("darwin", "arm64")):
+        monkeypatch.setattr(session_mod.sys, "platform", plat)
+        monkeypatch.setattr(platform, "machine", lambda: machine)
+        assert session_mod.lockstep_update_note(cfg) is None, plat
+    monkeypatch.setattr(session_mod.sys, "platform", "win32")
+    monkeypatch.setattr(platform, "machine", lambda: "AMD64")
+    real_time = '["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client"]'
+    assert session_mod.lockstep_update_note(Session(fake_config(tmp_path, real_time), nt=False).config) is None
 
 
 def test_session_sim_mode_sets_the_robots_env():

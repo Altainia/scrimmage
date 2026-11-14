@@ -325,7 +325,7 @@ def _read(entry) -> FlexFit | None:
 
 def _shipped(kind: PieceKind, timestep: float) -> FlexFit | None:
     try:
-        table = json.loads(SHIPPED_FITS.read_text())
+        table = json.loads(SHIPPED_FITS.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     if not isinstance(table, dict) or (table.get("fit_version"), table.get("mesh"), table.get("timestep")) != (
@@ -337,7 +337,7 @@ def _shipped(kind: PieceKind, timestep: float) -> FlexFit | None:
 
 def _cached(kind: PieceKind, timestep: float) -> FlexFit | None:
     try:
-        return _read(json.loads(cache_path(kind, timestep).read_text()))
+        return _read(json.loads(cache_path(kind, timestep).read_text(encoding="utf-8")))
     except (OSError, ValueError):
         return None
 
@@ -348,7 +348,7 @@ def _write_cache(kind: PieceKind, fit: FlexFit, timestep: float) -> None:
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}")
     tmp.write_text(json.dumps({"E": fit.E, "beta": fit.beta, "stiffness": kind.stiffness,
                                "restitution": kind.restitution, "mesh": list(MESH), "timestep": timestep,
-                               "fit_version": FIT_VERSION}))
+                               "fit_version": FIT_VERSION}), encoding="utf-8")
     os.replace(tmp, path)
 
 

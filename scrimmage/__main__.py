@@ -74,6 +74,9 @@ def _leading(argv: list[str]) -> tuple[dict[str, str], list[str]]:
 
 
 def main(argv: list[str] | None = None) -> None:
+    for stream in (sys.stdout, sys.stderr):  # Windows pipes use the code page: print what it can't show as "?"
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     ap = argparse.ArgumentParser(prog="scrimmage", description="Simulate a WPILib robot program in a MuJoCo world.")
     ap.add_argument("--units", choices=SYSTEMS,
                     help="show values in imperial or metric units for this run (default: the Units setting, which "
@@ -698,7 +701,7 @@ def _air(args) -> None:
             raise ValueError("--match-seconds wants a time above 0 s")
         path = args.config.resolve()
         try:
-            cfg = tomllib.loads(path.read_text())
+            cfg = tomllib.loads(path.read_text(encoding="utf-8"))
         except tomllib.TOMLDecodeError as e:
             raise ValueError(f"{path}: {e}") from None
         built = assemble(cfg, path.parent)
@@ -850,7 +853,7 @@ def _model(args) -> None:
             raise ConfigError(f"this config uses a hand-written model: {mjcf.resolve()}")
         xml = world.parts.spec.to_xml()
         if args.output is not None:
-            args.output.write_text(xml)
+            args.output.write_text(xml, encoding="utf-8")
         else:
             print(xml)
     except (ConfigError, ValueError, OSError) as e:

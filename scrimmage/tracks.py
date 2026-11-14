@@ -146,7 +146,7 @@ def parse_track(text: str, path: Path) -> Track:
 def load_track(path: Path) -> Track:
     path = Path(path)
     try:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise TrackError(i18n.t("file not found: {path}", path=path)) from None
     except IsADirectoryError:
@@ -186,4 +186,4 @@ def write_track(path: Path, samples: list[Sample]) -> None:
             row += [("1" if pi.buttons[i] else "0") if i < len(pi.buttons) else "0" for i in range(w["button"])]
             row += [str(int(pi.povs[i])) if i < len(pi.povs) else "-1" for i in range(w["pov"])]
         rows.append(",".join(row))
-    Path(path).write_text("\n".join(rows) + "\n")
+    Path(path).write_text("\n".join(rows) + "\n", encoding="utf-8")

@@ -91,6 +91,6 @@ def convex_split(v: np.ndarray, f: np.ndarray) -> list[tuple[np.ndarray, np.ndar
     path = SHAPED_CACHE / f"{hashlib.sha256(text.encode()).hexdigest()[:16]}.obj"
     if not path.is_file():
         tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}")
-        tmp.write_text(text)
+        tmp.write_text(text, encoding="utf-8")
         os.replace(tmp, path)
     return [read_mesh(p) for p in convex_pieces(path, "m")]

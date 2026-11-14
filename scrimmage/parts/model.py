@@ -721,7 +721,7 @@ def load_part(path: Path) -> Part:
     path = Path(path)
     file = path / "part.toml" if path.is_dir() else path
     try:
-        raw = tomllib.loads(file.read_text())
+        raw = tomllib.loads(file.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise PartError(i18n.t("part file not found: {file}", file=file)) from None
     except (OSError, UnicodeDecodeError) as e:
@@ -733,7 +733,7 @@ def load_part(path: Path) -> Part:
     if edits.is_file():
         from .overlay import apply_overlay
         try:
-            text = tomllib.loads(edits.read_text())
+            text = tomllib.loads(edits.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError) as e:
             raise PartError(i18n.t("can't read {edits}: {error}", edits=edits, error=e)) from None
         except tomllib.TOMLDecodeError as e:
@@ -744,4 +744,4 @@ def load_part(path: Path) -> Part:
 
 
 def dump_part(p: Part, path: Path) -> None:
-    Path(path).write_text(dumps(part_to_dict(p)))
+    Path(path).write_text(dumps(part_to_dict(p)), encoding="utf-8")

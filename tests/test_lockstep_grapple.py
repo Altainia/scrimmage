@@ -246,27 +246,93 @@ def test_load_extension_installs_the_grapple_helper(monkeypatch, capsys, tmp_pat
     assert capsys.readouterr().out.startswith(P + "loaded (python ")
 
 
-@pytest.mark.parametrize("platform", ["win32", "darwin"])
-def test_load_extension_off_linux_installs_the_helpers_without_the_library(monkeypatch, capsys, caplog, tmp_path,
-                                                                          platform):
-    """Lockstep is built only on Linux: elsewhere the package has no library, so loading it says once that the robot
-    runs in real time and still installs the helpers."""
+@pytest.mark.parametrize("platform,machine", [("darwin", "arm64"), ("win32", "ARM64")])
+def test_load_extension_without_lockstep_installs_the_helpers_without_the_library(monkeypatch, capsys, caplog, tmp_path,
+                                                                                 platform, machine):
+    """Lockstep is built only for Linux and Windows x64: elsewhere the package has no library, so loading it says once
+    that the robot runs in real time and still installs the helpers."""
     fakes = Fakes()
     for name, mod in fakes.modules().items():
         monkeypatch.setitem(sys.modules, name, mod)
     monkeypatch.setitem(sys.modules, "rev", None)
     fakes.hal.loadOneExtension = lambda path: pytest.fail(f"loaded {path}")
     pkg = load_package(monkeypatch)
-    monkeypatch.setattr(pkg, "library_path", lambda: tmp_path / "missing.so")
     monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(pkg.platform, "machine", lambda: machine)
+    assert not pkg.library_path().exists()
     with caplog.at_level("INFO", logger="scrimmage_lockstep"):
         pkg.loadExtension()
     assert [r.getMessage() for r in caplog.records] == [
-        "lockstep is Linux only for now: on this computer the robot runs in real time"]
+        "lockstep runs on Linux and Windows x64 only: on this computer the robot runs in real time"]
     helper = sys.modules["scrimmage_lockstep.grapple"]
     assert fakes.g.LaserCAN is helper.LaserCAN
     fakes.g.LaserCAN(7)
     assert capsys.readouterr().out.startswith(P + "loaded (python ")
+
+
+@pytest.mark.parametrize("platform,machine,want", [
+    ("linux", "x86_64", "lib/libhalsim_scrimmage_lockstep.so"),
+    ("linux", "aarch64", "lib/libhalsim_scrimmage_lockstep.so"),
+    ("win32", "AMD64", "lib/win_amd64/halsim_scrimmage_lockstep.dll"),
+    ("win32", "x86_64", "lib/win_amd64/halsim_scrimmage_lockstep.dll"),
+    ("win32", "ARM64", "lib/win_arm64/halsim_scrimmage_lockstep.dll"),
+    ("darwin", "arm64", "lib/libhalsim_scrimmage_lockstep.dylib"),
+])
+def test_library_path_is_this_computers_extension(monkeypatch, platform, machine, want):
+    pkg = load_package(monkeypatch)
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(pkg.platform, "machine", lambda: machine)
+    assert pkg.library_path() == PKG_DIR.resolve() / want
+    assert pkg.windows_x64() is (want == "lib/win_amd64/halsim_scrimmage_lockstep.dll")
+
+
+def windows_x64_package(monkeypatch, tmp_path, load, lib_exists=True):
+    """The package loaded as on Windows x64 with fake hal (loadOneExtension = `load`) and a DLL that exists or not."""
+    fakes = Fakes()
+    for name, mod in fakes.modules().items():
+        monkeypatch.setitem(sys.modules, name, mod)
+    monkeypatch.setitem(sys.modules, "rev", None)
+    fakes.hal.loadOneExtension = load
+    pkg = load_package(monkeypatch)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(pkg.platform, "machine", lambda: "AMD64")
+    lib = tmp_path / "halsim_scrimmage_lockstep.dll"
+    if lib_exists:
+        lib.write_bytes(b"")
+    monkeypatch.setattr(pkg, "library_path", lambda: lib)
+    return pkg, fakes, lib
+
+
+def test_load_extension_on_windows_x64_loads_the_dll(monkeypatch, caplog, tmp_path):
+    loaded = []
+    pkg, fakes, lib = windows_x64_package(monkeypatch, tmp_path, lambda path: loaded.append(path) or 0)
+    with caplog.at_level("INFO", logger="scrimmage_lockstep"):
+        pkg.loadExtension()
+    assert loaded == [str(lib)] and caplog.records == []
+    assert fakes.g.LaserCAN is sys.modules["scrimmage_lockstep.grapple"].LaserCAN
+
+
+def raises(path):
+    raise RuntimeError("no such procedure")
+
+
+@pytest.mark.parametrize("load,lib_exists,said", [
+    (lambda path: pytest.fail(f"loaded {path}"), False, "is missing (reinstall scrimmage-lockstep), so the robot runs "
+                                                        "in real time"),
+    (lambda path: -1, True, "(error -1; robotpy-hal "),
+    (raises, True, "(error RuntimeError: no such procedure; robotpy-hal "),
+])
+def test_load_extension_on_windows_x64_falls_back_to_real_time_in_one_line(monkeypatch, caplog, tmp_path, load,
+                                                                          lib_exists, said):
+    """A missing DLL, or one that doesn't load (a RobotPy whose HAL it can't bind): one warning saying the robot runs in
+    real time, nothing raised into the robot program, and the helpers still installed."""
+    pkg, fakes, lib = windows_x64_package(monkeypatch, tmp_path, load, lib_exists)
+    with caplog.at_level("INFO", logger="scrimmage_lockstep"):
+        pkg.loadExtension()
+    lines = [r.getMessage() for r in caplog.records]
+    assert len(lines) == 1 and lines[0].startswith("lockstep couldn't load") and said in lines[0], lines
+    assert "real time" in lines[0] and caplog.records[0].levelname == "WARNING"
+    assert fakes.g.LaserCAN is sys.modules["scrimmage_lockstep.grapple"].LaserCAN
 
 
 def test_load_extension_on_linux_needs_the_library(monkeypatch, tmp_path):

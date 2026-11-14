@@ -90,7 +90,7 @@ class RunManager:
                                            why=e.strerror or e)) from None
             try:
                 snapshot = out_dir / "scenario.toml"
-                snapshot.write_text(snapshot_text)
+                snapshot.write_text(snapshot_text, encoding="utf-8")
             except OSError as e:
                 shutil.rmtree(out_dir, ignore_errors=True)
                 raise ScenarioError(i18n.t("can't write the run folder {folder}: {why}", folder=out_dir,
@@ -136,7 +136,8 @@ class RunManager:
 
     def kill_robots(self) -> None:
         """Kill, by their run tokens, the robot programs the worker thread started and hasn't stopped: for a worker
-        that didn't finish after Stop (Linux only; elsewhere a no-op)."""
+        that didn't finish after Stop (Linux; on Windows only Java robot programs, found by the token on their command
+        line; elsewhere a no-op)."""
         with self._lock:
             thread = self._thread
         if thread is not None and thread.ident is not None:
