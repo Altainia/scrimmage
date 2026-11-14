@@ -374,6 +374,8 @@ You describe the robot as a list of **parts**. Scrimmage assembles them into a M
 robot program's devices to their joints. There is no model file to write. A part is a stock part that ships
 with Scrimmage (a chassis, a swerve module, an elevator, an arm, a flywheel, a roller, a tank drive), or a
 folder you write with a `part.toml` (for an intake, say). The full reference is [docs/parts.md](docs/parts.md).
+To check the robot against a season's weight and size rules, run `scrimmage inspect <config>`
+([docs/inspection.md](docs/inspection.md)).
 
 The config is TOML, a plain text format of `key = value` lines. Each `[[part]]` is one part in the robot.
 Two words to know: a **slot** is a place on a part where a device plugs in (the elevator has a `lift` motor
