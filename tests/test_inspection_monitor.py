@@ -6,6 +6,10 @@ import asyncio
 import dataclasses
 import json
 import math
+import re
+
+import tomllib
+from pathlib import Path
 
 import mujoco
 import pytest
@@ -15,6 +19,7 @@ from range_fixtures import range_cfg
 from scrimmage import units
 from scrimmage.assembler import validate
 from scrimmage.checks import shown
+from scrimmage.inspection.measure import Extent
 from scrimmage.inspection.monitor import InspectionMonitor
 from scrimmage.inspection.spec import SEASONS, Limit
 from scrimmage.protocol import HalState
@@ -24,6 +29,7 @@ from scrimmage.world import World
 from test_range_checks import write_config, write_scenario
 
 IN = 0.0254
+ROOT = Path(__file__).resolve().parent.parent
 
 # A 0.6 m square chassis box (top at 0.15) with a 0.4 m arm on a hinge about y at x 0.25: at 0 it points up (inside
 # the frame, its top at 0.55 m, 21.7 in); at 90 deg it points forward, reaching 0.25 + 0.4 - 0.3 = 0.35 m past the
@@ -95,14 +101,63 @@ def test_the_monitor_skips_a_measure_the_season_has_no_limit_for(tmp_path):
 
 
 def test_a_height_exception_is_quoted(tmp_path):
-    """Lifted 1.2 m, the robot is over 2013's 60 in height, whose pyramid and auto zone exception is quoted."""
-    w = arm_world(tmp_path, {"season": 2013})
-    w.data.qpos[w.free_qadr + 2] += 1.2
+    """Against 2013's G22 lowered to 0.45 m, the arm raised (0.5 m from the box's bottom to the arm's top) is over;
+    pointing forward (0.12 m) it is within. The pyramid and auto zone exception is quoted."""
+    w = arm_world(tmp_path)
+    season = dataclasses.replace(SEASONS[2013], height=dataclasses.replace(SEASONS[2013].height, value=0.45))
+    pivot = w.model.jnt_qposadr[w.model.joint("pivot").id]
+    w.data.qpos[pivot] = math.pi / 2
     mujoco.mj_forward(w.model, w.data)
-    hold(w, 0.0, 0.02)                               # the next sample
-    [b] = w.inspection.breaches()
-    assert b.key == "height" and b.rule == "G22"
+    mon = InspectionMonitor(w, season)
+    assert [b.key for b in mon.breaches()] == []
+    for angle in (math.pi / 2, 0.0):
+        w.data.qpos[pivot] = angle
+        mujoco.mj_forward(w.model, w.data)
+        w.data.time += 0.02
+        mon.after_physics()
+    [b] = mon.breaches()
+    assert b.key == "height" and b.rule == "G22" and b.peak == pytest.approx(0.05, abs=1e-6)
     assert str(b.note()).endswith("; on the pyramid or in the auto zone (84 in.): not checked")
+
+
+def test_the_height_is_the_robot_s_own_lifted_or_tilted(tmp_path):
+    """The rules measure match height as if on a flat floor: lifted 0.1 m, or tilted 20 deg, the tucked arm robot
+    reads the same 0.5 m (from its box's bottom to its arm's top) as where it starts."""
+    w = arm_world(tmp_path, {"season": 2026})
+    ext, a = Extent(w), w.free_qadr
+    assert ext.read()[0] == pytest.approx(0.5, abs=1e-6)
+    w.data.qpos[a + 2] += 0.1
+    mujoco.mj_forward(w.model, w.data)
+    assert ext.read()[0] == pytest.approx(0.5, abs=1e-6)
+    tilt = math.radians(20)
+    w.data.qpos[a + 3:a + 7] = [math.cos(tilt / 2), math.sin(tilt / 2), 0.0, 0.0]
+    mujoco.mj_forward(w.model, w.data)
+    assert float(ext.points()[:, 2].max()) > 0.6 + 0.01      # its top is higher above the floor ...
+    assert ext.read()[0] == pytest.approx(0.5, abs=1e-6)     # ... its own height isn't
+
+
+def test_a_robot_on_the_2026_bump_is_not_over_its_height(tmp_path):
+    """configs/fastmode_range.toml (0.711 m, 28 in tall) set on the 2026 bump's near ramp and settled there: its top
+    is over 30 in above the floor, but its own height is what it was on the floor, so R107 isn't breached (the final
+    review saw "R107 ... over by 4.6 in" when height was the top's z)."""
+    path = ROOT / "configs" / "fastmode_range.toml"
+    raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    raw["range"] = {"file": "2026-bump", "start": "approach"}
+    raw["inspection"] = {"season": 2026}
+    w = World(raw, path.parent)
+    on_floor = Extent(w).read()[0]
+    assert on_floor == pytest.approx(0.7108, abs=1e-3)
+    d, a = w.data, w.free_qadr
+    d.qpos[a] = 4.625 - 0.3                          # the bump's crest is at x 4.625
+    d.qpos[a + 2] += 0.2
+    mujoco.mj_forward(w.model, d)
+    hal = HalState()
+    for _ in range(round(1.0 / w.model.opt.timestep)):
+        w.step(hal)
+    ext = Extent(w)
+    assert float(ext.points()[:, 2].max()) > 30 * IN + 0.01          # on the bump: its top is over 30 in up
+    assert ext.read()[0] == pytest.approx(on_floor, abs=1e-3)
+    assert not [b for b in w.inspection.breaches() if b.key == "height"]
 
 
 def test_the_diameter_is_the_smallest_circle(tmp_path):
@@ -152,11 +207,14 @@ def quick_nt(monkeypatch):
 
 
 def test_a_scenario_notes_the_start_and_a_breach_once(tmp_path, quick_nt):
-    """The default chassis (110.24 in perimeter, over 2026's 110 in) is a start note; lifted 1 m at the first watch,
-    it is over 2026's 30 in height until it falls back: one height note."""
+    """The default chassis (110.24 in perimeter, over 2026's 110 in) is a start note; its two-stage elevator (0.693 m
+    tall lowered) raised 0.4 m at the first watch is over 2026's 30 in height until it falls back: one height note,
+    updated in place while it lasts."""
     parts = [{"name": "drive", "stock": "chassis"},
              {"name": "dt", "stock": "differential", "attach": "drive.center", "ids": {"left": "PWM:0",
-                                                                                         "right": "PWM:1"}}]
+                                                                                         "right": "PWM:1"}},
+             {"name": "lift", "stock": "elevator", "attach": "drive.top", "travel": 0.8, "stages": 2,
+              "ids": {"lift": "PWM:2"}}]
     body = '[[step]]\nmode = "auto"\nduration = 0.5\n[[step]]\nmode = "auto"\nduration = 0.5\n'
     cfg = write_config(tmp_path, range_cfg(part=parts, inspection={"season": 2026}))
     scn = load_scenario(write_scenario(tmp_path, cfg, body))
@@ -166,7 +224,8 @@ def test_a_scenario_notes_the_start_and_a_breach_once(tmp_path, quick_nt):
         if not lifted:
             lifted.append(t)
             w = session.world
-            w.data.qpos[w.free_qadr + 2] += 1.0
+            for joint in ("lift.stage1", "lift.carriage"):
+                w.data.qpos[w.model.jnt_qposadr[w.model.joint(joint).id]] = 0.4
             mujoco.mj_forward(w.model, w.data)
 
     rep = asyncio.run(run_scenario(scn, tmp_path / "out", watch=watch))
@@ -175,6 +234,8 @@ def test_a_scenario_notes_the_start_and_a_breach_once(tmp_path, quick_nt):
     height = [n for n in rep.notes if n.startswith("2026 R107: height over")]
     assert len(start) == 1 and len(height) == 1, rep.notes
     assert rep.notes.index(start[0]) < rep.notes.index(height[0])
+    over_s = float(re.search(r"\((\d+\.\d+) s over in all\)", height[0]).group(1))
+    assert over_s > 0.05, height[0]                  # several samples, one note
     assert "height over the" in (tmp_path / "out" / "report.md").read_text(encoding="utf-8")
 
     plain = write_config(tmp_path, range_cfg(part=parts), name="plain.toml")

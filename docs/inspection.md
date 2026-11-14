@@ -33,8 +33,9 @@ feet and inches are converted to inches.
 
 2025 has no match height limit in the manual (it points to limits for parts of the field but gives no number), so
 the report says "no limit in 2025". The table lives in `scrimmage/inspection/seasons.toml`, one quoted rule per entry.
-In every season the robot must start inside its frame perimeter (bumpers and minor protrusions aside), so the start
-reach limit is 0, with a 1/4 in allowance for the minor protrusions each season's perimeter rule allows.
+In every season the robot must start inside its frame perimeter (minor protrusions aside, and bumpers from 2016):
+the no-overhang rule, 2013 R04, 2016 R4, 2020 R2, 2022 to 2026 R102. So the start reach limit is 0, with a 1/4 in
+allowance for the minor protrusions each season's perimeter rule allows, and the start reach line cites that rule.
 
 ## Choosing a season
 
@@ -69,8 +70,10 @@ and the bumpers 15 lb (an uncalibrated estimate with no source). Both say "estim
 to 0**, or the report subtracts weight your model never had. An over-limit weight that rests on an estimate still
 exits 1, and its line says so; the report never calls an estimated weight legal.
 
-The bumpers are checked too: one set against the per-set limit (2013 to 2024), or the weight with bumpers against the
-135 lb limit (2025, 2026).
+The bumpers are checked too, when you set `bumper_mass`: one set against the per-set limit (2013 to 2024). With the
+15 lb estimate the bumper line says it isn't checked (in 2020 to 2024 the estimate equals the limit, so comparing it
+would say nothing). In 2025 and 2026 the weight with bumpers is checked against the 135 lb limit, with or without
+`bumper_mass`. A line within its limit that rests on an estimate ends "with estimates": it isn't a pass.
 
 ## What each measure means in a model
 
@@ -82,8 +85,11 @@ raised is out of its starting configuration, and the report says so by what it m
   largest box on the robot's body, which for the stock chassis is its frame plate (so bumpers are out, as R104
   measures). A model without a box uses the outline of all the chassis's geoms, and the line says "no frame plate".
   A frame that isn't rectangular reads as its bounding rectangle, an overestimate, never an underestimate.
-- **Height**: the top of the robot's highest geom above the carpet. **Every geom counts, colliding or not**: an
-  elevator's stages are built `collide = false`, and the rule counts them. Bumpers count.
+- **Height**: the robot's height as if on a flat floor, as the rules measure it: from its lowest point to its highest
+  along the chassis's up. Standing level on the carpet that is its top above the carpet; driven onto a bump, tilted
+  or hanging from a chain, it stays the robot's own height, so a field element doesn't make it "over". **Every geom
+  counts, colliding or not**: an elevator's stages are built `collide = false`, and the rule counts them. Bumpers
+  count.
 - **Reach**: the largest horizontal distance from the frame outline to a part of a geom that isn't on the chassis's
   body. Round parts and meshes are measured by their own shapes, not their boxes.
 - **Start reach**: the same number, which must be within the frame (0, with a 1/4 in allowance). The line names the

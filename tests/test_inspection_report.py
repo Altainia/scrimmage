@@ -111,8 +111,11 @@ def test_the_start_reach_names_the_part(tmp_path):
     with units.fixed("imperial"):
         text = shown(s.text)
     assert text.startswith("start reach: 1.723 in past the frame (bl.base), over the 0.25 in allowed for minor "
-                           "protrusions (R104) by 1.473 in; the rules want it within the frame"), text
-    assert shown(s.warning).startswith("2026 R104: start reach 1.723 in past the frame (bl.base), over the 0.25 in")
+                           "protrusions (R102) by 1.473 in; the rules want it within the frame"), text
+    assert shown(s.warning).startswith("2026 R102: start reach 1.723 in past the frame (bl.base), over the 0.25 in")
+    assert s.rule == "R102" and line(r, "perimeter").rule == "R104"     # the no-overhang rule, not the perimeter's
+    with units.fixed("imperial"):                     # the same reach at the same precision on both lines
+        assert shown(line(r, "reach").text).startswith("reach beyond the frame: 1.723 in, within the 12 in limit")
     ok = line(inspect(config(tmp_path), 2024), "start_reach")
     assert ok.over <= 0 and "within" in str(ok.text)
 
@@ -192,7 +195,9 @@ def test_one_advice_line_names_only_the_unset_settings(tmp_path):
     assert str(both.advice) == ("with estimates: weigh your battery and bumpers and set battery_mass and bumper_mass "
                                 "under [inspection]")
     one = inspect(config(tmp_path, CHASSIS + "[inspection]\nbattery_mass = 5.0\n", "one.toml"), 2026)
-    assert str(one.advice).endswith("and set bumper_mass under [inspection]")
+    assert str(one.advice) == "with an estimate: weigh your bumpers and set bumper_mass under [inspection]"
+    other = inspect(config(tmp_path, CHASSIS + "[inspection]\nbumper_mass = 6.0\n", "other.toml"), 2026)
+    assert str(other.advice) == "with an estimate: weigh your battery and set battery_mass under [inspection]"
     none = inspect(config(tmp_path, CHASSIS + "[inspection]\nbattery_mass = 5.0\nbumper_mass = 6.0\n", "all.toml"), 2026)
     assert none.advice is None
     assert str(both.advice) not in " ".join(str(x.text) for x in both.lines)
@@ -204,3 +209,17 @@ def test_match_rule_lines_say_they_are_start_pose_values(tmp_path):
         assert "at the start pose (a scenario run with [inspection] watches it during the run)" in str(line(r, key).text)
     assert "watches" not in str(line(r, "perimeter").text)
     assert "watches" not in str(line(inspect(config(tmp_path), 2025), "height").text)    # no limit: nothing to watch
+
+
+def test_a_within_that_rests_on_estimates_says_so(tmp_path):
+    r = inspect(config(tmp_path, CHASSIS.replace("stock", "mass = 40.0\nstock")), 2026)
+    w = line(r, "weight")
+    assert w.over <= 0 and w.estimate and str(w.text).endswith("within the 52.16 kg limit (R103), with estimates")
+    set_ = config(tmp_path, CHASSIS + "[inspection]\nbattery_mass = 5.0\nbumper_mass = 6.0\n", "set.toml")
+    assert str(line(inspect(set_, 2026), "weight").text).endswith("within the 52.16 kg limit (R103)")
+
+
+def test_the_season_line_names_the_range_file(tmp_path):
+    from scrimmage.inspection.report import season_line
+    r = inspect(config(tmp_path, CHASSIS + '[range]\nfile = "2024"\n'))
+    assert str(season_line(r)) == "2024 rules (from the [range] file 2024)"

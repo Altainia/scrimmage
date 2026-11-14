@@ -10,7 +10,11 @@ root), colliding or not: an elevator's stages are built collide = false, and the
   vertices), not their bounding boxes: a round part's square box would overstate its reach (a swerve module's
   azimuth cylinder, 4 cm past the frame corner by its box, under 2 cm by its shape). A ring of RING points sits
   inside the true circle by at most r (1 - cos(pi / RING)), 2 % of the radius.
-- height: the highest point above the floor, z = 0. Bumpers count (answer 7).
+- height: the robot's height in its own frame, from its lowest point to its highest along the chassis body's up
+  (as terrain.climb.ClimbMonitor.own_height, over these shape points): what it would measure resting level on a flat
+  floor, as every season's match height rule measures it (2020 G17, 2024 G413-A, 2026 R107: "as if on a flat
+  floor"). Standing level on the floor it is the highest point above z = 0; lifted onto a bump, tilted or hanging, it
+  doesn't change. Bumpers count (answer 7).
 - reach: the largest horizontal distance, in the robot body's own x-y plane, from the frame outline to a point of a
   geom not on the robot body itself (so its frame, bumpers and heading marker never count), the climb runs'
   extension (terrain.climb.extent) over every geom's shape. `reach_geom` names the geom setting it.
@@ -109,13 +113,14 @@ class Extent:
         return np.einsum("nij,nj->ni", rot, self._local) + d.geom_xpos[self._of]
 
     def read_where(self) -> tuple[float, float, int]:
-        """(height, reach, the geom setting the reach: -1 when none sticks out)."""
+        """(height in the robot's own frame, reach, the geom setting the reach: -1 when none sticks out)."""
         if not len(self._local):
             return 0.0, 0.0, -1
         d = self.data
-        height, reach, k = extent(self.points(), self._reach, d.xpos[self.body], d.xmat[self.body].reshape(3, 3),
-                                  self._lo, self._hi)
-        return height, reach, (int(self._of[k]) if k >= 0 else -1)
+        pts, rot = self.points(), d.xmat[self.body].reshape(3, 3)
+        _, reach, k = extent(pts, self._reach, d.xpos[self.body], rot, self._lo, self._hi)
+        up = pts @ rot[:, 2]                     # along the chassis's up: the height in the robot's own frame
+        return float(up.max() - up.min()), reach, (int(self._of[k]) if k >= 0 else -1)
 
     def read(self) -> tuple[float, float]:
         """(height, reach) in meters."""

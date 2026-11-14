@@ -65,9 +65,11 @@ the weight from 125 to 125.5 lb; no other change to these numbers). Inch values 
 (2022 to 2025) are conversions. The 2025 manual has no match-time height limit (searched; it refers to area-specific
 restrictions but gives no number).
 
-In every season the starting configuration must lie within the frame perimeter (bumpers and minor protrusions
-aside): 2013 R03 by its cylinder, the others by an explicit rule (2016 R4, 2020 R2, 2022 to 2026 R104/R101); the start
-reach limit is 0.
+In every season the starting configuration must lie within the frame perimeter (minor protrusions aside, and bumpers
+from 2016), by each season's no-overhang rule: 2013 R04, 2016 R4, 2020 R2, 2022 to 2026 R102 (read in the manuals
+2026-11-14; seasons.toml's `start_reach`). The start reach limit is 0, with a 1/4 in. allowance for minor
+protrusions. (Corrected after the final review: this said 2013 was bounded only by its cylinder, and named R104/R101
+for 2022 to 2026.)
 
 Not checked (listed in each season's entry, quoted short): 2023 G109 and 2026 R106 (reach over one side at a time),
 2023 G108 (no reach in the opponent's zones), 2013 G23-1 (the 54 in. plane from the pyramid), 2022 G108/G109,
@@ -107,7 +109,10 @@ that body. So:
   geom on the robot's body (the stock chassis's frame plate), or, without one, the outline of all its geoms. Its
   perimeter is 2 × (length + width), so a non-rectangular frame reads as its bounding rectangle (an overestimate,
   never an underestimate; said in the docs).
-- **Height**: the top of the robot's geoms' bounding boxes above the carpet, **every geom, colliding or not** (an
+- **Height**: the robot's height in its own frame, from its lowest point to its highest along the chassis body's up
+  (as the climb runs' own_height), over points on each geom's own shape (changed after the final review: it was the
+  top above the carpet, which a robot on a bump or hanging from a chain read as over; the rules measure "as if on a
+  flat floor"). Level on the floor it is the top above the carpet. **Every geom counts, colliding or not** (an
   elevator's stages are built collide = false, and the rule counts them). Visual-only markers that are part of the
   chassis's look (the heading marker) sit inside the frame and below the top, so counting them is harmless.
 - **Cylinder (2013)**: the diameter of the smallest circle holding every geom's box corners, seen from above
@@ -142,7 +147,9 @@ estimate-only over is still 1 with the line saying it's an estimate.
 - **Assembler** (robot configs with `[inspection]`; answer 5): the robot state gains `inspection` (the season, each line); over-limit lines are warnings in the
   existing list ("2026 R102: frame perimeter 122.0 in, over the 110 in limit by 12.0 in"). Within-limit lines aren't
   shown as warnings.
-- **MCP**: `robot_parts` already carries the config's warnings; the inspection warnings come with them.
+- **MCP**: the `inspect_robot` tool (built during the work: `robot_parts` reads the live session world, while
+  `inspect_robot` builds a fresh world from the session's config at its start pose, as `scrimmage inspect` does) returns
+  the lines, the Not checked list, the advice and, with `[inspection]`, the live session's breach notes.
 - **Units**: lines are shown in the Units setting (imperial shows inches and pounds, metric meters and kg), as every
   other scrimmage report; report.json keeps meters and kg.
 

@@ -12,7 +12,7 @@ from ..i18n import t
 LB, IN = 0.45359237, 0.0254
 DEFAULT_BATTERY = 12.89 * LB     # AndyMark's listing for am-0844 (MK ES17-12); the rules allow 11.0 to 14.5 lb (R601)
 DEFAULT_BUMPERS = 15 * LB        # an UNCALIBRATED estimate of a bumper set; no source
-START_ALLOWANCE = 0.25 * IN      # the minor protrusions every season's perimeter rule allows
+START_ALLOWANCE = 0.25 * IN      # the minor protrusions every season's perimeter rule allows (start_reach's allowance)
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,7 @@ class Season:
     weight_with_bumpers: Limit
     bumper_set: Limit
     perimeter: Limit
+    start_reach: Limit           # no overhang at the start: 0 in every season, within START_ALLOWANCE
     start_height: Limit
     height: Limit
     reach: Limit
@@ -58,8 +59,8 @@ def _load() -> dict[int, Season]:
         year = int(key)
         seasons[year] = Season(
             year, e["manual"], e["url"], *(_limit(e.get(n)) for n in (
-                "weight", "weight_with_bumpers", "bumper_set", "perimeter", "start_height", "height", "reach",
-                "diameter")), tuple(e.get("not_checked", ())))
+                "weight", "weight_with_bumpers", "bumper_set", "perimeter", "start_reach", "start_height", "height",
+                "reach", "diameter")), tuple(e.get("not_checked", ())))
     return seasons
 
 
@@ -122,5 +123,5 @@ def choose_season(raw: dict, override: int | None = None) -> tuple[Season, str]:
         return SEASONS[chosen], "[inspection] season"
     in_range = _range_season(raw)
     if in_range is not None:
-        return SEASONS[in_range[0]], t("the [{section}] ({file})", section="range", file=in_range[1])
+        return SEASONS[in_range[0]], t("the [{section}] file {file}", section="range", file=in_range[1])
     return SEASONS[max(SEASONS)], "the newest season"

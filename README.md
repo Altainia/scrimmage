@@ -303,6 +303,7 @@ edit the robot code, `restart_robot()`, repeat. The agent launches your robot wi
 | `screenshot` | A picture: `follow`, `top`, `camera:<name>` or `free`. |
 | `contact_sheet` | Advance and capture several frames as one grid image. |
 | `run_scenario` | Run a scenario file and return its report and up to 6 screenshots. |
+| `inspect_robot` | Inspect the session's robot against a season's size and weight rules, as `scrimmage inspect` does: built fresh from the session's config at its start pose, `season` like `--season`; each line in SI with its rule, the Not checked list and the advice, and with `[inspection]` the live session's breach notes ([docs/inspection.md](docs/inspection.md)). |
 | `bench_check`, `bench_run` | Check or run a [component bench](docs/bench.md) file: headlines, the side path picture and the pass contact sheet. No session needed; an open one is left alone. |
 | `bench_sweep`, `bench_compare`, `bench_gallery`, `bench_focus` | Sweep a bench file's `[sweep]`, compare ideas with one piece and feed, or write a folder's gallery page; `bench_focus` pins the numbers being discussed on the [Bench tab](docs/bench-tab.md). |
 
@@ -1150,6 +1151,7 @@ docs/pneumatics.md air cylinders: the air model, its numbers and sources, measur
 docs/sensors.md    [[sensor]] beam breaks, distance and color sensors: keys, readings, piece colors, robot code
 docs/terrain.md    field elements (bumps, ramps, platforms), terrain signals, scrimmage terrain sweep
 docs/climbing.md   bars, the climber part, climb signals, scrimmage climb run and its scripts, the climb scenario
+docs/inspection.md robot inspection (scrimmage inspect): the season limits, [inspection], scenario notes, inspect_robot
 docs/match.md      match data: [match] (station, FMS, the match timer), game data, robot code, Drive tab, set_match
 docs/driver-station.md  driving with the FRC Driver Station app: turning it on, Windows setup, ports, what's off
 freecad/           the FreeCAD workbench add-on (Scrimmage/), installed by `scrimmage freecad install`

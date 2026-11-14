@@ -18,6 +18,31 @@ def test_every_season_matches_the_manuals():
         assert (s.height.value is None) == (h is None) and (h is None or s.height.value == pytest.approx(h * IN))
         assert (s.reach.value is None) == (r is None) and (r is None or s.reach.value == pytest.approx(r * IN))
         assert s.weight.rule and s.perimeter.rule and s.url.startswith("https://firstfrc.blob.core.windows.net/")
+RULES = {  # year: (weight, weight with bumpers, bumper set, perimeter, start reach, start height, height, reach,
+           # diameter); "" where the season has no such limit. From the manuals (sources file), read 2026-11-14.
+    2013: ("R05", "", "R23", "R03-A", "R04", "R03-C", "G22", "", "R03-B, G23"),
+    2016: ("R5", "", "R20", "R3-A", "R4", "R3-C", "G17", "G18", ""),
+    2020: ("R5", "", "R23", "R3", "R2", "R3", "G17", "G18", ""),
+    2022: ("R103", "", "R407", "R104", "R102", "R104", "G106", "G107", ""),
+    2023: ("R103", "", "R407", "R104", "R102", "R104", "G106", "G107", ""),
+    2024: ("R103", "", "R407", "R104", "R102", "R104", "G413-A", "G413-B", ""),
+    2025: ("R103", "R408", "", "R104", "R102", "R104", "", "G415", ""),
+    2026: ("R103", "R408", "", "R104", "R102", "R104", "R107", "R105", ""),
+}
+KEYS = ("weight", "weight_with_bumpers", "bumper_set", "perimeter", "start_reach", "start_height", "height", "reach",
+        "diameter")
+
+
+def test_every_season_s_rule_numbers():
+    assert sorted(RULES) == sorted(SEASONS)
+    for year, rules in RULES.items():
+        got = tuple(getattr(SEASONS[year], key).rule for key in KEYS)
+        assert got == rules, year
+        for key, rule in zip(KEYS, rules):
+            assert (getattr(SEASONS[year], key).value is None) == (rule == ""), (year, key)
+        assert SEASONS[year].start_reach.value == 0.0                 # no overhang at the start, in every season
+
+
 def test_bumpers_and_the_cylinder():
     assert SEASONS[2013].diameter.value == pytest.approx(54 * IN) and SEASONS[2016].diameter.value is None
     assert SEASONS[2013].bumper_set.value == pytest.approx(20 * LB) and SEASONS[2024].bumper_set.value == pytest.approx(15 * LB)

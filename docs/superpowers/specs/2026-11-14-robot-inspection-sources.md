@@ -30,6 +30,8 @@ Read: yes, all items.
 5. Other. R03-B: playing-configuration horizontal dimensions never exceed a 54 in. diameter vertical cylinder.
 Mid-season changes: TU 2013-01-15 re-issued G23, G23-1, R03 (the 54 in. cylinder wording and the 84 in. height are as quoted); TU 2013-01-11 re-issued R05 (120 lbs unchanged).
 
+Starting configuration: no overhang (read 2026-11-14 in the manual, pdftotext). R04 (section 4.1.1.4): "In the STARTING CONFIGURATION, no part of the ROBOT may extend outside the vertical projection of the FRAME PERIMETER, with the exception of minor protrusions such as bolt heads, fastener ends, rivets, etc." (no bumper exception in the 2013 text)
+
 ## 2016 (Stronghold)
 
 Read: yes (manual). Team update PDF text partly garbled; no change to the limits below found.
@@ -39,6 +41,8 @@ Read: yes (manual). Team update PDF text partly garbled; no change to the limits
 3. Starting height. R3-C: "ROBOT STARTING CONFIGURATION height must not exceed 54 in. (note that ROBOT height may exceed this limit in-MATCH as allowed by G17)." In-match height G17: "may not exceed 4 ft. 6 in. during the MATCH, except during the final twenty (20) seconds of TELEOP where there is no height limit when a ROBOT is fully contained by the opponent's COURTYARD." (54 in. = 4 ft. 6 in.)
 4. Extension. G18 and R3-B: "ROBOTS may not extend more than 15 in. beyond their FRAME PERIMETER." No one-side-only rule.
 5. R4: in starting configuration nothing outside the vertical projection of the frame perimeter except bumpers and minor protrusions.
+
+Starting configuration: no overhang (read 2026-11-14 in the manual, pdftotext). R4: "In the STARTING CONFIGURATION (the physical configuration in which a ROBOT starts a MATCH), no part of the ROBOT shall extend outside the vertical projection of the FRAME PERIMETER, with the exception of its BUMPERS and minor protrusions such as bolt heads, fastener ends, rivets, etc."
 
 ## 2020 (Infinite Recharge)
 
@@ -50,6 +54,8 @@ Read: yes. Unchanged by Team Updates (R5 re-issued in the March 2020 TU with the
 4. Extension. R4 and G18: "ROBOTS may not extend more than 12 in. (~30 cm) beyond their FRAME PERIMETER." No one-side rule.
 5. R2 no overhang in starting configuration.
 
+Starting configuration: no overhang (read 2026-11-14 in the manual, pdftotext). R2: "In the STARTING CONFIGURATION (the physical configuration in which a ROBOT starts a MATCH), no part of the ROBOT shall extend outside the vertical projection of the FRAME PERIMETER, with the exception of its BUMPERS and minor protrusions such as bolt heads, fastener ends, rivets, cable ties, etc."
+
 ## 2022 (Rapid React)
 
 Read: yes. No Team Update changed these numbers (TU only changed the G107 figure).
@@ -60,6 +66,8 @@ Read: yes. No Team Update changed these numbers (TU only changed the G107 figure
 4. Extension. R105 and G107: "ROBOTS may not extend more than 16 in. (~40 cm) beyond their FRAME PERIMETER." No one-side rule.
 5. G108: no bumper higher than the HIGH RUNG for more than a moment.
 
+Starting configuration: no overhang (read 2026-11-14 in the manual, pdftotext). R102: "STARTING CONFIGURATION – no overhang. In the STARTING CONFIGURATION (the physical configuration in which a ROBOT starts a MATCH), no part of the ROBOT shall extend outside the vertical projection of the FRAME PERIMETER, with the exception of its BUMPERS and minor protrusions such as bolt heads, fastener ends, rivets, cable ties, etc."
+
 ## 2023 (Charged Up)
 
 Read: yes. Numbers unchanged by TUs (TUs 01, 06, 11 only edited G107/G108/G109 text and figures).
@@ -68,6 +76,8 @@ Read: yes. Numbers unchanged by TUs (TUs 01, 06, 11 only edited G107/G108/G109 t
 2. Frame perimeter. R104: "greater than 120 in. (~304 cm)". No minimum.
 3. Starting height. R104: "may not be more than 4 ft. 6 in. (~137 cm) tall." In-match G106: "may not exceed 6 ft. 6 in. (~198 cm) above the carpet during the MATCH" (flat-floor measurement).
 4. Extension. R105: "may not extend more than 48 in. (~121 cm) beyond their FRAME PERIMETER." G107: "may not extend beyond their FRAME PERIMETER in more than 48 in. (~122 cm). MOMENTARY and inconsequential extensions ... are an exception." G109: may not extend beyond the perimeter in more than one direction (over 1 side) at a time, and the extension may not reach outside the projection of that side; exceptions for momentary extensions, a robot fully inside its LOADING ZONE or COMMUNITY, and momentary movement between adjacent sides. G108: a robot with bumpers intersecting the opponent's LOADING ZONE or COMMUNITY may not extend beyond its frame perimeter at all.
+
+Starting configuration: no overhang (read 2026-11-14 in the manual, pdftotext). R102: "STARTING CONFIGURATION – no overhang. In the STARTING CONFIGURATION (the physical configuration in which a ROBOT starts a MATCH), no part of the ROBOT shall extend outside the vertical projection of the FRAME PERIMETER, with the exception of its BUMPERS and minor protrusions such as bolt heads, fastener ends, rivets, cable ties, etc."
 
 ## 2024 (Crescendo)
 
@@ -79,6 +89,8 @@ Read: yes.
 4. Extension. R105 and G413-B: "may not extend more than 12 in. (~30 cm) beyond their FRAME PERIMETER." (G413-B in TU01 changed the cm figure from 40 to 30 to match 12 in.) No one-side rule. Exception for damage not used for strategic benefit.
 5. R106: no mechanism that reduces the working length of the stage chain.
 
+Starting configuration: no overhang (read 2026-11-14 in the manual, pdftotext). R102: "STARTING CONFIGURATION – no overhang. In the STARTING CONFIGURATION (the physical configuration in which a ROBOT starts a MATCH), no part of the ROBOT shall extend outside the vertical projection of the FRAME PERIMETER, with the exception of its BUMPERS and minor protrusions such as bolt heads, fastener ends, rivets, cable ties, etc."
+
 ## 2025 (Reefscape)
 
 Read: yes (manual V11 plus combined TUs). Rule text now says ROBOT PERIMETER.
@@ -87,6 +99,8 @@ Read: yes (manual V11 plus combined TUs). Rule text now says ROBOT PERIMETER.
 2. Perimeter. R104: "ROBOT PERIMETER greater than 120 in. (~304 cm)". No minimum.
 3. Starting height. R104: "may not be more than 3 ft. 6 in. (~106 cm) tall." I found no in-match height limit rule for 2025 in the G rules (searched "height", "tall", "exceed"). So the 3 ft. 6 in. is a starting-configuration limit only; gap noted: the field-specific section 7.4.3 refers to "height and extension restrictions for various areas of the FIELD" but I found no numeric height rule there.
 4. Extension. R105 and G415: "may not extend more than 1 ft. 6 in. (~457 mm) beyond the vertical projection of their ROBOT PERIMETER" (G415 says ~45 cm). No one-side rule in 2025.
+
+Starting configuration: no overhang (read 2026-11-14 in the manual, pdftotext). R102: "STARTING CONFIGURATION – no overhang. In the STARTING CONFIGURATION (the physical configuration in which a ROBOT starts a MATCH), no part of the ROBOT shall extend outside the vertical projection of the ROBOT PERIMETER, with the exception of its BUMPERS and minor protrusions such as bolt heads, fastener ends, rivets, cable ties, etc."
 
 ## 2026 (Rebuilt)
 
@@ -97,6 +111,8 @@ Read: yes (manual is Version TU22, which is the final TU of the season; the comb
 3. Starting height. R104: "may not be more than 30in (76.2cm) tall." In-match R107 (enforced by G413): "ROBOTS may not extend such that their total height exceeds 30.0in (76.2cm)", measured as if on a flat floor. So the same 30 in. applies throughout the match (TRENCH clearance is 22.25 in. under the arms).
 4. Extension. R105: "may not extend more than 12in (30.48cm) beyond the vertical projection of their ROBOT PERIMETER." R106: horizontal extension in only one direction (over 1 side) at a time, and not outside the projection of that side; a round section counts as infinitely many sides; exceptions for bumpers, minor protrusions, and momentary extensions (TU edits added the momentary and flex exceptions, G413-C and G413-D, and a 1.5 in. flex allowance). R108: extensions may not lift the bumpers out of the bumper zone by interacting with carpet, bumps or tower base.
 5. G413 violation is a MAJOR FOUL.
+
+Starting configuration: no overhang (read 2026-11-14 in the manual, pdftotext). R102: "STARTING CONFIGURATION – no overhang. In the STARTING CONFIGURATION (the physical configuration in which a ROBOT starts a MATCH), no part of the ROBOT shall extend outside the vertical projection of the ROBOT PERIMETER, with the exception of its BUMPERS and minor protrusions such as bolt heads, fastener ends, rivets, cable ties, etc."
 
 ---
 

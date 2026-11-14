@@ -46,8 +46,9 @@ def test_a_non_colliding_elevator_counts_for_height():
                       for g in range(m.ngeom) if m.geom_bodyid[g] == w.robot_body)
     top = max(float(w.data.geom_xpos[g][2] + m.geom_size[g][2]) for g in elevator)   # upright boxes
     h = measure(w).height
+    lowest = float(Extent(w).points()[:, 2].min())     # the wheels' bottoms, standing level on the floor
     assert h > chassis_top + 0.3
-    assert h == pytest.approx(top, abs=1e-6)
+    assert h == pytest.approx(top - lowest, abs=1e-6) and abs(lowest) < 0.005
     assert Extent(w).read()[0] == pytest.approx(h)
 
 
@@ -89,7 +90,8 @@ def test_a_robot_without_a_frame_plate_uses_all_its_geoms(tmp_path):
     # the cylinder spans x, y in [-0.3, 0.3]; the non-colliding sphere reaches x 0.3, y 0.25
     assert m.perimeter == pytest.approx(2 * (0.6 + 0.6), abs=1e-6)
     assert m.mass == pytest.approx(43.0)
-    assert m.height == pytest.approx(0.2 + 0.1 + 0.5 + 0.02, abs=1e-6)
+    # in the robot's own frame: from the cylinder's bottom (z 0.1) to the capsule's tip (0.2 + 0.1 + 0.5 + 0.02)
+    assert m.height == pytest.approx(0.1 + 0.5 + 0.02 + 0.1, abs=1e-6)
     assert m.reach == pytest.approx(0, abs=1e-9) and m.reach_geom == ""
     # the cylinder (r 0.3) and the sphere (r 0.05, its center 0.32 off the axis): 0.3 + 0.32 + 0.05 across, less a
     # little for the rings' points sitting inside the true circles
@@ -128,12 +130,12 @@ MESH_XML = """<mujoco>
 
 def test_a_mesh_is_measured_by_its_vertices(tmp_path):
     """A wedge mesh on a body turned 90 deg about z, at x 0.1: its vertices go to x 0.1 + 0.1 = 0.2 (inside the
-    frame), y 0.3 to 0.5 (0.2 past the frame's side at y 0.3) and z 0.15 + 0.4."""
+    frame), y 0.3 to 0.5 (0.2 past the frame's side at y 0.3) and z 0.15 + 0.4: 0.5 above the box's bottom (z 0.05)."""
     (tmp_path / "robot.xml").write_text(MESH_XML, encoding="utf-8")
     w = World({"model": {"mjcf": "robot.xml"}}, tmp_path)
     got = measure(w)
     assert got.reach == pytest.approx(0.2, abs=1e-6) and got.reach_geom == "wedge"
-    assert got.height == pytest.approx(0.1 + 0.05 + 0.4, abs=1e-6)
+    assert got.height == pytest.approx(0.1 + 0.4, abs=1e-6)
 
 
 def test_smallest_circle():

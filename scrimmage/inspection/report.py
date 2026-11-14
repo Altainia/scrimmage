@@ -57,6 +57,12 @@ def _length(v: float | None, fewer: int = 1) -> str:
     return units.fmt(v, "length", fewer=fewer)
 
 
+def _start_length(v: float | None) -> str:
+    """The reach at the start pose, at one precision on both of its lines (start reach and reach beyond the frame):
+    the start reach is judged against a 1/4 in allowance, so it keeps the decimals."""
+    return units.fmt(v, "length", fewer=0)
+
+
 def _mass(v: float | None, fewer: int = 1) -> str:
     return units.fmt(v, "mass", fewer=fewer)
 
@@ -73,7 +79,10 @@ def _line(key: str, season: Season, what: Callable[[], str], measured: float, li
 
     def words(warn: bool = False) -> str:
         shown_value = value() if value else show(measured)
-        if over <= 0:
+        if over <= 0 and estimate:      # never read as a pass: it rests on an estimate
+            s = t("{what}: {measured}, within the {limit} limit ({rule}), with estimates", what=what(),
+                  measured=shown_value, limit=show(limit.value), rule=rule)
+        elif over <= 0:
             s = t("{what}: {measured}, within the {limit} limit ({rule})", what=what(), measured=shown_value,
                   limit=show(limit.value), rule=rule)
         elif warn:
@@ -149,20 +158,28 @@ def inspect_world(world, raw: dict, override: int | None = None) -> Inspection:
     lines.append(_line("height", season, lambda: t("height"), m.height, season.height, _length,
                        extras=(at_start,)))
     lines.append(_line("reach", season, lambda: t("reach beyond the frame"), m.reach, season.reach,
-                       lambda v, fewer=2: _length(v, fewer), extras=(at_start,)))
+                       _start_length, extras=(at_start,)))
     notes = []
     if weight < 0:
         notes.append(_said(lambda: t("the model weighs {modeled}, less than the {battery} battery and {bumpers} "
                                      "bumpers taken off it: if your model leaves them out, set {battery_setting} and "
                                      "{bumper_setting} to 0 under {inspection_table}", modeled=_mass(m.mass),
                                      battery=_mass(battery, 0), bumpers=_mass(bumpers, 0), **SETTINGS)))
-    unset = [name for name, estimated in (("battery_mass", est_battery), ("bumper_mass", est_bumpers)) if estimated]
     advice = None
     if any(x.estimate for x in lines):
-        names = " and ".join(unset)
-        advice = _said(lambda: t("with estimates: weigh your battery and bumpers and set {names} under "
-                                 "{inspection_table}", names=names, inspection_table="[inspection]"))
+        advice = _said(lambda: _advice(est_battery, est_bumpers))
     return Inspection(season, reason, lines, season.not_checked, tuple(notes), advice)
+
+
+def _advice(battery: bool, bumpers: bool) -> str:
+    """Which settings to set: only the unset ones, in the words too."""
+    if battery and bumpers:
+        return t("with estimates: weigh your battery and bumpers and set {battery_setting} and {bumper_setting} under "
+                 "{inspection_table}", **SETTINGS)
+    if battery:
+        return t("with an estimate: weigh your battery and set {battery_setting} under {inspection_table}",
+                 **SETTINGS)
+    return t("with an estimate: weigh your bumpers and set {bumper_setting} under {inspection_table}", **SETTINGS)
 
 
 def _bumpers_unchecked(season: Season, bumpers: float) -> Line:
@@ -174,15 +191,17 @@ def _bumpers_unchecked(season: Season, bumpers: float) -> Line:
 
 
 def _start_reach(season: Season, m) -> Line:
-    """The reach at the start must be 0 (within the frame perimeter), with START_ALLOWANCE for minor protrusions."""
-    rule = season.perimeter.rule
-    over = m.reach - START_ALLOWANCE
+    """The reach at the start must be 0, within the frame perimeter (the season's no-overhang rule, start_reach), with
+    START_ALLOWANCE for minor protrusions."""
+    rule = season.start_reach.rule
+    allowed = (season.start_reach.value or 0.0) + START_ALLOWANCE
+    over = m.reach - allowed
 
     def part() -> str:
         return f" ({m.reach_geom})" if m.reach_geom else ""
 
     def words(warn: bool = False) -> str:
-        reach, allowance, by = _length(m.reach, 0), _length(START_ALLOWANCE, 0), _length(over, 0)
+        reach, allowance, by = _start_length(m.reach), _start_length(allowed), _start_length(over)
         if m.reach <= 0:
             return t("start reach: within the frame")
         if over > 0:
@@ -196,7 +215,7 @@ def _start_reach(season: Season, m) -> Line:
         return t("start reach: {reach} past the frame{part}, within the {allowance} allowed for minor protrusions "
                  "({rule})", reach=reach, part=part(), allowance=allowance, rule=rule)
 
-    return Line("start_reach", rule, m.reach, START_ALLOWANCE, over, False, _said(words),
+    return Line("start_reach", rule, m.reach, allowed, over, False, _said(words),
                 _said(lambda: words(True)) if over > 0 else None)
 
 
