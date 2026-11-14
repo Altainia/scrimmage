@@ -1,0 +1,305 @@
+# FRC robot size and weight limits by season, in the manual's own units (inches, pounds); spec.py converts them to
+# meters and kilograms on load. Every entry has a comment quoting its rule short. Read in each season's final Game
+# Manual PDF on 2026-11-14 (docs/superpowers/specs/2026-11-14-robot-inspection-sources.md). A limit with a zone or time
+# exception has an `unless`; a limit the season doesn't have is left out. The start reach limit is 0 in every
+# season (spec.START_ALLOWANCE), so it isn't here.
+
+[2013]
+manual = "2013 Game Manual (with Team Updates through 2013-01-15)"
+url = "https://firstfrc.blob.core.windows.net/frcarchive/2013/2013-game-manual.pdf"
+not_checked = [
+    "G23-1: while in contact with the pyramid, no reach beyond a vertical plane 54 in. from the pyramid base",
+    "the zone exceptions to the match height limit",
+]
+
+# R05: "The ROBOT weight may not exceed 120 lbs." (without the battery and its half of the Anderson pair, and without BUMPERS)
+[2013.weight]
+max_lb = 120
+rule = "R05"
+
+# R23: "Each set of BUMPERS (including any fasteners and/or structures that attach them to the ROBOT) must weigh no more than 20 lbs."
+[2013.bumper_set]
+max_lb = 20
+rule = "R23"
+
+# R03-A: "total length of the FRAME PERIMETER sides may not exceed 112 in."
+[2013.perimeter]
+max_in = 112
+rule = "R03-A"
+
+# R03-C: "height may never exceed 84 in. tall." (2013 has no separate starting height)
+[2013.start_height]
+max_in = 84
+rule = "R03-C"
+
+# G22: height "<= 84 in." if in contact with the carpet in its AUTO ZONE and/or its PYRAMID, otherwise "<= 60 in."
+[2013.height]
+max_in = 60
+rule = "G22"
+unless = "on the pyramid or in the auto zone (84 in.)"
+
+# G23: "While not in contact with the PYRAMID, a ROBOT'S horizontal dimensions may never exceed a 54 in. diameter vertical cylinder." (R03-B says the same for the playing configuration)
+[2013.diameter]
+max_in = 54
+rule = "R03-B, G23"
+
+[2016]
+manual = "2016 Game Manual (Section 3 V12, Section 4 V17)"
+url = "https://firstfrc.blob.core.windows.net/frc2016manuals/GameManual/FRC-2016-game-manual.pdf"
+not_checked = [
+    "the zone exception to the match height limit",
+]
+
+# R5: "The ROBOT weight must not exceed 120 lbs."
+[2016.weight]
+max_lb = 120
+rule = "R5"
+
+# R20: "Each set of BUMPERS ... must weigh no more than 20 lbs."
+[2016.bumper_set]
+max_lb = 20
+rule = "R20"
+
+# R3-A: "total length of the FRAME PERIMETER sides must not exceed 120 in."
+[2016.perimeter]
+max_in = 120
+rule = "R3-A"
+
+# R3-C: "ROBOT STARTING CONFIGURATION height must not exceed 54 in."
+[2016.start_height]
+max_in = 54
+rule = "R3-C"
+
+# G17: "may not exceed 4 ft. 6 in. during the MATCH, except during the final twenty (20) seconds of TELEOP where there is no height limit when a ROBOT is fully contained by the opponent's COURTYARD."
+[2016.height]
+max_in = 54
+rule = "G17"
+unless = "in the last 20 seconds of teleop fully inside the opponent's courtyard (no limit)"
+
+# G18, R3-B: "ROBOTS may not extend more than 15 in. beyond their FRAME PERIMETER."
+[2016.reach]
+max_in = 15
+rule = "G18"
+
+[2020]
+manual = "2020 Game Season Manual (Section 7 V9, Section 9 V8)"
+url = "https://firstfrc.blob.core.windows.net/frc2020/Manual/2020FRCGameSeasonManual.pdf"
+not_checked = [
+    "the zone exception to the match height limit",
+]
+
+# R5: "The ROBOT weight must not exceed 125 lbs. (~56 kg)."
+[2020.weight]
+max_lb = 125
+rule = "R5"
+
+# R23: "Each set of BUMPERS (including any fasteners and/or structures that attach them to the ROBOT) must weigh no more than 15 lbs. (~6 kg)."
+[2020.bumper_set]
+max_lb = 15
+rule = "R23"
+
+# R3: "may not have a FRAME PERIMETER greater than 120 in. (~304 cm)"
+[2020.perimeter]
+max_in = 120
+rule = "R3"
+
+# R3: "may not be more than 45 in. (~114 cm) tall."
+[2020.start_height]
+max_in = 45
+rule = "R3"
+
+# G17: "may not exceed 45 in. (~114 cm) above the carpet during the MATCH, with the exception of ROBOTS intersecting their ALLIANCE'S RENDEZVOUS POINT during the ENDGAME."
+[2020.height]
+max_in = 45
+rule = "G17"
+unless = "intersecting its alliance's rendezvous point in the endgame (no limit)"
+
+# G18, R4: "ROBOTS may not extend more than 12 in. (~30 cm) beyond their FRAME PERIMETER."
+[2020.reach]
+max_in = 12
+rule = "G18"
+
+[2022]
+manual = "2022 Game Manual (Section 7 V7, Section 9 V10)"
+url = "https://firstfrc.blob.core.windows.net/frc2022/Manual/2022FRCGameManual.pdf"
+not_checked = [
+    "G108: no bumper higher than the high rung for more than a moment",
+    "G109: never beyond the purple plane",
+    "the hangar zone exception to the match height limit",
+]
+
+# R103: "must not exceed 125 lbs. (~56 kg)"
+[2022.weight]
+max_lb = 125
+rule = "R103"
+
+# R407: "Each set of BUMPERS ... no more than 15 lbs. (~6 kg)."
+[2022.bumper_set]
+max_lb = 15
+rule = "R407"
+
+# R104: "FRAME PERIMETER greater than 120 in. (~304 cm)"
+[2022.perimeter]
+max_in = 120
+rule = "R104"
+
+# R104: "may not be more than 4 ft. 4 in. (~132 cm) tall." (52 in. is the conversion)
+[2022.start_height]
+max_in = 52
+rule = "R104"
+
+# G106: height "may not exceed the maximum STARTING CONFIGURATION height (4 ft. 4 in.) unless any part of the ROBOT'S BUMPERS is in its HANGAR ZONE, in which case its height may not exceed 5 ft. 6 in. (~167 cm)."
+[2022.height]
+max_in = 52
+rule = "G106"
+unless = "with its bumpers in the hangar zone (66 in.)"
+
+# G107, R105: "ROBOTS may not extend more than 16 in. (~40 cm) beyond their FRAME PERIMETER."
+[2022.reach]
+max_in = 16
+rule = "G107"
+
+[2023]
+manual = "2023 Game Manual (Section 7 V12, Section 9 V11)"
+url = "https://firstfrc.blob.core.windows.net/frc2023/Manual/2023FRCGameManual.pdf"
+not_checked = [
+    "G109: reach beyond the frame perimeter over one side at a time, and not outside that side's projection",
+    "G108: no reach beyond the frame perimeter with bumpers in the opponent's loading zone or community",
+]
+
+# R103: "must not exceed 125 lbs. (~56 kg)"
+[2023.weight]
+max_lb = 125
+rule = "R103"
+
+# R407: "no more than 15 lbs. (~6 kg)"
+[2023.bumper_set]
+max_lb = 15
+rule = "R407"
+
+# R104: "greater than 120 in. (~304 cm)"
+[2023.perimeter]
+max_in = 120
+rule = "R104"
+
+# R104: "may not be more than 4 ft. 6 in. (~137 cm) tall." (54 in. is the conversion)
+[2023.start_height]
+max_in = 54
+rule = "R104"
+
+# G106: "may not exceed 6 ft. 6 in. (~198 cm) above the carpet during the MATCH" (78 in. is the conversion)
+[2023.height]
+max_in = 78
+rule = "G106"
+
+# G107, R105: "may not extend beyond their FRAME PERIMETER in more than 48 in. (~122 cm)."
+[2023.reach]
+max_in = 48
+rule = "G107"
+
+[2024]
+manual = "2024 Game Manual (Section 7 V13, Section 8 V8, with Team Update 21)"
+url = "https://firstfrc.blob.core.windows.net/frc2024/Manual/2024GameManual.pdf"
+not_checked = [
+    "R106: no mechanism that reduces the working length of the stage chain",
+]
+
+# R103: "must not exceed 125.5 lbs (~56 kg)" (Team Update 21, April 9, 2024, raised it from 125 lbs)
+[2024.weight]
+max_lb = 125.5
+rule = "R103"
+
+# R407: "Each set of BUMPERS ... no more than 15 lbs. (~6 kg)"
+[2024.bumper_set]
+max_lb = 15
+rule = "R407"
+
+# R104: "greater than 120 in. (~304 cm)"
+[2024.perimeter]
+max_in = 120
+rule = "R104"
+
+# R104: "may not be more than 4 ft. (~121 cm) tall." (48 in. is the conversion)
+[2024.start_height]
+max_in = 48
+rule = "R104"
+
+# G413-A: "its height, as measured when it's resting normally on a flat floor, may not exceed 4 ft. (~122 cm)"
+[2024.height]
+max_in = 48
+rule = "G413-A"
+
+# G413-B, R105: "may not extend more than 12 in. (~30 cm) beyond their FRAME PERIMETER."
+[2024.reach]
+max_in = 12
+rule = "G413-B"
+
+[2025]
+manual = "2025 Game Manual (Section 8 V11, with the Team Updates through TU21)"
+url = "https://firstfrc.blob.core.windows.net/frc2025/Manual/2025GameManual.pdf"
+not_checked = [
+    "area-specific height and extension restrictions for parts of the field (no numbers given in the manual)",
+]
+
+# R103: "must not exceed 115 lbs. (~52 kg)"
+[2025.weight]
+max_lb = 115
+rule = "R103"
+
+# R408: "The total weight of the ROBOT (as described in R103) with BUMPERS must not exceed 135 lbs. (~61 kg)"
+[2025.weight_with_bumpers]
+max_lb = 135
+rule = "R408"
+
+# R104: "ROBOT PERIMETER greater than 120 in. (~304 cm)"
+[2025.perimeter]
+max_in = 120
+rule = "R104"
+
+# R104: "may not be more than 3 ft. 6 in. (~106 cm) tall." (42 in. is the conversion)
+[2025.start_height]
+max_in = 42
+rule = "R104"
+
+# G415, R105: "may not extend more than 1 ft. 6 in. (~457 mm) beyond the vertical projection of their ROBOT PERIMETER" (18 in. is the conversion)
+[2025.reach]
+max_in = 18
+rule = "G415"
+
+[2026]
+manual = "2026 Game Manual (Version TU22)"
+url = "https://firstfrc.blob.core.windows.net/frc2026/Manual/2026GameManual.pdf"
+not_checked = [
+    "R106: reach beyond the robot perimeter over one side at a time, and not outside that side's projection",
+    "R108: extensions may not lift the bumpers out of the bumper zone",
+]
+
+# R103: "must not exceed 115.0lb (52.16kg)"
+[2026.weight]
+max_lb = 115
+rule = "R103"
+
+# R408: "The total weight of the ROBOT (as described in R103) with BUMPERS must not exceed 135.0lb (61.23kg)"
+[2026.weight_with_bumpers]
+max_lb = 135
+rule = "R408"
+
+# R104: "may not have a ROBOT PERIMETER greater than 110.0in (2.794m)"
+[2026.perimeter]
+max_in = 110
+rule = "R104"
+
+# R104: "may not be more than 30in (76.2cm) tall."
+[2026.start_height]
+max_in = 30
+rule = "R104"
+
+# R107: "ROBOTS may not extend such that their total height exceeds 30.0in (76.2cm)"
+[2026.height]
+max_in = 30
+rule = "R107"
+
+# R105: "may not extend more than 12in (30.48cm) beyond the vertical projection of their ROBOT PERIMETER."
+[2026.reach]
+max_in = 12
+rule = "R105"
