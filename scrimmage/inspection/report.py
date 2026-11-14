@@ -60,7 +60,8 @@ def _said(words: Callable[[], str]) -> Said:
     return Said(machine, words)
 
 
-def _length(v: float | None, fewer: int = 1) -> str:
+def length_text(v: float | None, fewer: int = 1) -> str:
+    """A length in the Units setting; the monitor's breach notes share it."""
     return units.fmt(v, "length", fewer=fewer)
 
 
@@ -155,14 +156,14 @@ def inspect_world(world, raw: dict, override: int | None = None) -> Inspection:
     frame_note = () if m.frame_plate else (
         lambda: t("; the frame is the outline of all the chassis's geoms (no frame plate)"),)
     lines.append(_line("perimeter", season, lambda: t("frame perimeter"), m.perimeter, season.perimeter,
-                       _length, extras=frame_note))
+                       length_text, extras=frame_note))
     lines.append(_line("start_height", season, lambda: t("starting height"), m.height, season.start_height,
-                       _length))
+                       length_text))
     lines.append(_start_reach(season, m))
     if season.diameter.value is not None:
         lines.append(_line("diameter", season, lambda: t("diameter of the smallest circle holding the robot"),
-                           m.diameter, season.diameter, _length))
-    lines.append(_line("height", season, lambda: t("height"), m.height, season.height, _length,
+                           m.diameter, season.diameter, length_text))
+    lines.append(_line("height", season, lambda: t("height"), m.height, season.height, length_text,
                        extras=(at_start,)))
     lines.append(_line("reach", season, lambda: t("reach beyond the frame"), m.reach, season.reach,
                        _start_length, extras=(at_start,)))

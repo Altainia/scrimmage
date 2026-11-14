@@ -21,7 +21,7 @@ from .. import units
 from ..checks import Said
 from ..i18n import t
 from .measure import Extent, geom_label, smallest_circle
-from .report import Inspection, _length, warnings
+from .report import Inspection, length_text, warnings
 from .spec import Limit, Season
 
 SAMPLE_S = 0.02         # s of simulated time between samples (Call I7)
@@ -60,7 +60,7 @@ class Breach:
             part = f" ({b.peak_part})" if b.peak_part else ""
             s = t("{year} {rule}: {what} over the {limit} limit from t={first} s, by up to {peak}{part} at {peak_t} s "
                   "({over} s over in all)", year=b.year, rule=b.rule, what=_what(b.key),
-                  limit=_length(b.limit, 0), first=f"{b.first:.2f}", peak=_length(b.peak),
+                  limit=length_text(b.limit, 0), first=f"{b.first:.2f}", peak=length_text(b.peak),
                   peak_t=f"{b.peak_t:.2f}", part=part, over=f"{b.over_s:.2f}")
             if b.unless:
                 s += t("; {exception}: not checked", exception=b.unless)
