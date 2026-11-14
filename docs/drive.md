@@ -35,7 +35,7 @@ match the robot file, a line under the status says how many, with a link back to
 
 **Start** is disabled, with the reason beside it, when the robot config doesn't load (fix it in the Robot tab) or has
 no `[robot_program]` section. Hand-written `[model]` robots can be driven like any other. Like `scrimmage run`, a
-real-time-capable robot program needs the lockstep extension on Linux (see the README's quick start).
+real-time-capable robot program needs the lockstep extension on Linux or Windows x64 (see the README's quick start).
 
 One **robot step** is the config's `[lockstep] step` (20 ms by default). Everything below that counts in steps
 (Step, recorded rows, replay) uses that.

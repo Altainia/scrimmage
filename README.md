@@ -28,14 +28,14 @@ the protocol lives below WPILib.
 # needs Python 3.11 or newer (and MuJoCo 4.0.1 or a newer 4.x, which pip installs)
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[robotpy,nt]"          # mujoco, websockets, plus RobotPy for the example
-pip install ./lockstep                  # Linux: lets scrimmage drive the robot's clock; everywhere: RobotPy's REV and LaserCAN helpers
+pip install ./lockstep                  # Linux, Windows x64: lets scrimmage drive the robot's clock; everywhere: RobotPy's REV and LaserCAN helpers
 ```
 
 Updating a checkout that has MuJoCo 3 installed: run `pip uninstall -y mujoco` first, then the `pip install -e`
 line again. MuJoCo 4 moved its files into a new `mujoco-core` package, and upgrading in place can remove some
 of them.
 
-The lockstep extension (**Linux only** for now) is needed for `scrimmage run` by default and for agents:
+The lockstep extension (**Linux and Windows x64**) is needed for `scrimmage run` by default and for agents:
 the kitbot config's command loads it, and scenarios require it unless they set `require_lockstep = false`.
 It is optional only for driving by hand in real time. To opt out:
 
@@ -45,7 +45,7 @@ It is optional only for driving by hand in real time. To opt out:
   The session then runs in real time, isn't held between calls, and `advance` waits in real time.
 
 (`serve --speed` other than 1 is the one command that exits with code 2 without the extension.) On
-Windows and macOS the simulation always runs in real time this way.
+macOS and Windows on ARM the simulation always runs in real time this way.
 
 Drive the robot by hand with two terminals, both started from the repo root:
 
@@ -136,6 +136,8 @@ then the robot program steps 5 ms (running any loops that fall due), and so on. 
   extension (`pip install ./lockstep`) after updating Scrimmage; it must be 0.6.0 or later for this. A robot
   with valves on a REV Pneumatic Hub needs 0.7.0 or later, which relays the hub (see
   [docs/pneumatics.md](docs/pneumatics.md#robot-code)); robots with valves only on a CTRE PCM keep working with 0.6.0.
+  One exception on Windows: a RobotPy robot with REV SPARKs runs in lockstep, but REV's simulated sensor noise isn't
+  pinned there, so two runs part once it matters (velocity control, say); see [docs/rev.md](docs/rev.md#limitations).
 - **The robot's clock starts at 1 µs** (FPGA time), the same in every run and language. Since 0.6.0 it is 1 µs, not
   0: AdvantageKit's `LoggedRobot` takes a loop wake-up at time 0 for a stopped notifier and quits at once. A Java
   robot run with an older extension installed stops at the start with a message to reinstall it.
@@ -154,12 +156,21 @@ clock is released, which takes at most 5 s (grace period) or 2 s (after Scrimmag
 Scrimmage first, or wait a few seconds.
 If robot code calls `Timer.delay` in robotInit, lockstep waits for it, because the clock is paused.
 
-Install it with `pip install ./lockstep` (Linux only for now) and add `--scrimmage-lockstep` to
+Install it with `pip install ./lockstep` (Linux and Windows x64) and add `--scrimmage-lockstep` to
 `python -m robotpy sim` (the kitbot config already does). Scrimmage logs `lockstep engaged` once it has taken over. Set the step with
 `[lockstep] step = 0.005` in the config or with `--step`.
 Reinstall it after updating Scrimmage: if the installed extension is older than Scrimmage needs, the run stops at
 the start and says so, with the command to paste (the Python and the `lockstep` folder in full, so it works from any
-folder).
+folder). On Windows no C++ compiler is needed: the package carries the extension prebuilt. It must be 0.8.0 or later
+there, the first with it; an older one still drives REV SPARKs and LaserCANs, in real time, and Scrimmage says so,
+with the command to update it.
+
+**Changing the extension's C++** (`lockstep/src/scrimmage_lockstep.cpp` or `lockstep/CMakeLists.txt`): the Windows
+build in `lockstep/scrimmage_lockstep/lib/win_amd64` must be refreshed, or `tests/test_lockstep_windows_dll.py` fails
+(its stamp, `SOURCE.sha256`, records the source it was built from). Push the change, wait for CI's `windows` job, which
+builds it from source and uploads it as the `lockstep-win-dll` artifact, then run
+`python lockstep/tools/update_windows_dll.py` (it needs the GitHub CLI, `gh`; it takes the build only from a CI run on
+the commit you have checked out) and commit the two files.
 
 ## Scenario files
 
@@ -583,7 +594,7 @@ writes the `[robot_program]` section for you; the hand-written version follows.
 ### One-time setup
 
 1. Install WPILib (the JDK 17 that ships with it is found at `~/wpilib/<year>/jdk`; `JAVA_HOME` wins if set).
-2. `pip install ./lockstep` (Linux), as in the quick start.
+2. `pip install ./lockstep` (Linux and Windows x64), as in the quick start.
 3. `scrimmage java build` compiles the sim-write guard agent (see below) into `~/.cache/scrimmage/java`
    (`SCRIMMAGE_CACHE` changes the directory) and downloads ASM once. Run it again after upgrading scrimmage.
 4. The first Gradle run in your robot repo downloads GradleRIO, WPILib and Phoenix, which can take minutes.
@@ -1074,8 +1085,10 @@ The end-to-end tests launch the bridge and a RobotPy program and check four thin
 
 ## Limits of this prototype
 
-- **Lockstep is Linux only** for now. On Windows and macOS Scrimmage runs in real time: the robot
-  program runs on the wall clock and physics keeps pace (about 0.5 ms of CPU per 20 ms robot loop for
+- **Lockstep runs on Linux and Windows x64.** On Windows the package carries the extension prebuilt (no C++
+  compiler), and a RobotPy robot with REV SPARKs isn't bit-identical from run to run there: REV's simulated sensor
+  noise isn't pinned ([docs/rev.md](docs/rev.md#limitations)). On macOS and Windows on ARM Scrimmage runs in real time: the
+  robot program runs on the wall clock and physics keeps pace (about 0.5 ms of CPU per 20 ms robot loop for
   the kitbot). `pip install ./lockstep` works there too, without a C++ compiler: it installs the RobotPy REV SPARK
   and LaserCAN helpers (which work everywhere, in real time) but not the lockstep extension, so a RobotPy command with
   `--scrimmage-lockstep` loads the helpers and the robot runs in real time.

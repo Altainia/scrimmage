@@ -278,8 +278,9 @@ A CANrange whose `max_range` is at or under its ProximityThreshold plus hysteres
 **The LaserCAN needs scrimmage's helper**, loaded as REV's is ([rev.md](rev.md#setup)). Java robots load it through
 scrimmage's agent, with the usual Gradle init script; run `scrimmage java build` again after updating scrimmage.
 RobotPy robots load it through `--scrimmage-lockstep` in `[robot_program] command` and `pip install ./lockstep`
-(reinstall it after updating scrimmage), and install `libgrapplefrc-py`. On Windows and macOS `pip install ./lockstep`
-installs the helper without lockstep (Linux only for now), so the robot runs in real time there. Without the helper the run warns that the
+(reinstall it after updating scrimmage), and install `libgrapplefrc-py`. On macOS and Windows on ARM
+`pip install ./lockstep` installs the helper without lockstep (it runs on Linux and Windows x64), so the robot runs in
+real time there. Without the helper the run warns that the
 LaserCAN isn't being driven. On RobotPy (Linux), Grapple's real LaserCAN crashes the robot program in simulation before
 any warning, so load the helper (`--scrimmage-lockstep`).
 
