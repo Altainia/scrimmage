@@ -6,6 +6,7 @@ import asyncio
 import collections
 import ctypes
 import functools
+import logging
 import os
 import signal
 import subprocess
@@ -28,6 +29,9 @@ GRAPPLE_UNAVAILABLE = "unavailable:"            # ... unavailable: <reason>
 MAX_LINE = 8192  # characters kept per console line; longer lines are cut, the rest discarded
 CONSOLE_POLL = 0.02  # s between reads of a Java robot's console file
 TRUNCATED = " [line truncated]"
+RUN_TOKEN_ARG = "-Dscrimmage.runToken="   # the Gradle init script puts the run token on the robot JVM's command line
+
+log = logging.getLogger("scrimmage")
 
 _libc = None
 if sys.platform.startswith("linux"):
@@ -95,10 +99,35 @@ def kill_tree(pid: int) -> None:
         pass
 
 
+def _token_pids_windows(token: str) -> list[int] | None:
+    """Windows: the processes whose command line carries RUN_TOKEN_ARG<token> (it can't read another process's
+    environment), from a CIM query through PowerShell (on every Windows 10 and 11); None when the query fails."""
+    script = ("Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and "
+              f"$_.CommandLine.Contains('{RUN_TOKEN_ARG}{token}') }} | ForEach-Object {{ $_.ProcessId }}")
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return [int(line) for line in r.stdout.split() if line.isdigit()]
+
+
 def kill_by_token(token: str, timeout: float = 10.0) -> None:
-    """Kill every process whose environment carries SCRIMMAGE_RUN_TOKEN=<token> (Linux only; elsewhere a no-op).
-    Catches robot JVMs spawned by a Gradle daemon, which are outside the robot program's process group.
-    SIGTERM first, then SIGKILL for whatever is left after `timeout` s."""
+    """Kill every process whose environment carries SCRIMMAGE_RUN_TOKEN=<token> (on Windows, whose command line
+    carries RUN_TOKEN_ARG<token>; elsewhere a no-op). Catches robot JVMs spawned by a Gradle daemon, which are outside
+    the robot program's process group. SIGTERM first, then SIGKILL for whatever is left after `timeout` s; on Windows
+    taskkill /F /T at once."""
+    if sys.platform == "win32":
+        pids = _token_pids_windows(token)
+        if pids is None:
+            log.warning("%s", i18n.t("scrimmage couldn't look for robot programs left running ({query} failed), so one "
+                                     "may still be running: its command line has {arg}", query="Get-CimInstance",
+                                     arg=f"{RUN_TOKEN_ARG}{token}"))
+        for pid in pids or []:
+            kill_tree(pid)
+        return
     if not sys.platform.startswith("linux"):
         return
     pids = _token_pids(token)
@@ -114,6 +143,91 @@ def kill_by_token(token: str, timeout: float = 10.0) -> None:
         pids = [p for p in pids if _alive(p)]
         if not pids:
             return
+
+
+# Windows: scrimmage's job object. Every robot program is assigned to it right after it starts; its handle is held
+# (never closed) for this process's life, so when scrimmage exits for any reason, even killed, Windows closes it and
+# KILL_ON_JOB_CLOSE ends every process in it: the robot program and its children (Linux: _die_with_parent).
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9    # JOBOBJECTINFOCLASS JobObjectExtendedLimitInformation
+PROCESS_SET_QUOTA, PROCESS_TERMINATE = 0x0100, 0x0001   # the rights AssignProcessToJobObject needs
+
+
+class _BasicLimits(ctypes.Structure):     # JOBOBJECT_BASIC_LIMIT_INFORMATION
+    _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", ctypes.c_uint32), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", ctypes.c_uint32),
+                ("Affinity", ctypes.c_size_t), ("PriorityClass", ctypes.c_uint32), ("SchedulingClass", ctypes.c_uint32)]
+
+
+class _JobLimits(ctypes.Structure):       # JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+    _fields_ = [("BasicLimitInformation", _BasicLimits), ("IoInfo", ctypes.c_uint64 * 6),   # IO_COUNTERS
+                ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+
+_job = None   # the job object's handle once made
+_job_lock = threading.Lock()
+
+
+def _kernel32():
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateJobObjectW.argtypes, k32.CreateJobObjectW.restype = [wintypes.LPVOID, wintypes.LPCWSTR], wintypes.HANDLE
+    k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+    k32.SetInformationJobObject.restype = wintypes.BOOL
+    k32.OpenProcess.argtypes, k32.OpenProcess.restype = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE
+    k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    k32.AssignProcessToJobObject.restype = wintypes.BOOL
+    k32.CloseHandle.argtypes, k32.CloseHandle.restype = [wintypes.HANDLE], wintypes.BOOL
+    return k32
+
+
+def _last_error() -> int:
+    return ctypes.get_last_error() if hasattr(ctypes, "get_last_error") else 0
+
+
+def _robot_job(k32):
+    """The job object, made on first use: KILL_ON_JOB_CLOSE, not inheritable (so only this process holds it)."""
+    global _job
+    with _job_lock:
+        if _job is None:
+            job = k32.CreateJobObjectW(None, None)
+            if not job:
+                raise OSError(_last_error(), "CreateJobObjectW")
+            limits = _JobLimits()
+            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            if not k32.SetInformationJobObject(job, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, ctypes.byref(limits),
+                                               ctypes.sizeof(limits)):
+                err = _last_error()
+                k32.CloseHandle(job)
+                raise OSError(err, "SetInformationJobObject")
+            _job = job
+        return _job
+
+
+def assign_to_job(pid: int, k32=None) -> bool:
+    """Windows: put the robot program `pid`, just started, in scrimmage's job object (nested jobs are allowed since
+    Windows 8). A process it started before this escapes the job: RobotPy runs in one process, and a Gradle robot JVM
+    starts well after (kill_by_token finds one from a Gradle daemon). When it can't, one log line and False: stop()
+    and kill_by_token still work."""
+    try:
+        k32 = k32 or _kernel32()
+        job = _robot_job(k32)
+        proc = k32.OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, False, pid)
+        if not proc:
+            raise OSError(_last_error(), "OpenProcess")
+        try:
+            if not k32.AssignProcessToJobObject(job, proc):
+                raise OSError(_last_error(), "AssignProcessToJobObject")
+        finally:
+            k32.CloseHandle(proc)
+    except OSError as e:   # strerror: the kernel32 call that failed; errno: its GetLastError() code
+        log.warning("%s", i18n.t("couldn't tie the robot program to scrimmage ({call} failed, error {code}), so if "
+                                 "scrimmage is killed the robot program may keep running", call=e.strerror,
+                                 code=e.errno))
+        return False
+    return True
 
 
 # The run token of every robot program that may still be running -> the thread that started it, so a caller
@@ -153,6 +267,16 @@ def _scrimmage_paths() -> dict[str, str]:
     except java_tools.JavaToolError:
         pass
     return out
+
+
+def windows_command(command: list[str], cwd: str | Path) -> list[str]:
+    """Windows: a config's `./gradlew` (the shell script, which Windows can't run) as the project's gradlew.bat, by its
+    full path (Windows doesn't look for a program in the working folder). Any other command, or no gradlew.bat, as is."""
+    if command and Path(command[0]).name == "gradlew":
+        bat = (Path(cwd) / command[0]).with_name("gradlew.bat")
+        if bat.is_file():
+            return [str(bat), *command[1:]]
+    return list(command)
 
 
 @dataclass
@@ -274,9 +398,10 @@ class RobotProcess:
                 raise RuntimeError(i18n.t("can't write the robot log {path}: {error}", path=self.log_path,
                                           error=e.strerror)) from None
         self._write_log(f"--- robot program started: {' '.join(self.command)} ---")
+        command = windows_command(self.command, self.cwd) if sys.platform == "win32" else self.command
         try:
             self.proc = await asyncio.create_subprocess_exec(
-                *self.command, cwd=self.cwd, env=env, stdin=asyncio.subprocess.DEVNULL,
+                *command, cwd=self.cwd, env=env, stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
                 start_new_session=True,  # its own process group, so stop() takes its children too
                 preexec_fn=(functools.partial(_die_with_parent, os.getpid())
@@ -285,6 +410,8 @@ class RobotProcess:
             raise RuntimeError(i18n.t("couldn't start the robot program ({command} in {folder}): {error}",
                                       command=" ".join(self.command), folder=self.cwd,
                                       error=e.strerror or e)) from None
+        if sys.platform == "win32":   # dies with scrimmage (asyncio can't start it suspended: assigned right after)
+            assign_to_job(self.proc.pid)
         self._reader = asyncio.create_task(self._capture(self.proc, self._console_file))
 
     async def _capture(self, proc: asyncio.subprocess.Process, console_file: Path | None) -> None:

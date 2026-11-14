@@ -13,14 +13,20 @@ import pytest
 
 from fake_ds import FakeDS
 from phoenix_runs import machine_too_slow
-from scrimmage import java_tools
+from scrimmage import java_tools, robot_process
 from scrimmage.driverstation import REAL_DS_WAITING
+from scrimmage.robot_process import RUN_TOKEN_ARG
 from scrimmage.session import Session
 
 TESTS = Path(__file__).resolve().parent
 ROOT = TESTS.parent
 PROBE = TESTS / "java_probe"
 pytestmark = pytest.mark.java
+
+
+def gradlew(project: Path) -> str:
+    """The project's Gradle wrapper to run with cwd=project (Windows: gradlew.bat, by its full path)."""
+    return str(project / "gradlew.bat") if sys.platform == "win32" else "./gradlew"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -31,7 +37,7 @@ def built_agent():
 @pytest.fixture(scope="module", autouse=True)
 def warm_gradle(built_agent):
     """Download dependencies and compile once, so the timed session starts don't race a cold Gradle cache."""
-    r = subprocess.run(["./gradlew", "build"], cwd=PROBE, env=dict(os.environ, JAVA_HOME=str(java_tools.find_jdk())),
+    r = subprocess.run([gradlew(PROBE), "build"], cwd=PROBE, env=dict(os.environ, JAVA_HOME=str(java_tools.find_jdk())),
                        capture_output=True, text=True, timeout=900)
     assert r.returncode == 0, "gradlew build failed:\n" + (r.stdout + r.stderr)[-3000:]
 
@@ -163,7 +169,8 @@ async def prints_until(s: Session, want: tuple, timeout: float = 10.0) -> list[t
 
 def test_java_reads_the_match_data(tmp_path):
     """Spec M7 for Java: PROBE_MODE=match prints DriverStation.getGameSpecificMessage() and the alliance in teleop.
-    The session's set_match(station="red2", game_data="R") reaches it, and a cleared game data does too."""
+    The session's set_match(station="red2", game_data="R") reaches it, and a cleared game data does too. The robot
+    JVM's command line carries the run token (the init script's -Dscrimmage.runToken, which Windows looks for)."""
     cfg = probe_config(tmp_path, PROBE_MODE="match")
 
     async def main():
@@ -178,6 +185,11 @@ def test_java_reads_the_match_data(tmp_path):
             s.set_match(game_data="")
             got = await prints_until(s, ("", "Red"))
             assert got == [("", "Blue"), ("R", "Red"), ("", "Red")], got
+            if sys.platform.startswith("linux"):
+                arg = f"{RUN_TOKEN_ARG}{s.robot._token}".encode()
+                cmdlines = [Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+                            for pid in robot_process._token_pids(s.robot._token)]
+                assert any(arg in c for c in cmdlines), cmdlines
         finally:
             await s.stop()
     asyncio.run(main())
@@ -317,7 +329,8 @@ def test_java_maxswerve_auto_scenario(tmp_path):
     """REV's MAXSwerve template (SPARK MAX velocity and absolute-encoder position loops, an ADIS16470) runs its own
     trajectory auto under lockstep: the scenario's pose check is where the robot ends up on the field."""
     project = ROOT / "examples" / "java_maxswerve"
-    r = subprocess.run(["./gradlew", "build"], cwd=project, env=dict(os.environ, JAVA_HOME=str(java_tools.find_jdk())),
+    r = subprocess.run([gradlew(project), "build"], cwd=project,
+                       env=dict(os.environ, JAVA_HOME=str(java_tools.find_jdk())),
                        capture_output=True, text=True, timeout=900)   # a cold Gradle cache: keep it out of start_timeout
     assert r.returncode == 0, "gradlew build failed:\n" + (r.stdout + r.stderr)[-3000:]
     out = tmp_path / "out"
@@ -427,7 +440,8 @@ def test_tuner_x_project_follows_scrimmage_physics(tmp_path, caplog):
     import logging
     caplog.set_level(logging.WARNING, logger="scrimmage")
     project = download_tuner_x_project(tmp_path / "SwerveWithPathPlanner")
-    r = subprocess.run(["./gradlew", "build"], cwd=project, env=dict(os.environ, JAVA_HOME=str(java_tools.find_jdk())),
+    r = subprocess.run([gradlew(project), "build"], cwd=project,
+                       env=dict(os.environ, JAVA_HOME=str(java_tools.find_jdk())),
                        capture_output=True, text=True, timeout=900)   # PathplannerLib: more vendordeps to fetch
     assert r.returncode == 0, "gradlew build failed:\n" + (r.stdout + r.stderr)[-3000:]
     cfg = tuner_x_config(project, tmp_path / "tuner_x.toml")
