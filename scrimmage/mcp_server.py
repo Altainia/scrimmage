@@ -198,6 +198,34 @@ async def robot_parts() -> str:
 
 
 @_tool()
+async def inspect_robot(season: int | None = None) -> str:
+    """The session's robot against a season's size and weight rules, as `scrimmage inspect` does: measured at the
+    robot's start pose (a fresh world from the session's config, not the live one). season: the year whose rules to
+    use; leave it out for the config's [inspection] season, else its [range] file's year, else the newest. Returns
+    {season, reason, lines: [{key, rule, measured, limit, over, estimate, text}], notes, not_checked, advice,
+    monitor}:
+    numbers in SI (m, kg), over > 0 when over the limit by that much, estimate when it rests on an estimated battery or
+    bumper mass. monitor: with an [inspection] section, the live session's breach notes since its last reset
+    (height, reach or diameter over a match limit during the run); null without the section."""
+    s = _need()
+    from .config import build_world
+    from .inspection.report import inspect_world
+
+    def work():
+        return inspect_world(build_world(s.config), s.config.raw, season)
+    try:
+        r = await _in_thread(work)
+    except (ConfigError, ValueError) as e:
+        raise _fail(e) from None
+    mon = s.world.inspection if s.world is not None else None
+    return _json({"season": r.season.year, "reason": r.reason,
+                  "lines": [{"key": x.key, "rule": x.rule, "measured": x.measured, "limit": x.limit, "over": x.over,
+                             "estimate": x.estimate, "text": str(x.text)} for x in r.lines],
+                  "notes": [str(n) for n in r.notes], "not_checked": list(r.not_checked), "advice": str(r.advice) if r.advice is not None else None,
+                  "monitor": [str(n) for n in mon.notes(mon.episode)] if mon is not None else None})
+
+
+@_tool()
 async def advance(seconds: float) -> str:
     """Run the simulation forward by `seconds` (at most 60), then hold it again. Returns the state and any new
     robot console lines."""

@@ -650,7 +650,7 @@ class App(FilesMixin, AttachMixin, RobotMixin, CodeMixin, ScenarioMixin, TestMea
         self._robot_target: Path | None = None    # the robot config the scenario names
         self._robot_ver = 0                       # the robot version while there is no robot document
         self.result: validate.Result | None = None
-        self._robot_lang: str | None = None       # the language result and the robot's read-only reason are in
+        self._robot_lang: tuple | None = None       # the language result and the robot's read-only reason are in
         self.scenario: ConfigDoc | None = None
         self.scenario_result: scenario_validate.Result | None = None
         self.scenario_read_only_reason: str | None = None

@@ -15,7 +15,7 @@ import mujoco
 from .. import i18n, teamfolders
 from . import scenario_validate, validate
 from .doc import ConfigDoc, FileChanged
-from .server_common import POLL_SECONDS, ApiError, _plain, _fe, unset_folder, _hand_written
+from .server_common import POLL_SECONDS, ApiError, _plain, _fe, unset_folder, _hand_written, words_key
 
 
 class AttachMixin:
@@ -132,7 +132,7 @@ class AttachMixin:
         self._scenario_view = None
         self._signals = None
         self._parts_seen = self._parts_look()
-        self._robot_lang = i18n.current_language()
+        self._robot_lang = words_key()
         if self.robot is None:
             self.result = validate.Result(False, [validate.FieldError("status", self.robot_missing)], [], None)
         else:

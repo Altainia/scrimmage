@@ -12,14 +12,27 @@ import mujoco
 import tomlkit
 
 from .. import i18n, teamfolders
+from ..checks import shown
 from ..parts.assemble import PLACEMENT_KEYS
 from . import edits, library, validate
 from .doc import FileChanged
 from .edits import EditError
 from .live import LiveError, UnsavedRecording
 from .server_common import (_FOLDER_PLACEHOLDER, ApiError, _plain, _nothing_to, _cant, _chassis_root_body,
-                            _stock_defaults, _fe, _hand_written)
+                            _stock_defaults, _fe, _hand_written, words_key)
 from .view import model_view
+
+
+def _inspection(w) -> dict | None:
+    """The robot's inspection at its start pose (a config with [inspection]), its lines' numbers in SI and their
+    words in the Units and Language settings; None without the section."""
+    mon = w.inspection if w is not None else None
+    if mon is None or mon.start is None:
+        return None
+    r = mon.start
+    return {"season": r.season.year, "reason": r.reason,
+            "lines": [{"key": x.key, "rule": x.rule, "measured": x.measured, "limit": x.limit, "over": x.over,
+                       "estimate": x.estimate, "text": shown(x.text)} for x in r.lines]}
 
 
 class RobotMixin:
@@ -27,10 +40,10 @@ class RobotMixin:
 
     # -- robot ------------------------------------------------------------------------------
     def _robot_words(self) -> None:
-        """When the Language setting changed since the robot was validated: its errors, warnings and read-only
+        """When the Language or Units setting changed since the robot was validated: its errors, warnings and read-only
         reason again, in its words (the file is the same), and the reason no robot is attached (scenario mode:
         _reword_missing). Lock held."""
-        if self._robot_lang == i18n.current_language() or (self.robot is None and self.robot_missing is None):
+        if self._robot_lang == words_key() or (self.robot is None and self.robot_missing is None):
             return
         self._reword_missing()
         d = self.robot
@@ -80,6 +93,7 @@ class RobotMixin:
             out["joints"] = sum(1 for j in range(m.njnt) if int(m.body_rootid[m.jnt_bodyid[j]]) == root
                                 and int(m.jnt_type[j]) != int(mujoco.mjtJoint.mjJNT_FREE))
             out["com"] = self._robot_com(w)
+        out["inspection"] = _inspection(w)
         return out
 
     def _range_file(self) -> str | None:
@@ -340,7 +354,7 @@ class RobotMixin:
                                                                                        why=e)}]}
         self._view = self._scenario_view = self._signals = None
         self.result = res
-        self._robot_lang = i18n.current_language()
+        self._robot_lang = words_key()
         self._parts_seen = self._parts_look()
         if self.test is not None:      # its palette and problems: an edit can change the field or the parts
             self.test.refresh(self._robot_world(), self._robot_problem())

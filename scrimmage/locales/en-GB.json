@@ -99,5 +99,6 @@
   "One of the robot's sensors is on or off: a beam broken, something closer than a distance sensor's threshold, a color sensor seeing a piece (of a named color, with sees), a camera seeing a tag.": "One of the robot's sensors is on or off: a beam broken, something closer than a distance sensor's threshold, a colour sensor seeing a piece (of a named colour, with sees), a camera seeing a tag.",
   "{name} (not a named color)": "{name} (not a named colour)",
   "a color sensor only": "a colour sensor only",
-  "a named color": "a named colour"
+  "a named color": "a named colour",
+  "{mass} modeled": "{mass} modelled"
 }

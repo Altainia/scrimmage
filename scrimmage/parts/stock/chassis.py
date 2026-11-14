@@ -45,7 +45,7 @@ register(Stock(
     "chassis", N_("rectangular drive base with bumpers; modules mount at its corners"),
     (Param("length", "m", 0.7, N_("frame length (front to back), without bumpers"), positive=True),
      Param("width", "m", 0.7, N_("frame width (side to side), without bumpers"), positive=True),
-     Param("mass", "kg", 46.0, N_("everything on the chassis that isn't another part (frame, battery, electronics)"), positive=True),
+     Param("mass", "kg", 46.0, N_("everything on the chassis that isn't another part (frame, bumpers, battery, electronics)"), positive=True),
      Param("frame_height", "m", 0.12, N_("height of the frame's middle above the floor"), positive=True),
      Param("bumper", "m", 0.08, N_("bumper thickness"), positive=True),
      Param("bumper_clearance", "m", 0.02, N_("height of the bumpers' bottom above the carpet; with the bumpers' reach "

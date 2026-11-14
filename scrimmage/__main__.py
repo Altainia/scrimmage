@@ -232,6 +232,13 @@ def main(argv: list[str] | None = None) -> None:
     mp.add_argument("-o", "--output", type=Path, help="write the MJCF to this file instead of printing it")
     mp.add_argument("-v", "--verbose", action="store_true")
 
+    np_ = sub.add_parser("inspect", help="compare a robot with a season's weight and size rules (exit 0 within, 1 over, "
+                                         "2 a config that won't build)")
+    np_.add_argument("config", type=Path)
+    np_.add_argument("--season", type=int, help="the season's rules to use (default: the config's [inspection] "
+                                                "season, then its range's year, then the newest)")
+    np_.add_argument("-v", "--verbose", action="store_true")
+
     gp = sub.add_parser("range", help="range files (a season's field): check one, or picture it, with no robot")
     gsub = gp.add_subparsers(dest="range_command", required=True)
     gc = gsub.add_parser("check", help="read range files and say what each holds, its warnings, or what is wrong "
@@ -372,6 +379,8 @@ def _command(args, rp) -> int | None:
         _test(args)
     elif args.command == "model":
         _model(args)
+    elif args.command == "inspect":
+        _inspect(args)
     elif args.command == "parts":
         _parts(args)
     elif args.command == "range":
@@ -859,6 +868,23 @@ def _model(args) -> None:
     except (ConfigError, ValueError, OSError) as e:
         print(f"scrimmage: {e}", file=sys.stderr)
         sys.exit(2)
+
+
+def _inspect(args) -> None:
+    from .inspection.report import inspect_world, render
+    from .inspection.spec import SEASONS
+    try:
+        if args.season is not None and args.season not in SEASONS:
+            raise ConfigError(f"--season {args.season}: scrimmage knows the seasons "
+                              f"{', '.join(str(y) for y in sorted(SEASONS))}")
+        config = load_config(args.config)
+        result = inspect_world(build_world(config), config.raw, args.season)
+    except (ConfigError, ValueError, OSError) as e:
+        print(f"scrimmage: {e}", file=sys.stderr)
+        sys.exit(2)
+    print("\n".join(render(result)))
+    if result.over:
+        sys.exit(1)
 
 
 def _range(args) -> None:

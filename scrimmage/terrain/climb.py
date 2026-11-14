@@ -44,10 +44,10 @@ the geoms in ELEMENT_GROUP, as the TerrainMonitor's; a truss (a box that isn't g
   `climb.hook_load` is the largest hook's.
 - `climb.extension` (m): how far the robot reaches beyond its frame perimeter, horizontally in the chassis's own
   x-y plane (so a tilted robot doesn't read its tilt as reach): the largest distance from the frame's outline to any
-  colliding geom's bounding box, among the geoms not on the chassis body itself (its frame and bumpers). The frame's
-  outline is the outline of the largest box geom on the robot's body (the chassis), in that body's x-y plane: the
-  stock chassis's frame plate. A robot body without a box geom (a hand-written model) uses the outline of all its
-  colliding geoms' bounding boxes. G107 (2022) caps it at 16 in.
+  corner of a colliding geom's bounding box, among the geoms not on the chassis body itself (its frame and
+  bumpers). The frame's outline is the outline of the largest box geom on the robot's body (the chassis), in that
+  body's x-y plane: the stock chassis's frame plate. A robot body without a box geom (a hand-written model) uses
+  the outline of all its colliding geoms' bounding boxes. G107 (2022) caps it at 16 in.
 - `climb.height` (m): the robot's top above the carpet, the highest of its colliding geoms' bounding boxes. G106
   (2022) caps it at 66 in in the HANGAR ZONE.
 
@@ -103,6 +103,46 @@ def robot_hooks(model: mujoco.MjModel, robot_body: int) -> dict[str, list[int]]:
         if match and model.body_rootid[model.geom_bodyid[g]] == root:
             out.setdefault(match.group(1), []).append(g)
     return dict(sorted(out.items()))
+
+
+def frame_outline(model: mujoco.MjModel, body: int, colliding_only: bool = True) -> tuple[float, float, float, float]:
+    """(x min, x max, y min, y max) of the frame perimeter in the body's frame: the outline of the largest box geom
+    on the body (by top-view area), or, without one, of all its geoms' bounding boxes. Only the colliding geoms
+    count unless colliding_only is False (inspection counts every geom); with none, all zeros."""
+    m = model
+    own = [g for g in range(m.ngeom) if m.geom_bodyid[g] == body
+           and (not colliding_only or m.geom_contype[g] or m.geom_conaffinity[g])]
+    boxes = [g for g in own if m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX]
+    if boxes:
+        own = [max(boxes, key=lambda g: float(m.geom_size[g][0] * m.geom_size[g][1]))]
+    if not own:
+        return (0.0, 0.0, 0.0, 0.0)
+    lo, hi = np.full(2, np.inf), np.full(2, -np.inf)
+    rot = np.zeros(9)
+    for g in own:
+        mujoco.mju_quat2Mat(rot, m.geom_quat[g])
+        r = rot.reshape(3, 3)
+        center = m.geom_pos[g] + r @ m.geom_aabb[g][:3]
+        half = np.abs(r) @ m.geom_aabb[g][3:]
+        lo = np.minimum(lo, (center - half)[:2])
+        hi = np.maximum(hi, (center + half)[:2])
+    return (float(lo[0]), float(hi[0]), float(lo[1]), float(hi[1]))
+
+
+def extent(points: np.ndarray, n_reach: int, origin: np.ndarray, rot: np.ndarray, lo: np.ndarray,
+           hi: np.ndarray) -> tuple[float, float, int]:
+    """(height, reach, the reach's point) of a robot's points (n, 3) in the world: height is the highest point's z
+    (the floor is z = 0); reach is the largest horizontal distance past the frame outline (lo, hi: its (x, y) corners
+    in the chassis's frame, origin and rot its pose) of any of the first n_reach points, in the chassis's own x-y
+    plane, and the index of that point (-1 with none sticking out)."""
+    height = float(points[:, 2].max())
+    if not n_reach:
+        return height, 0.0, -1
+    local = (points[:n_reach] - origin) @ rot[:, :2]           # chassis x, y
+    out = np.maximum(np.maximum(local - hi, lo - local), 0.0)
+    dist = np.sqrt((out * out).sum(axis=1))
+    k = int(dist.argmax())
+    return height, float(dist[k]), (k if dist[k] > 0.0 else -1)
 
 
 class ClimbMonitor:
@@ -194,32 +234,11 @@ class ClimbMonitor:
         self._reach = len(reach)        # the first _reach of _geoms count for the extension
         signs = np.array(list(np.ndindex(2, 2, 2)), dtype=float) * 2.0 - 1.0          # (8, 3)
         self._corners = m.geom_aabb[self._geoms, None, :3] + signs * m.geom_aabb[self._geoms, None, 3:]  # (n, 8, 3)
-        x0, x1, y0, y1 = self._frame_outline()
+        x0, x1, y0, y1 = frame_outline(m, self.body)
         self._frame_lo, self._frame_hi = np.array([x0, y0]), np.array([x1, y1])
         # Extension and height need the extent every step: on once a scenario asks for one (track_extent).
         self.extent = False
         self.reset()
-
-    def _frame_outline(self) -> tuple[float, float, float, float]:
-        """(x min, x max, y min, y max) of the frame perimeter in the robot body's frame."""
-        m = self.model
-        own = [g for g in range(m.ngeom)
-               if m.geom_bodyid[g] == self.body and (m.geom_contype[g] or m.geom_conaffinity[g])]
-        boxes = [g for g in own if m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX]
-        if boxes:
-            own = [max(boxes, key=lambda g: float(m.geom_size[g][0] * m.geom_size[g][1]))]
-        if not own:
-            return (0.0, 0.0, 0.0, 0.0)
-        lo, hi = np.full(2, np.inf), np.full(2, -np.inf)
-        rot = np.zeros(9)
-        for g in own:
-            mujoco.mju_quat2Mat(rot, m.geom_quat[g])
-            r = rot.reshape(3, 3)
-            center = m.geom_pos[g] + r @ m.geom_aabb[g][:3]
-            half = np.abs(r) @ m.geom_aabb[g][3:]
-            lo = np.minimum(lo, (center - half)[:2])
-            hi = np.maximum(hi, (center + half)[:2])
-        return (float(lo[0]), float(hi[0]), float(lo[1]), float(hi[1]))
 
     def track_extent(self) -> None:
         """Read the extension and height every step from now on."""
@@ -456,11 +475,6 @@ class ClimbMonitor:
         if not len(self._geoms):
             return 0.0, 0.0
         d = self.data
-        pts = self._points()
-        height = float(pts[..., 2].max())
-        if not self._reach:
-            return 0.0, height
-        rc = d.xmat[self.body].reshape(3, 3)
-        local = ((pts[:self._reach].reshape(-1, 3) - d.xpos[self.body]) @ rc[:, :2]).reshape(-1, 8, 2)  # chassis x, y
-        out = np.maximum(np.maximum(local.max(axis=1) - self._frame_hi, self._frame_lo - local.min(axis=1)), 0.0)
-        return float(np.sqrt((out * out).sum(axis=1)).max()), height
+        height, reach, _ = extent(self._points().reshape(-1, 3), 8 * self._reach, d.xpos[self.body],
+                                  d.xmat[self.body].reshape(3, 3), self._frame_lo, self._frame_hi)
+        return reach, height
