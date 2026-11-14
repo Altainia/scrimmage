@@ -91,7 +91,7 @@ is "everything on the chassis that isn't another part (frame, battery, electroni
 that body. So:
 
 - weight = the robot's whole mass (its subtree) − battery − bumpers.
-- `[inspection] battery` and `bumpers` (kg) are what the team weighed. Unset, battery is 12.89 lb (AndyMark's
+- `[inspection] battery_mass` and `bumper_mass` (kg) are what the team weighed. Unset, battery is 12.89 lb (AndyMark's
   listing for am-0844, the MK ES17-12 most teams use; the rules allow 11.0 to 14.5 lb, R601) and bumpers 15 lb
   (an UNCALIBRATED estimate of a bumper set; no source), both labeled "estimate".
 - The bumpers are checked too: against the per-set limit (2013 to 2024), or the weight with bumpers against the
@@ -99,7 +99,7 @@ that body. So:
 - The weight line always shows the sum: "112.4 lb = 141.0 lb modeled − 13.0 lb battery (estimate) − 15.6 lb
   bumpers (estimate)". With either an estimate, an over-limit weight is a warning, never "legal".
 - *Cost if wrong:* a robot whose chassis mass doesn't include the battery reads light. The line names what was
-  subtracted, and docs/inspection.md says to set battery = 0 when your model leaves it out.
+  subtracted, and docs/inspection.md says to set battery_mass = 0 when your model leaves it out.
 
 ### Call I4: what "frame perimeter", "height" and "extension" are in a model
 
@@ -177,9 +177,9 @@ extensions, so 20 ms is fine. *Cost:* a 10 ms flick past the line isn't reported
 2. **The stock chassis's mass includes its bumpers and battery.** Its bumpers are massless geoms on the chassis body,
    and `mass` is "everything on the chassis that isn't another part", so they are in it. The parameter's help is
    made explicit: "(frame, bumpers, battery, electronics)". A hand-built or CAD model that leaves them out sets
-   `[inspection] battery = 0` / `bumpers = 0`; docs/inspection.md says so first. An over-limit weight that rests on
+   `[inspection] battery_mass = 0` / `bumper_mass = 0`; docs/inspection.md says so first. An over-limit weight that rests on
    an estimate still exits 1 (a team running it in CI wants to know), and the line says "with estimates: weigh your
-   battery and bumpers and set [inspection] battery and bumpers".
+   battery and bumpers and set [inspection] battery_mass and bumper_mass".
 3. **The frame.** The frame outline is the largest box on the robot body, by top-view area: for the stock chassis
    its frame plate (L × W; a bumper box is b × (W + 2b), smaller for any chassis the parameter limits allow). So the
    perimeter excludes bumpers, as R104 measures. The 2013 cylinder includes bumpers. Reach (extension) excludes the
