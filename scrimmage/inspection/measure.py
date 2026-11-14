@@ -6,12 +6,15 @@ root), colliding or not: an elevator's stages are built collide = false, and the
 - perimeter: 2 x (length + width) of the frame outline (terrain.climb.frame_outline over every geom): the largest box
   on the robot body by top-view area (the stock chassis's frame plate, so bumpers are out, as R104 measures), or,
   without a box (`frame_plate` False), the outline of all the body's geoms.
-- height: the highest corner of the geoms' bounding boxes (MuJoCo's geom_aabb, turned with the geom) above the floor,
-  z = 0. Bumpers count (answer 7).
-- reach: the largest horizontal distance, in the robot body's own x-y plane, from the frame outline to a corner of a
+- The geoms are measured by points on their own shapes (shape_points: a box's corners, a round geom's rings, a mesh's
+  vertices), not their bounding boxes: a round part's square box would overstate its reach (a swerve module's
+  azimuth cylinder, 4 cm past the frame corner by its box, under 2 cm by its shape). A ring of RING points sits
+  inside the true circle by at most r (1 - cos(pi / RING)), 2 % of the radius.
+- height: the highest point above the floor, z = 0. Bumpers count (answer 7).
+- reach: the largest horizontal distance, in the robot body's own x-y plane, from the frame outline to a point of a
   geom not on the robot body itself (so its frame, bumpers and heading marker never count), the climb runs'
-  extension over every geom.
-- diameter: the smallest circle holding every geom's box corners projected on the floor, bumpers included (2013).
+  extension (terrain.climb.extent) over every geom's shape. `reach_geom` names the geom setting it.
+- diameter: the smallest circle holding every point projected on the floor, bumpers included (2013).
 
 All of it at the world's current state: `measure(world)` right after building is the start configuration (answer 4).
 """
@@ -23,7 +26,7 @@ from dataclasses import dataclass
 import mujoco
 import numpy as np
 
-from ..terrain.climb import frame_outline
+from ..terrain.climb import extent, frame_outline
 
 
 @dataclass(frozen=True)
@@ -34,11 +37,53 @@ class Measures:
     height: float        # m
     reach: float         # m
     diameter: float      # m
+    reach_geom: str = ""  # the geom setting the reach (its name, or its body's); "" when none sticks out
+
+
+RING = 16      # points on each ring of a round geom's surface
+
+
+def _ring(r1: float, r2: float, z: float) -> np.ndarray:
+    """RING points on an ellipse of half-axes r1 (x), r2 (y) at height z: (RING, 3)."""
+    a = np.arange(RING) * (2 * math.pi / RING)
+    return np.stack([r1 * np.cos(a), r2 * np.sin(a), np.full(RING, z)], axis=1)
+
+
+def shape_points(model: mujoco.MjModel, g: int) -> np.ndarray:
+    """Points on geom g's own shape, in its frame (n, 3): a box's 8 corners; a sphere's or ellipsoid's three
+    orthogonal rings and poles; a cylinder's two end rims; a capsule's two rims, its caps' rings at 45 deg and its
+    tips; a mesh's vertices. Anything else (a plane, height field or SDF) is its bounding box's corners."""
+    T = mujoco.mjtGeom
+    t, size = int(model.geom_type[g]), model.geom_size[g]     # an int: a numpy int isn't `in` a tuple of mjtGeom
+    signs = np.array(list(np.ndindex(2, 2, 2)), dtype=float) * 2.0 - 1.0          # (8, 3)
+    if t == T.mjGEOM_BOX:
+        return signs * size
+    if t in (int(T.mjGEOM_SPHERE), int(T.mjGEOM_ELLIPSOID)):
+        rx, ry, rz = (size[0],) * 3 if t == T.mjGEOM_SPHERE else size
+        xy = _ring(rx, ry, 0.0)
+        xz = _ring(rx, rz, 0.0)[:, [0, 2, 1]]
+        yz = _ring(ry, rz, 0.0)[:, [2, 0, 1]]
+        return np.concatenate([xy, xz, yz, [[0, 0, rz], [0, 0, -rz]]])
+    if t == T.mjGEOM_CYLINDER:
+        r, h = size[0], size[1]
+        return np.concatenate([_ring(r, r, h), _ring(r, r, -h)])
+    if t == T.mjGEOM_CAPSULE:
+        r, h = size[0], size[1]
+        c = r * math.sqrt(0.5)
+        return np.concatenate([_ring(r, r, h), _ring(r, r, -h), _ring(c, c, h + c), _ring(c, c, -h - c),
+                               [[0, 0, h + r], [0, 0, -h - r]]])
+    if t == T.mjGEOM_MESH and model.geom_dataid[g] >= 0:
+        k = model.geom_dataid[g]
+        start, n = model.mesh_vertadr[k], model.mesh_vertnum[k]
+        return np.array(model.mesh_vert[start:start + n], dtype=float)      # already in the geom's frame
+    aabb = model.geom_aabb[g]
+    return aabb[:3] + signs * aabb[3:]
 
 
 class Extent:
-    """The robot's height and reach at the world's current state. The geoms, their boxes' corners and the frame
-    outline are found once here, so read() (called every 20 ms of a scenario) only turns the corners."""
+    """The robot's height and reach at the world's current state, over points on every robot geom's own shape
+    (shape_points). The geoms, their points in their own frames and the frame outline are found once here, so
+    read() (called every 20 ms of a scenario) only turns the points."""
 
     def __init__(self, world):
         m = world.model
@@ -46,33 +91,41 @@ class Extent:
         root = m.body_rootid[self.body]
         mine = [g for g in range(m.ngeom) if m.body_rootid[m.geom_bodyid[g]] == root]
         reach = [g for g in mine if m.geom_bodyid[g] != self.body]
-        self._geoms = np.array(reach + [g for g in mine if m.geom_bodyid[g] == self.body], dtype=np.int64)
-        self._reach = len(reach)        # the first _reach of _geoms count for the reach
-        signs = np.array(list(np.ndindex(2, 2, 2)), dtype=float) * 2.0 - 1.0          # (8, 3)
-        self._corners = m.geom_aabb[self._geoms, None, :3] + signs * m.geom_aabb[self._geoms, None, 3:]  # (n, 8, 3)
+        geoms = reach + [g for g in mine if m.geom_bodyid[g] == self.body]
+        shapes = [shape_points(m, g) for g in geoms]
+        counts = [len(p) for p in shapes]
+        self._geoms = np.array(geoms, dtype=np.int64)
+        self._local = np.concatenate(shapes) if shapes else np.zeros((0, 3))           # (n, 3)
+        self._of = np.repeat(self._geoms, counts)                                      # each point's geom
+        self._reach = sum(counts[:len(reach)])        # the first _reach points count for the reach
         x0, x1, y0, y1 = frame_outline(m, self.body, colliding_only=False)
         self.outline = (x0, x1, y0, y1)
         self._lo, self._hi = np.array([x0, y0]), np.array([x1, y1])
 
     def points(self) -> np.ndarray:
-        """The corners of every robot geom's bounding box, in the world: (geoms, 8, 3)."""
+        """Every point on the robot's geoms, in the world: (n, 3)."""
         d = self.data
-        rot = d.geom_xmat[self._geoms].reshape(-1, 3, 3)
-        return self._corners @ rot.transpose(0, 2, 1) + d.geom_xpos[self._geoms][:, None, :]
+        rot = d.geom_xmat[self._of].reshape(-1, 3, 3)
+        return np.einsum("nij,nj->ni", rot, self._local) + d.geom_xpos[self._of]
+
+    def read_where(self) -> tuple[float, float, int]:
+        """(height, reach, the geom setting the reach: -1 when none sticks out)."""
+        if not len(self._local):
+            return 0.0, 0.0, -1
+        d = self.data
+        height, reach, k = extent(self.points(), self._reach, d.xpos[self.body], d.xmat[self.body].reshape(3, 3),
+                                  self._lo, self._hi)
+        return height, reach, (int(self._of[k]) if k >= 0 else -1)
 
     def read(self) -> tuple[float, float]:
         """(height, reach) in meters."""
-        if not len(self._geoms):
-            return 0.0, 0.0
-        d = self.data
-        pts = self.points()
-        height = float(pts[..., 2].max())        # the floor is z = 0
-        if not self._reach:
-            return height, 0.0
-        rc = d.xmat[self.body].reshape(3, 3)
-        local = ((pts[:self._reach].reshape(-1, 3) - d.xpos[self.body]) @ rc[:, :2]).reshape(-1, 8, 2)  # body x, y
-        out = np.maximum(np.maximum(local.max(axis=1) - self._hi, self._lo - local.min(axis=1)), 0.0)
-        return height, float(np.sqrt((out * out).sum(axis=1)).max())
+        height, reach, _ = self.read_where()
+        return height, reach
+
+
+def geom_label(model: mujoco.MjModel, g: int) -> str:
+    """A geom's name, or with none its body's."""
+    return model.geom(g).name or model.body(model.geom_bodyid[g]).name
 
 
 def measure(world) -> Measures:
@@ -80,13 +133,14 @@ def measure(world) -> Measures:
     m = world.model
     ext = Extent(world)
     x0, x1, y0, y1 = ext.outline
-    height, reach = ext.read()
+    height, reach, where = ext.read_where()
     pts = ext.points()
     return Measures(mass=float(m.body_subtreemass[m.body_rootid[world.robot_body]]),
                     perimeter=2.0 * ((x1 - x0) + (y1 - y0)),
                     frame_plate=_has_box(m, world.robot_body),
                     height=height, reach=reach,
-                    diameter=smallest_circle(pts[..., :2].reshape(-1, 2)) if len(pts) else 0.0)
+                    diameter=smallest_circle(pts[:, :2]) if len(pts) else 0.0,
+                    reach_geom=geom_label(m, where) if where >= 0 else "")
 
 
 def _has_box(model, body: int) -> bool:

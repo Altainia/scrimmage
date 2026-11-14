@@ -44,10 +44,10 @@ the geoms in ELEMENT_GROUP, as the TerrainMonitor's; a truss (a box that isn't g
   `climb.hook_load` is the largest hook's.
 - `climb.extension` (m): how far the robot reaches beyond its frame perimeter, horizontally in the chassis's own
   x-y plane (so a tilted robot doesn't read its tilt as reach): the largest distance from the frame's outline to any
-  colliding geom's bounding box, among the geoms not on the chassis body itself (its frame and bumpers). The frame's
-  outline is the outline of the largest box geom on the robot's body (the chassis), in that body's x-y plane: the
-  stock chassis's frame plate. A robot body without a box geom (a hand-written model) uses the outline of all its
-  colliding geoms' bounding boxes. G107 (2022) caps it at 16 in.
+  corner of a colliding geom's bounding box, among the geoms not on the chassis body itself (its frame and
+  bumpers). The frame's outline is the outline of the largest box geom on the robot's body (the chassis), in that
+  body's x-y plane: the stock chassis's frame plate. A robot body without a box geom (a hand-written model) uses
+  the outline of all its colliding geoms' bounding boxes. G107 (2022) caps it at 16 in.
 - `climb.height` (m): the robot's top above the carpet, the highest of its colliding geoms' bounding boxes. G106
   (2022) caps it at 66 in in the HANGAR ZONE.
 
@@ -127,6 +127,22 @@ def frame_outline(model: mujoco.MjModel, body: int, colliding_only: bool = True)
         lo = np.minimum(lo, (center - half)[:2])
         hi = np.maximum(hi, (center + half)[:2])
     return (float(lo[0]), float(hi[0]), float(lo[1]), float(hi[1]))
+
+
+def extent(points: np.ndarray, n_reach: int, origin: np.ndarray, rot: np.ndarray, lo: np.ndarray,
+           hi: np.ndarray) -> tuple[float, float, int]:
+    """(height, reach, the reach's point) of a robot's points (n, 3) in the world: height is the highest point's z
+    (the floor is z = 0); reach is the largest horizontal distance past the frame outline (lo, hi: its (x, y) corners
+    in the chassis's frame, origin and rot its pose) of any of the first n_reach points, in the chassis's own x-y
+    plane, and the index of that point (-1 with none sticking out)."""
+    height = float(points[:, 2].max())
+    if not n_reach:
+        return height, 0.0, -1
+    local = (points[:n_reach] - origin) @ rot[:, :2]           # chassis x, y
+    out = np.maximum(np.maximum(local - hi, lo - local), 0.0)
+    dist = np.sqrt((out * out).sum(axis=1))
+    k = int(dist.argmax())
+    return height, float(dist[k]), (k if dist[k] > 0.0 else -1)
 
 
 class ClimbMonitor:
@@ -459,11 +475,6 @@ class ClimbMonitor:
         if not len(self._geoms):
             return 0.0, 0.0
         d = self.data
-        pts = self._points()
-        height = float(pts[..., 2].max())
-        if not self._reach:
-            return 0.0, height
-        rc = d.xmat[self.body].reshape(3, 3)
-        local = ((pts[:self._reach].reshape(-1, 3) - d.xpos[self.body]) @ rc[:, :2]).reshape(-1, 8, 2)  # chassis x, y
-        out = np.maximum(np.maximum(local.max(axis=1) - self._frame_hi, self._frame_lo - local.min(axis=1)), 0.0)
-        return float(np.sqrt((out * out).sum(axis=1)).max()), height
+        height, reach, _ = extent(self._points().reshape(-1, 3), 8 * self._reach, d.xpos[self.body],
+                                  d.xmat[self.body].reshape(3, 3), self._frame_lo, self._frame_hi)
+        return reach, height

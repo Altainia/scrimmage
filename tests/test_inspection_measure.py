@@ -10,7 +10,8 @@ import numpy as np
 import pytest
 
 from scrimmage.config import build_world, load_config
-from scrimmage.inspection.measure import Extent, measure, smallest_circle
+from scrimmage.terrain.climb import extent
+from scrimmage.inspection.measure import Extent, measure, shape_points, smallest_circle
 from scrimmage.world import World
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,7 +27,8 @@ def test_the_stock_kitbot():   # configs/kitbot.toml: chassis 0.66 x 0.6, bumper
     assert m.perimeter == pytest.approx(2 * (0.66 + 0.6), abs=1e-6) and m.frame_plate
     root = w.model.body_rootid[w.robot_body]
     assert m.mass == pytest.approx(float(w.model.body_subtreemass[root]))
-    assert m.reach == pytest.approx(0, abs=0.01)
+    assert m.reach < 0.02       # the wheels' rims stick out 6 mm past the frame's ends
+    assert m.reach_geom.startswith("dt.") and "tread" in m.reach_geom
     assert 0.6 + 2 * 0.08 <= m.diameter <= math.hypot(0.66 + 0.16, 0.6 + 0.16) + 1e-6
     assert 0.02 + 0.12 <= m.height <= 0.16       # at least the bumpers' top (clearance + their height); the wheels' boxes
 
@@ -61,7 +63,8 @@ def test_an_arm_reaching_out_reads_its_reach():
     a = next(x for x in np.linspace(0, math.pi / 2, 200001) if 0.5 * math.cos(x) + 0.02 * math.sin(x) <= want)
     d.qpos[m.jnt_qposadr[m.joint("arm.pivot").id]] = a
     mujoco.mj_forward(m, d)
-    assert measure(w).reach == pytest.approx(0.3, abs=1e-4)
+    got = measure(w)
+    assert got.reach == pytest.approx(0.3, abs=1e-4) and got.reach_geom == "arm.arm"
     assert Extent(w).read()[1] == pytest.approx(0.3, abs=1e-4)
 
 
@@ -87,8 +90,50 @@ def test_a_robot_without_a_frame_plate_uses_all_its_geoms(tmp_path):
     assert m.perimeter == pytest.approx(2 * (0.6 + 0.6), abs=1e-6)
     assert m.mass == pytest.approx(43.0)
     assert m.height == pytest.approx(0.2 + 0.1 + 0.5 + 0.02, abs=1e-6)
-    assert m.reach == pytest.approx(0, abs=1e-9)
-    assert m.diameter == pytest.approx(0.6 * math.sqrt(2), abs=1e-6)   # the cylinder's bounding square
+    assert m.reach == pytest.approx(0, abs=1e-9) and m.reach_geom == ""
+    # the cylinder (r 0.3) and the sphere (r 0.05, its center 0.32 off the axis): 0.3 + 0.32 + 0.05 across, less a
+    # little for the rings' points sitting inside the true circles
+    assert 0.67 - 0.003 <= m.diameter <= 0.67 + 1e-9
+
+
+def test_round_parts_are_measured_by_their_shape():
+    """configs/maxswerve.toml: each module's azimuth cylinder (r 0.06) is centered 0.0191 m inside the frame's
+    corner in x and y, so its square bounding box would read hypot(0.0409, 0.0409) = 0.058 m past the corner; its
+    rim reaches 0.0409 m past one edge. What sets the reach is the module's base plate, a 0.1 m square box centered
+    there: its corner is hypot(0.0309, 0.0309) = 0.0437 m past the frame's corner."""
+    w = world("maxswerve.toml")
+    got = measure(w)
+    assert got.reach == pytest.approx(math.hypot(0.05 - 0.0191, 0.05 - 0.0191), abs=1e-3)
+    assert got.reach_geom.endswith(".base")
+    m = w.model
+    azimuth = [g for g in range(m.ngeom) if m.body(m.geom_bodyid[g]).name.endswith(".azimuth")]
+    d, ext = w.data, Extent(w)
+    pts = np.concatenate([shape_points(m, g) @ d.geom_xmat[g].reshape(3, 3).T + d.geom_xpos[g] for g in azimuth])
+    _, reach, _ = extent(pts, len(pts), d.xpos[w.robot_body], d.xmat[w.robot_body].reshape(3, 3), ext._lo, ext._hi)
+    assert reach == pytest.approx(0.06 - 0.0191, abs=1e-3)      # the rim, not its box's corner (0.058)
+
+
+MESH_XML = """<mujoco>
+  <asset><mesh name="wedge" vertex="0.3 -0.1 0  0.5 -0.1 0  0.3 0.1 0  0.3 -0.1 0.4"/></asset>
+  <worldbody>
+    <body name="chassis" pos="0 0 0.1"><freejoint/>
+      <geom type="box" size="0.3 0.3 0.05" mass="40"/>
+      <body name="arm" pos="0.1 0 0.05" euler="0 0 90">
+        <geom name="wedge" type="mesh" mesh="wedge" mass="1"/>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>"""
+
+
+def test_a_mesh_is_measured_by_its_vertices(tmp_path):
+    """A wedge mesh on a body turned 90 deg about z, at x 0.1: its vertices go to x 0.1 + 0.1 = 0.2 (inside the
+    frame), y 0.3 to 0.5 (0.2 past the frame's side at y 0.3) and z 0.15 + 0.4."""
+    (tmp_path / "robot.xml").write_text(MESH_XML, encoding="utf-8")
+    w = World({"model": {"mjcf": "robot.xml"}}, tmp_path)
+    got = measure(w)
+    assert got.reach == pytest.approx(0.2, abs=1e-6) and got.reach_geom == "wedge"
+    assert got.height == pytest.approx(0.1 + 0.05 + 0.4, abs=1e-6)
 
 
 def test_smallest_circle():
