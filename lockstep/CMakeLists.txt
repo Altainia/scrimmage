@@ -2,16 +2,18 @@ cmake_minimum_required(VERSION 3.21)
 # No language yet: off Linux nothing is compiled, so no C++ compiler is needed there.
 project(scrimmage_lockstep LANGUAGES NONE)
 
-# Lockstep is Linux only for now: the two libraries are built and installed only there. Elsewhere the package is pure
-# Python (the REV and LaserCAN helpers, run in real time); pyproject.toml skips CMake there altogether, so this guard
-# only matters for a build that runs CMake anyway.
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)   # SPIKE: Windows lockstep
+# On Linux `pip install` builds and installs the two libraries. Elsewhere pyproject.toml skips CMake altogether and the
+# package is pure Python. On Windows it carries a prebuilt extension (scrimmage_lockstep/lib/win_amd64), which CI
+# builds by running CMake here directly (.github/workflows/ci.yml, the windows job); lockstep/tools/stamp.py records
+# which source it came from.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)
   enable_language(CXX)
   set(CMAKE_CXX_STANDARD 20)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
   set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
-  # The HAL headers and libwpiHal.so come from the robotpy-native-wpihal wheel (a build requirement on Linux).
+  # The HAL headers and libwpiHal.so (wpiHal.lib on Windows) come from the robotpy-native-wpihal wheel (a build
+  # requirement on Linux; a dependency of robotpy-hal, installed with RobotPy, for Windows CI's build).
   find_package(Python COMPONENTS Interpreter REQUIRED)
   execute_process(
     COMMAND "${Python_EXECUTABLE}" -c
@@ -29,13 +31,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)   # SPIKE: Windows lockstep
 
   add_library(halsim_scrimmage_lockstep SHARED src/scrimmage_lockstep.cpp)
   target_include_directories(halsim_scrimmage_lockstep PRIVATE "${WPIHAL_DIR}/include" "${WPIUTIL_DIR}/include")
-  # libwpiHal.so's SONAME is "libwpiHal.so", so this records NEEDED libwpiHal.so (no path): at runtime
-  # it binds to the HAL the robot process already loaded.
-  if(WIN32)   # SPIKE: the wheel ships wpiHal.lib (the import library) beside wpiHal.dll
+  if(WIN32)
+    # wpiHal.lib is the import library of wpiHal.dll: the DLL records wpiHal.dll by name, so at runtime it binds to
+    # the HAL the robot process already loaded. No seed library: REV's noise isn't pinned on Windows (docs/rev.md).
     target_link_libraries(halsim_scrimmage_lockstep PRIVATE "${WPIHAL_DIR}/lib/wpiHal.lib")
-    install(TARGETS halsim_scrimmage_lockstep RUNTIME DESTINATION scrimmage_lockstep/lib
-            LIBRARY DESTINATION scrimmage_lockstep/lib)
+    install(TARGETS halsim_scrimmage_lockstep RUNTIME DESTINATION scrimmage_lockstep/lib/win_amd64)
   else()
+    # libwpiHal.so's SONAME is "libwpiHal.so", so this records NEEDED libwpiHal.so (no path): at runtime
+    # it binds to the HAL the robot process already loaded.
     target_link_libraries(halsim_scrimmage_lockstep PRIVATE "${WPIHAL_DIR}/lib/libwpiHal.so")
 
     # Fixed std::random_device numbers, preloaded into RobotPy robots by scrimmage (see src/scrimmage_seed.cpp).
@@ -44,5 +47,5 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)   # SPIKE: Windows lockstep
     install(TARGETS halsim_scrimmage_lockstep scrimmage_seed LIBRARY DESTINATION scrimmage_lockstep/lib)
   endif()
 else()
-  message(STATUS "lockstep is Linux only for now: installing scrimmage_lockstep as pure Python")
+  message(STATUS "lockstep is built on Linux and Windows only: installing scrimmage_lockstep as pure Python")
 endif()

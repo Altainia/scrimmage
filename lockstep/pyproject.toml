@@ -1,11 +1,11 @@
 [build-system]
 # robotpy-native-wpihal: the HAL headers and library the C++ extension builds against (Linux only, see CMakeLists.txt)
-requires = ["scikit-build-core>=0.10", "robotpy-native-wpihal>=2026.2,<2027; sys_platform == 'linux' or sys_platform == 'win32'"]
+requires = ["scikit-build-core>=0.10", "robotpy-native-wpihal>=2026.2,<2027; sys_platform == 'linux'"]
 build-backend = "scikit_build_core.build"
 
 [project]
 name = "scrimmage-lockstep"
-version = "0.7.0"
+version = "0.8.0"
 # RobotPy shows this as the help text for --scrimmage-lockstep
 description = "Let scrimmage step the robot program's clock (lockstep simulation)"
 requires-python = ">=3.11"
@@ -19,8 +19,9 @@ scrimmage-lockstep = "scrimmage_lockstep"
 cmake.version = ">=3.21"
 wheel.packages = ["scrimmage_lockstep"]
 
-# Off Linux the package is pure Python (the REV and LaserCAN helpers; the robot runs in real time): no CMake, no
-# compiler, a py3-none-any wheel
+# Off Linux the package is pure Python: no CMake, no compiler, a py3-none-any wheel. It carries the REV and LaserCAN
+# helpers and, as package data, the prebuilt Windows x64 extension (scrimmage_lockstep/lib/win_amd64, see
+# CMakeLists.txt), which only Windows x64 loads; elsewhere the robot runs in real time
 [[tool.scikit-build.overrides]]
-if.platform-system = "^(?!linux|win32)"
+if.platform-system = "^(?!linux)"
 wheel.cmake = false
