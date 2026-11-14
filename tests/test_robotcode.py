@@ -1,8 +1,11 @@
 import os
+import platform
 import shutil
 import stat
 import sys
 from pathlib import Path
+
+import pytest
 
 from scrimmage import robotcode
 from scrimmage.robotcode import Check, ProjectInfo, checklist, detect, program_table, run_fix
@@ -57,8 +60,9 @@ def test_checklist_ids_and_realtime_note():
     assert "robotpy" not in c
 
 
-def test_checklist_lockstep_not_on_windows_for_java(monkeypatch):
+def test_checklist_lockstep_not_on_windows_on_arm_for_java(monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(platform, "machine", lambda: "ARM64")
     monkeypatch.setattr(robotcode, "_lockstep_state", lambda py: (_ for _ in ()).throw(AssertionError("not asked")))
     c = {x.id: x for x in checklist(detect(EXAMPLES / "java_swerve"))}
     assert c["lockstep"].ok is None
@@ -71,6 +75,7 @@ def test_checklist_robotpy_off_linux_needs_the_package_for_its_helpers(monkeypat
     compiled part is expected)."""
     from scrimmage.session import LOCKSTEP_VERSION
     monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(platform, "machine", lambda: "ARM64")
     info = detect(EXAMPLES / "robotpy_kitbot")
     monkeypatch.setattr(robotcode, "_lockstep_state", lambda py: (None, False))
     c = {x.id: x for x in checklist(info)}
@@ -219,6 +224,54 @@ def test_install_lockstep_failure_off_linux_asks_for_no_compiler(tmp_path, monke
     r = run_fix("install_lockstep", info, lambda s: None)
     assert "compiler" not in r.message and "RobotPy add-on" in r.message
     assert f'/x/python -m pip install "{robotcode.LOCKSTEP_DIR}"' in r.message
+
+
+@pytest.mark.parametrize("example", ["robotpy_kitbot", "java_swerve"])
+def test_checklist_on_windows_x64_needs_0_8_0_for_lockstep(monkeypatch, example):
+    """Windows x64 runs in lockstep from 0.8.0's prebuilt DLL: older is "too old" (it still runs, in real time), and
+    installed it's checked like Linux (the DLL there, not a build). Java too; Phoenix 6 still says real time."""
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(platform, "machine", lambda: "AMD64")
+    info = detect(EXAMPLES / example)
+    monkeypatch.setattr(robotcode, "_lockstep_state", lambda py: ("0.7.0", False))
+    c = {x.id: x for x in checklist(info)}
+    assert c["lockstep"].ok is False and c["lockstep"].fix == "install_lockstep"
+    assert c["lockstep"].message == ("The fast-simulation add-on is too old (0.7.0; this scrimmage needs 0.8.0 or "
+                                     "newer): update it to run faster than real time.")
+    monkeypatch.setattr(robotcode, "_lockstep_state", lambda py: ("0.8.0", False))
+    c = {x.id: x for x in checklist(info)}
+    assert c["lockstep"].ok is False and "doesn't load" in c["lockstep"].message
+    monkeypatch.setattr(robotcode, "_lockstep_state", lambda py: ("0.8.0", True))
+    c = {x.id: x for x in checklist(info)}
+    assert c["lockstep"].ok is True and "fast-simulation add-on is installed (0.8.0)" in c["lockstep"].message
+    if example == "java_swerve":
+        assert "Phoenix" in c["realtime"].message
+    else:
+        assert c["realtime"].message == "This robot can be paused and run faster than real time."
+
+
+def test_checklist_on_linux_keeps_the_0_6_0_floor(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(robotcode, "_lockstep_state", lambda py: ("0.6.0", True))
+    c = {x.id: x for x in checklist(detect(EXAMPLES / "robotpy_kitbot"))}
+    assert c["lockstep"].ok is True
+
+
+def test_checklist_on_macos_runs_in_real_time(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(robotcode, "_lockstep_state", lambda py: ("0.8.0", False))
+    c = {x.id: x for x in checklist(detect(EXAMPLES / "robotpy_kitbot"))}
+    assert c["lockstep"].ok is True and "RobotPy add-on" in c["lockstep"].message
+    assert "real time" in c["realtime"].message and "paused" not in c["realtime"].message
+
+
+def test_install_lockstep_failure_on_windows_x64_asks_for_no_compiler(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(platform, "machine", lambda: "AMD64")
+    monkeypatch.setattr(robotcode, "_stream", lambda *a, **k: (1, ["boom"]))
+    info = ProjectInfo(tmp_path, "robotpy", [], False, Path("/x/python"), "")
+    r = run_fix("install_lockstep", info, lambda s: None)
+    assert "compiler" not in r.message and "fast-simulation add-on" in r.message
 
 
 def test_install_lockstep_missing_folder_runs_nothing(tmp_path, monkeypatch):
