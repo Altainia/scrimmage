@@ -13,11 +13,26 @@ from scrimmage import java_tools
 from scrimmage.config import load_config
 
 
-def test_find_jdk_prefers_java_home(tmp_path, monkeypatch):
-    jdk = tmp_path / "jdk"
-    (jdk / "bin").mkdir(parents=True)
+def _fake_jdk(path: Path, suffix: str) -> Path:
+    (path / "bin").mkdir(parents=True)
     for tool in ("java", "javac", "jar"):
-        (jdk / "bin" / tool).write_text("#!/bin/sh\n")
+        (path / "bin" / (tool + suffix)).write_text("#!/bin/sh\n", encoding="utf-8")
+    return path
+
+
+def test_find_jdk_prefers_java_home(tmp_path, monkeypatch):
+    jdk = _fake_jdk(tmp_path / "jdk", ".exe" if sys.platform == "win32" else "")
+    monkeypatch.setenv("JAVA_HOME", str(jdk))
+    assert java_tools.find_jdk() == jdk
+
+
+def test_find_jdk_on_windows_looks_for_exe_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(java_tools.sys, "platform", "win32")
+    monkeypatch.setattr(java_tools, "WPILIB_GLOB", str(tmp_path / "wpilib" / "*" / "jdk"))
+    monkeypatch.setenv("JAVA_HOME", str(_fake_jdk(tmp_path / "unix", "")))
+    with pytest.raises(java_tools.JavaToolError):
+        java_tools.find_jdk()
+    jdk = _fake_jdk(tmp_path / "windows", ".exe")
     monkeypatch.setenv("JAVA_HOME", str(jdk))
     assert java_tools.find_jdk() == jdk
 

@@ -114,7 +114,7 @@ def _number(table: dict, key: str, default: float, section: str) -> float:
 def load_config(path: str | Path) -> Config:
     path = Path(path).resolve()
     try:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise ConfigError(t("config file not found: {path}", path=path)) from None
     except OSError as e:

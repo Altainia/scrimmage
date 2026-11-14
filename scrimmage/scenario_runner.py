@@ -212,9 +212,9 @@ class Report:
     def write(self, out_dir: Path) -> None:
         self.files = {k: v for k, v in OUTPUT_FILES.items()
                       if k in ("report", "report_md") or (out_dir / v).exists()}
-        (out_dir / "report.json").write_text(json.dumps(self.to_dict(), indent=2, default=str))
+        (out_dir / "report.json").write_text(json.dumps(self.to_dict(), indent=2, default=str), encoding="utf-8")
         with i18n.for_people():     # report.md is for people: in the Units and Language settings (an MCP run's too)
-            (out_dir / "report.md").write_text(self._markdown())
+            (out_dir / "report.md").write_text(self._markdown(), encoding="utf-8")
 
     def _markdown(self) -> str:
         if self.passed:

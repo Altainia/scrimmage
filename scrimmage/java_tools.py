@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import urllib.request
+import sys
 import zipfile
 from pathlib import Path
 
@@ -128,8 +129,13 @@ def init_script_path() -> Path:
     return JAVA_DIR / "scrimmage.init.gradle"
 
 
+def _tool(jdk: Path, name: str) -> Path:
+    """A JDK tool's file: bin/<name>, with .exe on Windows."""
+    return jdk / "bin" / (name + ".exe" if sys.platform == "win32" else name)
+
+
 def _is_jdk(p: Path) -> bool:
-    return all((p / "bin" / t).exists() for t in ("java", "javac", "jar"))
+    return all(_tool(p, t).exists() for t in ("java", "javac", "jar"))
 
 
 def find_jdk() -> Path:
@@ -177,12 +183,12 @@ def build_agent(jdk: Path | None = None) -> Path:
     with tempfile.TemporaryDirectory() as tmp:
         classes = Path(tmp) / "classes"
         classes.mkdir()
-        _run([str(jdk / "bin" / "javac"), "--release", "17", "-cp", str(asm), "-d", str(classes), *map(str, src)])
+        _run([str(_tool(jdk, "javac")), "--release", "17", "-cp", str(asm), "-d", str(classes), *map(str, src)])
         mf = Path(tmp) / "MANIFEST.MF"
         mf.write_text(f"Premain-Class: scrimmage.agent.ScrimmageAgent\nClass-Path: {asm.name}\n"
-                      f"Scrimmage-Agent-Version: {AGENT_VERSION}\n")
+                      f"Scrimmage-Agent-Version: {AGENT_VERSION}\n", encoding="utf-8")
         built = Path(tmp) / "agent.jar"
-        _run([str(jdk / "bin" / "jar"), "cfm", str(built), str(mf), "-C", str(classes), "."])
+        _run([str(_tool(jdk, "jar")), "cfm", str(built), str(mf), "-C", str(classes), "."])
         out = agent_jar_path()
         _write_atomic(out, built.read_bytes())
     return out
@@ -272,7 +278,7 @@ def write_vendordep(project: Path) -> Path:
         _replace_dir(src, dest)
         out.parent.mkdir(exist_ok=True)
         # Two-space indent: what WPILib's Spotless setup (gson, 2 spaces) formats it to, so a build leaves it alone.
-        out.write_text(json.dumps(vendordep_json(), indent=2) + "\n")
+        out.write_text(json.dumps(vendordep_json(), indent=2) + "\n", encoding="utf-8")
     except OSError as e:
         raise JavaToolError(f"can't write the vendordep into {project}: {e.strerror or e}") from None
     return out

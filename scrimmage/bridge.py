@@ -750,7 +750,7 @@ class Bridge:
         if not self.log_path:
             return
         w = self.world
-        self._logf = open(self.log_path, "w", newline="")
+        self._logf = open(self.log_path, "w", newline="", encoding="utf-8")
         self._writer = csv.writer(self._logf)
         self._writer.writerow(["t", "mode", "x", "y", "heading_deg", "speed", "vbatt", "odo_x", "odo_y", "odo_deg"]
                               + [f"{m.name}_cmd" for m in w.motors] + [f"{m.name}_amps" for m in w.motors])
