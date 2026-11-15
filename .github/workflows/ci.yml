@@ -129,7 +129,7 @@ jobs:
           tests/test_robot_process_windows.py tests/test_lockstep_grapple.py tests/test_distance_py_e2e.py -v -rs
       - name: Upload the Windows lockstep extension
         if: matrix.python-version == '3.13'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: lockstep-win-dll
           path: lockstep-win-dll/
