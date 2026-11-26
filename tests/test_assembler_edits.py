@@ -461,8 +461,7 @@ def test_the_tomlkit_it_runs_on_has_what_tomlutil_leans_on():
     from tomlkit.exceptions import ParseError
     from packaging.version import Version
     assert Version("0.15.1") <= Version(version("tomlkit")) < Version("0.16"), version("tomlkit")
-    for name, params in (("_insert_after", ["self", "key", "other_key", "item"]),
-                         ("_insert_at", ["self", "idx", "key", "item"]), ("_raw_append", ["self", "key", "item"])):
+    for name, params in (("_insert_at", ["self", "idx", "key", "item"]), ("_raw_append", ["self", "key", "item"])):
         assert list(inspect.signature(getattr(Container, name)).parameters) == params, name
     assert isinstance(Container()._map, dict)
     with pytest.raises(ParseError):

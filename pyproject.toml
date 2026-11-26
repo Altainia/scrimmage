@@ -9,7 +9,7 @@ description = "Run real WPILib robot code against a MuJoCo physics world over th
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "BSD-3-Clause" }
-# tomlkit: assembler/tomlutil.py uses private Container APIs (_insert_after, _insert_at, _raw_append, _map), so the range is the tested one
+# tomlkit: assembler/tomlutil.py uses private Container APIs (_insert_at, _raw_append, _map; 0.15.3 dropped _insert_after), so the range is the tested one
 # (tests/test_assembler_edits.py guards them); before 0.15.1 tomlkit parses some invalid TOML ("[[step]" unclosed)
 # that the editor must refuse. websockets: the asyncio server (stream.py) is 13.0's.
 # mujoco: 4.0.1 fixed cylinder edge contacts (commit 409f981) but gives a piece's edge on a wheel's tread one wandering
