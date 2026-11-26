@@ -4,7 +4,8 @@ tomlkit keeps the blank lines and comments after a table's last key at the end o
 text between two tables of an array belongs to the first of them: it is what sits above the second ("its comment
 block"). With nested tables (`[[step.check]]` inside `[[step]]`) it ends up in the deepest last table. These
 helpers keep new keys before that trailing text, and keep a table's comment block with the table when it is
-inserted or removed. They lean on tomlkit's private `Container._insert_after`/`_insert_at`.
+inserted or removed. They lean on tomlkit's private `Container._insert_at`/`_raw_append`/`_map`
+(tomlkit 0.15.3 dropped `_insert_after`, so `insert_after` below does it with the body list and `reindex`).
 """
 
 from __future__ import annotations
@@ -70,6 +71,19 @@ def reindex(c: Container) -> None:
         c._map[k] = i if cur is None else (*((cur,) if isinstance(cur, int) else cur), i)
 
 
+def insert_after(c: Container, anchor: str, key: str, item) -> None:
+    """Put `key = item` straight after the anchor key's (last) entry in the container, as tomlkit's own
+    `_insert_after` did before 0.15.3 removed it."""
+    k = SingleKey(key)
+    idx = max(i for i, (bk, _) in enumerate(c.body) if bk is not None and bk.key == anchor)
+    prev = c.body[idx][1]
+    if "\n" not in prev.trivia.trail:
+        prev.trivia.trail += "\n"
+    c.body.insert(idx + 1, (k, item))
+    reindex(c)
+    dict.__setitem__(c, key, item.value)
+
+
 def tail_start(table) -> int:
     """Index in the table's body just past its last key/value: what follows (blank lines and comments) is the
     comment block above the next table, so new keys go before it."""
@@ -108,7 +122,7 @@ def insert(table, key: str, value, after: tuple[str, ...] = ()) -> None:
             return
         anchor = b[i - 1][0].key
     item = tomlkit.item(value) if not hasattr(value, "trivia") else value
-    container(table)._insert_after(anchor, key, item)
+    insert_after(container(table), anchor, key, item)
     dict.__setitem__(table, key, item)
 
 
